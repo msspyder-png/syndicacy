@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Team Ledger - SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="dashboard-body">
+
+    <div class="dashboard-content">
+        <div style="text-align: left; margin-top: 10px; margin-bottom: 20px;">
+            <a href="leader-dashboard.html" style="color: #888; text-decoration: none; font-size: 14px;">← Back to Overview</a>
+        </div>
+
+        <div class="roster-header">
+            <h2 class="title" style="font-size: 20px; margin: 0;">Complete Team Ledger</h2>
+            
+            <select id="roster-sort" class="input-field select-field" style="width: auto; padding: 8px 12px; font-size: 12px;" onchange="sortRoster()">
+                <option value="az">Sort: A-Z</option>
+                <option value="high">Most Check-ins</option>
+            </select>
+        </div>
+
+        <div class="directory-list" id="ledger-list">
+            <p style="font-size: 12px; color: #888; padding: 20px; text-align: center;">Loading ledger data...</p>
+        </div>
+    </div>
+
+    <script src="script.js?v=1006"></script>
+</body>
+</html>

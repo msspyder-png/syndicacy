@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff Portal - SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="dashboard-body">
+
+    <div class="dashboard-content" style="padding-bottom: 100px;">
+        
+        <div id="view-home" class="tab-content" style="display: block; animation: popIn 0.3s ease;">
+            <div class="dash-header">
+                <h2 class="title" style="font-size: 24px; margin-top: 20px;">Good Morning, Steve</h2>
+                <p class="subtitle">SYNDICACY Workspace</p>
+            </div>
+
+            <div class="form-card ghost-theme" id="status-card" style="text-align: center; padding: 40px 20px; transition: all 0.3s;">
+                <div class="avatar" id="status-avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #e8e8e8; color: #888;">SJ</div>
+                <h3 style="margin: 0; font-size: 18px; color: #888;" id="status-text">Pending Check-in</h3>
+                <p style="font-size: 12px; color: #888; margin-top: 5px;">Window closes at 10:00 AM</p>
+                
+                <button class="main-btn" id="check-in-btn" style="width: 100%; margin-top: 35px; padding: 16px; font-size: 15px;" onclick="simulateCheckIn()">
+                    Authenticate & Check In
+                </button>
+            </div>
+            
+            <div style="text-align: left; margin-top: 25px; padding: 15px; background-color: #f9f9f9; border-radius: 8px;">
+                <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: 600;">Next Holiday</span>
+                <p style="margin: 5px 0 0 0; font-size: 14px; color: #1a1a1a; font-weight: 500;">Thanksgiving Break (Nov 23 - Nov 24)</p>
+            </div>
+        </div>
+
+        <div id="view-records" class="tab-content" style="display: none; animation: popIn 0.3s ease;">
+            <div class="dash-header">
+                <h2 class="title" style="font-size: 24px; margin-top: 20px;">My Ledger</h2>
+                <p class="subtitle">Your personal attendance analytics</p>
+            </div>
+
+            <div class="analytics-header">
+                <div class="stat-row" style="border: none; padding: 0; margin: 0;">
+                    <div class="stat-box">
+                        <span class="stat-label">Total Present</span>
+                        <span class="stat-value">18 Days</span>
+                    </div>
+                    <div class="stat-box" style="text-align: right;">
+                        <span class="stat-label">Attendance Rate</span>
+                        <span class="stat-value">94.5%</span>
+                    </div>
+                </div>
+                <div class="stat-row">
+                    <div class="stat-box">
+                        <span class="stat-label">Today's Entry</span>
+                        <span class="stat-value" id="ledger-today-time">--:-- AM</span>
+                    </div>
+                    <div class="stat-box" style="text-align: right;">
+                        <span class="stat-label">Avg. Entry Time</span>
+                        <span class="stat-value">09:06 AM</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-card" style="text-align: left;">
+                <div class="calendar-controls">
+                    <button class="cal-btn" onclick="changeMonth(-1)">&lt;</button>
+                    <span id="cal-month-display">October 2023</span>
+                    <button class="cal-btn" onclick="changeMonth(1)">&gt;</button>
+                </div>
+                
+                <div class="calendar-grid" id="settings-calendar">
+                    <div class="cal-day" style="border: none; font-weight: bold;">S</div><div class="cal-day" style="border: none; font-weight: bold;">M</div><div class="cal-day" style="border: none; font-weight: bold;">T</div><div class="cal-day" style="border: none; font-weight: bold;">W</div><div class="cal-day" style="border: none; font-weight: bold;">T</div><div class="cal-day" style="border: none; font-weight: bold;">F</div><div class="cal-day" style="border: none; font-weight: bold;">S</div>
+                    <div class="cal-day cal-holiday">1</div><div class="cal-day cal-present">2</div><div class="cal-day cal-present">3</div><div class="cal-day cal-absent">4</div><div class="cal-day cal-present">5</div><div class="cal-day cal-present">6</div><div class="cal-day cal-holiday">7</div>
+                </div>
+                
+                <div style="margin-top: 20px; font-size: 11px; color: #888; display: flex; justify-content: space-around;">
+                    <span>■ Present</span><span>□ Absent</span><span>▣ Holiday</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="view-settings" class="tab-content" style="display: none; animation: popIn 0.3s ease;">
+            <div class="dash-header">
+                <h2 class="title" style="font-size: 24px; margin-top: 20px;">Workspace</h2>
+                <p class="subtitle">Organization parameters & rules</p>
+            </div>
+
+            <div class="form-card" style="text-align: left; padding: 20px;">
+                <div class="setting-header" style="border-bottom: 1px solid #eaeaea; padding-bottom: 10px; margin-bottom: 15px;">
+                    <h3 class="code-heading" style="font-size: 13px;">Daily Parameters</h3>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <span style="font-size: 13px; font-weight: 500;">Check-in Window</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 13px; color: #1a1a1a; font-family: monospace;">09:00 - 10:00 AM</span>
+                        <button class="i-btn" onclick="openStaffModal('Check-in Window', 'Your organization requires you to log your attendance strictly between these hours. Attempts outside this window will be rejected.')">i</button>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 500;">Upcoming Exception</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 12px; color: #888;">Oct 31 (10:00 - 11:00 AM)</span>
+                        <button class="i-btn" onclick="openStaffModal('Exception Dates', 'Your leader has modified the normal check-in window for this specific upcoming date.')">i</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-card" style="text-align: left; padding: 20px;">
+                <div class="setting-header" style="border-bottom: 1px solid #eaeaea; padding-bottom: 10px; margin-bottom: 15px;">
+                    <h3 class="code-heading" style="font-size: 13px;">Active Security Protocols</h3>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <span style="font-size: 13px; font-weight: 500;">2-Step: Geospatial Verify</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 11px; color: #4ade80; font-weight: bold; background: #dcfce7; padding: 4px 8px; border-radius: 4px;">ENABLED</span>
+                        <button class="i-btn" onclick="openStaffModal('Geospatial Verification', 'Active. When you tap Check In, this app will securely verify that your device is physically located inside the organization\'s campus before proceeding.')">i</button>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 500;">3-Step: Dynamic Access</span>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 11px; color: #4ade80; font-weight: bold; background: #dcfce7; padding: 4px 8px; border-radius: 4px;">ENABLED</span>
+                        <button class="i-btn" onclick="openStaffModal('Dynamic Access', 'Active. After verifying your location, you will be required to scan the live QR code or enter the daily PIN provided by your leader to finalize your check-in.')">i</button>
+                    </div>
+                </div>
+            </div>
+            
+            <button class="google-btn" style="width: 100%; color: #dc2626; border-color: #fca5a5; background-color: #fef2f2;" onclick="window.location.href='index.html'">Log Out securely</button>
+        </div>
+    </div>
+
+    <div id="staff-modal" class="modal-bg">
+        <div class="modal-box animated-modal">
+            <span class="close" onclick="document.getElementById('staff-modal').style.display='none'">×</span>
+            <h3 class="section-title" id="staff-modal-title" style="text-align: center; margin-bottom: 15px;">Info</h3>
+            <p id="staff-modal-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px;">Description.</p>
+            <button class="main-btn form-btn" style="width: 100%;" onclick="document.getElementById('staff-modal').style.display='none'">Understood</button>
+        </div>
+    </div>
+
+    <nav class="bottom-nav" style="z-index: 9999; justify-content: space-between; padding-left: 40px; padding-right: 40px; box-sizing: border-box; width: 100%;">
+        <a href="javascript:void(0);" class="nav-item active" id="nav-home" onclick="switchStaffTab('home')">
+            <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+            <span>Home</span>
+        </a>
+
+        <a href="javascript:void(0);" class="nav-item" id="nav-records" onclick="switchStaffTab('records')">
+            <svg viewBox="0 0 24 24" class="nav-icon"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            <span>Records</span>
+        </a>
+
+        <a href="javascript:void(0);" class="nav-item" id="nav-settings" onclick="switchStaffTab('settings')">
+            <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Workspace</span>
+        </a>
+    </nav>
+
+    <script src="script.js"></script>
+
+    <script>
+        // Tab Switcher
+        function switchStaffTab(tabName) {
+            // Hide all views
+            document.getElementById('view-home').style.display = 'none';
+            document.getElementById('view-records').style.display = 'none';
+            document.getElementById('view-settings').style.display = 'none';
+            
+            // Remove active state from all buttons
+            document.getElementById('nav-home').classList.remove('active');
+            document.getElementById('nav-records').classList.remove('active');
+            document.getElementById('nav-settings').classList.remove('active');
+            
+            // Show the selected view and activate button
+            document.getElementById('view-' + tabName).style.display = 'block';
+            document.getElementById('nav-' + tabName).classList.add('active');
+        }
+
+        // Info Modal
+        function openStaffModal(title, desc) {
+            document.getElementById('staff-modal-title').innerText = title;
+            document.getElementById('staff-modal-desc').innerText = desc;
+            document.getElementById('staff-modal').style.display = 'flex';
+        }
+
+        // The Cool Check-in Simulation
+        function simulateCheckIn() {
+            const btn = document.getElementById('check-in-btn');
+            const card = document.getElementById('status-card');
+            const text = document.getElementById('status-text');
+            const avatar = document.getElementById('status-avatar');
+
+            // Step 1: 2FA Location Check
+            btn.innerText = '📍 Verifying Geolocation...';
+            btn.style.backgroundColor = '#888';
+            btn.style.cursor = 'wait';
+
+            setTimeout(() => {
+                // Step 2: 3FA Code Scan
+                btn.innerText = '📱 Scanning Dynamic Code...';
+                
+                setTimeout(() => {
+                    // Step 3: Success!
+                    btn.innerText = '✓ Success';
+                    btn.style.backgroundColor = '#4ade80';
+                    
+                    // UI Polish: Change from Pending to Active
+                    card.classList.remove('ghost-theme');
+                    card.style.border = '1px solid #e0e0e0';
+                    card.style.backgroundColor = '#ffffff';
+                    
+                    text.innerText = 'Checked In • 09:02 AM';
+                    text.style.color = '#1a1a1a';
+                    text.style.fontWeight = '600';
+                    
+                    avatar.style.backgroundColor = '#1a1a1a';
+                    avatar.style.color = '#ffffff';
+
+                    // Update their ledger automatically
+                    document.getElementById('ledger-today-time').innerText = '09:02 AM';
+                    document.getElementById('ledger-today-time').style.color = '#4ade80';
+
+                }, 1800);
+            }, 1500);
+        }
+    </script>
+</body>
+</html>

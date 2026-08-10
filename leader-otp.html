@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enter OTP - SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+    <div class="container">
+        <h2 class="title" style="font-size: 24px; margin-bottom: 10px;">Enter OTP</h2>
+        <p class="subtitle" style="margin-bottom: 30px;">We sent a 6-digit code to your email.</p>
+
+        <div class="form-container">
+            <div class="otp-container">
+                <input type="text" maxlength="1" class="otp-field">
+                <input type="text" maxlength="1" class="otp-field">
+                <input type="text" maxlength="1" class="otp-field">
+                <input type="text" maxlength="1" class="otp-field">
+                <input type="text" maxlength="1" class="otp-field">
+                <input type="text" maxlength="1" class="otp-field">
+            </div>
+            
+            <button class="main-btn form-btn" onclick="verifyOTP()">Verify</button>
+        </div>
+    </div>
+
+    <script>
+        const inputs = document.querySelectorAll('.otp-field');
+        inputs.forEach((input, index) => {
+            input.addEventListener('input', () => {
+                if (input.value.length === 1 && index < inputs.length - 1) {
+                    inputs[index + 1].focus(); // Jump forward
+                }
+            });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && input.value.length === 0 && index > 0) {
+                    inputs[index - 1].focus(); // Jump backward on delete
+                }
+            });
+        });
+    </script>
+    
+    <script src="script.js?v=999"></script>
+</body>
+</html>

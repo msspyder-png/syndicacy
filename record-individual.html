@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Member Analytics - SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="dashboard-body">
+
+    <div class="dashboard-content">
+        <div style="text-align: left; margin-top: 10px; margin-bottom: 20px;">
+            <a href="record-all.html" style="color: #888; text-decoration: none; font-size: 14px;">← Back to Ledger</a>
+        </div>
+
+        <div class="analytics-header" id="analytics-header" style="display: none;">
+            <h2 id="employee-name-title" style="margin: 0; font-size: 24px;">Loading...</h2>
+            <p id="employee-role-title" style="margin: 5px 0 20px 0; color: #888; font-size: 14px;"></p>
+            
+            <div class="stat-row">
+                <div class="stat-box">
+                    <span class="stat-label">Total Check-ins</span>
+                    <span class="stat-value" id="total-checkins-value" style="color: #4ade80;">0</span>
+                </div>
+                <div class="stat-box" style="text-align: right;">
+                    <span class="stat-label">System Status</span>
+                    <span class="stat-value">Active</span>
+                </div>
+            </div>
+
+            <div class="stat-row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+                <div class="stat-box">
+                    <span class="stat-label">Role</span>
+                    <span class="stat-value" id="employee-role-box" style="font-size: 16px;">--</span>
+                </div>
+                <div class="stat-box" style="text-align: right;">
+                    <span class="stat-label">Joined Date</span>
+                    <span class="stat-value" id="employee-joined-box" style="font-size: 16px;">--</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-card" style="margin-top: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 class="section-title" style="margin: 0;" id="calendar-month-title">Current Month</h3>
+            </div>
+            
+            <div class="calendar-grid" id="analytics-calendar">
+                </div>
+            
+            <div style="margin-top: 20px; font-size: 11px; color: #888; display: flex; justify-content: space-around;">
+                <span><span style="color: #4ade80; font-size: 14px;">■</span> Present</span>
+                <span><span style="color: #ef4444; font-size: 14px;">■</span> Absent</span>
+                <span><span style="color: #e0e0e0; font-size: 14px;">■</span> Future/None</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js?v=1007"></script>
+</body>
+</html>

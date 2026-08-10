@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Staff - SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="dashboard-body">
+
+    <div class="dashboard-content">
+        <div class="dash-header">
+            <h2 class="title" style="font-size: 24px; margin-top: 20px;">Onboard Staff</h2>
+            <p class="subtitle">Invite new members to your organization</p>
+        </div>
+
+        <div class="form-card">
+            <h3 class="section-title">New Invitation</h3>
+            
+            <div class="input-group">
+                <input type="text" id="staff-name" class="input-field" placeholder="Full Name">
+            </div>
+
+            <div class="input-group">
+                <input type="email" id="staff-email" class="input-field" placeholder="Email Address">
+            </div>
+
+            <div class="input-group">
+                <select id="staff-role" class="input-field select-field" onchange="toggleCustomRole()">
+                    <option value="" disabled selected>Select Designation / Role</option>
+                    <option value="Student">Student</option>
+                    <option value="HR">HR Manager</option>
+                    <option value="Team Lead">Team Lead</option>
+                    <option value="other">Other...</option>
+                </select>
+            </div>
+
+            <div class="input-group" id="custom-role-container" style="display: none;">
+                <input type="text" id="custom-role" class="input-field" placeholder="Specify Custom Role">
+            </div>
+
+            <div class="button-stack">
+                <button class="main-btn form-btn" onclick="sendInviteLink()">Send Direct Invite</button>
+                <button class="google-btn" onclick="copyInviteLink()">Copy Invite Link</button>
+            </div>
+        </div>
+
+        <div class="directory-section" style="margin-bottom: 30px;">
+            <h3 class="section-title" style="color: #f59e0b;">Pending Approvals</h3>
+            
+            <div class="directory-list" id="pending-list">
+                <p style="font-size: 12px; color: #888;">Fetching requests from cloud...</p>
+            </div>
+        </div>
+
+        <div class="directory-section">
+            <h3 class="section-title">Team Directory</h3>
+            
+            <input type="text" id="staff-search" class="input-field search-input" placeholder="Search by name or role..." onkeyup="filterDirectory()">
+
+            <div class="directory-list" id="directory-list">
+                <div class="directory-card">
+                    <div class="avatar">SJ</div>
+                    <div class="staff-info">
+                        <span class="staff-name">Steve Jobs</span>
+                        <span class="staff-role">HR Manager</span>
+                    </div>
+                </div>
+
+                <div class="directory-card">
+                    <div class="avatar">EM</div>
+                    <div class="staff-info">
+                        <span class="staff-name">Elon Musk</span>
+                        <span class="staff-role">Team Lead</span>
+                    </div>
+                </div>
+
+                <div class="directory-card">
+                    <div class="avatar">BG</div>
+                    <div class="staff-info">
+                        <span class="staff-name">Bill Gates</span>
+                        <span class="staff-role">Student</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <nav class="bottom-nav">
+        <a href="leader-dashboard.html" class="nav-item">
+            <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+            <span>Overview</span>
+        </a>
+        <a href="leader-today.html" class="nav-item">
+            <svg viewBox="0 0 24 24" class="nav-icon">
+                <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+                <path d="M6 10.5l2 3m0-3l-2 3 M10 10.5l2 3m0-3l-2 3 M14 10.5l2 3m0-3l-2 3 M18 10.5l2 3m0-3l-2 3"></path>
+            </svg>
+            <span>Codes</span>
+        </a>
+        <a href="#" class="nav-item active">
+            <svg viewBox="0 0 24 24" class="nav-icon"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            <span>Add</span>
+        </a>
+        <a href="leader-dashboard.html" class="nav-item" onclick="openRecordsModal(); return false;">
+            <svg viewBox="0 0 24 24" class="nav-icon"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+            <span>Records</span>
+        </a>
+        <a href="leader-settings.html" class="nav-item">
+            <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <span>Settings</span>
+        </a>
+    </nav>
+
+    <script src="script.js?v=999"></script>
+</body>
+</html>

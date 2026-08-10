@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="container">
+        <h1 class="title">SYNDICACY</h1>
+        <p class="subtitle">Your go-to attendance app</p>
+
+        <p class="prompt">Are you a...</p>
+
+        <div class="actions">
+            
+            <div class="button-group">
+                <button class="main-btn" onclick="window.location.href='leader.html'">Leader</button>
+                <button class="i-btn" onclick="openModal('leader-modal')">i</button>
+            </div>
+
+            <div class="button-group">
+                <button class="main-btn" onclick="window.location.href='staff.html'">Staff Member</button>
+                <button class="i-btn" onclick="openModal('staff-modal')">i</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="leader-modal" class="modal-bg">
+        <div class="modal-box">
+            <span class="close" onclick="closeModal('leader-modal')">&times;</span>
+            <p><strong>Leader:</strong> Bosses, principals, or admins.</p>
+        </div>
+    </div>
+
+    <div id="staff-modal" class="modal-bg">
+        <div class="modal-box">
+            <span class="close" onclick="closeModal('staff-modal')">&times;</span>
+            <p><strong>Staff Member:</strong> Employees, students, and teachers.</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

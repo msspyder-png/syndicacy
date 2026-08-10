@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Staff Portal - SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+</head>
+<body style="display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #f4f4f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 20px;">
+
+    <div class="form-card" style="width: 100%; max-width: 400px; text-align: center; padding: 40px 20px; background-color: #ffffff;">
+        
+        <div id="login-state">
+            <h2 class="title" style="font-size: 24px; margin-bottom: 30px;">Staff Login</h2>
+            <div class="form-container">
+                <input type="email" id="staff-email" class="input-field" placeholder="Enter Email">
+                <input type="password" id="staff-pass" class="input-field" placeholder="Enter Password">
+                <button class="main-btn form-btn" onclick="handleStaffLogin()">Login</button>
+            </div>
+        </div>
+
+        <div id="scanner-state" style="display: none;">
+            <h1 style="margin: 0 0 10px 0; font-size: 24px;">Daily Check-In</h1>
+            <p style="color: #888; margin-bottom: 20px; font-size: 14px;">Welcome, <span id="staff-welcome-name"></span>. Authenticate to clock in.</p>
+
+            <div id="scanner-container" style="display: none; margin-bottom: 20px; position: relative;">
+                <video id="staff-video" width="100%" height="auto" autoplay muted playsinline style="border-radius: 8px; border: 3px solid #e5e7eb; background-color: #000;"></video>
+                <p id="scanner-status" style="font-size: 12px; color: #f59e0b; font-weight: bold; margin-top: 15px;">INITIALIZING SCANNER...</p>
+            </div>
+
+            <button id="activate-scanner-btn" class="main-btn form-btn" onclick="startDailyScanner()">Activate Scanner</button>
+        </div>
+
+        <div id="success-state" style="display: none;">
+            <div style="text-align: center; color: #4ade80; margin-bottom: 20px;">
+                <svg viewBox="0 0 24 24" width="70" height="70" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            </div>
+            <h2 class="title" style="font-size: 24px; margin-bottom: 5px;">Access Granted</h2>
+            <p style="font-size: 16px; color: #1a1a1a; margin-bottom: 5px;">You are clocked in!</p>
+            <p style="font-size: 12px; color: #888;">Time: <span id="clock-in-time" style="font-weight: bold;"></span></p>
+        </div>
+
+    </div>
+
+    <script src="script.js?v=1003"></script>
+    
+</body>
+</html>
