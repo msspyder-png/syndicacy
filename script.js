@@ -129,46 +129,126 @@ async function verifyOTP() {
     }
 }
 
-// --- CLOUD-CONNECTED INVITE FUNCTION ---
-async function sendInviteLink() {
+// --- 1. TOGGLE CUSTOM ROLE ---
+function toggleCustomRole() {
+    const roleSelect = document.getElementById('staff-role');
+    const customRoleContainer = document.getElementById('custom-role-container');
+    if (roleSelect && customRoleContainer) {
+        if (roleSelect.value === 'other') {
+            customRoleContainer.style.display = 'block';
+        } else {
+            customRoleContainer.style.display = 'none';
+        }
+    }
+}
+
+// --- 2. FILTER DIRECTORY ---
+function filterDirectory() {
+    const searchQuery = document.getElementById('staff-search').value.toLowerCase();
+    const staffCards = document.querySelectorAll('#directory-list .directory-card');
+    
+    staffCards.forEach(card => {
+        const name = card.querySelector('.staff-name').innerText.toLowerCase();
+        const role = card.querySelector('.staff-role').innerText.toLowerCase();
+        if (name.includes(searchQuery) || role.includes(searchQuery)) {
+            card.style.display = 'flex';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+// --- 3. GENERATE INVITE DATA (Helper Function) ---
+async function generateInvite() {
     const nameEl = document.getElementById('staff-name');
     const emailEl = document.getElementById('staff-email');
     const roleSelectEl = document.getElementById('staff-role');
-    if (!nameEl || !emailEl || !roleSelectEl) return;
+    
+    if (!nameEl || !emailEl || !roleSelectEl) return null;
     
     const name = nameEl.value.trim();
     const email = emailEl.value.trim();
     let role = roleSelectEl.value === 'other' ? document.getElementById('custom-role').value.trim() : roleSelectEl.value;
     
     if (!name || !email || !role || roleSelectEl.value === "") {
-        alert("Please complete all fields."); return;
+        alert("Please complete all fields."); 
+        return null;
     }
-    if (!supabaseClient) { alert("Database connection is not ready."); return; }
-
-    const inviteBtn = document.querySelector('.form-card .form-btn');
-    const originalText = inviteBtn.innerText;
-    inviteBtn.innerText = "Adding to VIP List...";
-    inviteBtn.disabled = true;
+    
+    if (!supabaseClient) { 
+        alert("Database connection is not ready."); 
+        return null; 
+    }
 
     try {
         const { data, error } = await supabaseClient
             .from('staff_invites')
             .insert([{ email: email, name: name, role: role, status: 'pending' }])
             .select();
+            
         if (error) throw error;
 
-        const generatedLink = `http://127.0.0.1:5500/join.html?id=${data[0].id}`;
-        alert(`Success! ${name} has been added to the VIP list.\n\nHere is their unique camera link:\n\n${generatedLink}`);
-
-        nameEl.value = ""; emailEl.value = ""; roleSelectEl.selectedIndex = 0;
+        const baseUrl = window.location.origin; 
+        const generatedLink = `${baseUrl}/join.html?id=${data[0].id}`;
+        
+        nameEl.value = ""; 
+        emailEl.value = ""; 
+        roleSelectEl.selectedIndex = 0;
         const customRoleEl = document.getElementById('custom-role-container');
         if (customRoleEl) customRoleEl.style.display = 'none';
+        
         loadPendingInvites();
+        
+        return { link: generatedLink, name: name, email: email, role: role };
+        
     } catch (error) {
         alert("Error creating invite: " + error.message);
-    } finally {
-        inviteBtn.innerText = originalText; inviteBtn.disabled = false;
+        return null;
     }
+}
+
+// --- 4. COPY INVITE LINK (Clipboard) ---
+async function copyInviteLink() {
+    const copyBtn = document.querySelectorAll('.form-card .google-btn')[0];
+    const originalText = copyBtn.innerText;
+    copyBtn.innerText = "Generating...";
+    copyBtn.disabled = true;
+
+    const inviteData = await generateInvite();
+    
+    if (inviteData) {
+        try {
+            await navigator.clipboard.writeText(inviteData.link);
+            alert(`Success! 📋\n\nThe secure link for ${inviteData.name} has been copied to your clipboard.\n\nYou can now paste it into WhatsApp, Slack, or iMessage.`);
+        } catch (err) {
+            prompt("Copy this link manually:", inviteData.link);
+        }
+    }
+    
+    copyBtn.innerText = originalText;
+    copyBtn.disabled = false;
+}
+
+// --- 5. SEND DIRECT INVITE (Email) ---
+async function sendInviteLink() {
+    const inviteBtn = document.querySelector('.form-card .main-btn');
+    const originalText = inviteBtn.innerText;
+    inviteBtn.innerText = "Generating...";
+    inviteBtn.disabled = true;
+
+    const inviteData = await generateInvite();
+    
+    if (inviteData) {
+        const subject = encodeURIComponent(`You're invited to join SYNDICACY as ${inviteData.role}`);
+        const body = encodeURIComponent(`Hi ${inviteData.name},\n\nYou have been invited to join the team as ${inviteData.role}.\n\nPlease click the secure link below to scan your biometrics and register your device:\n\n${inviteData.link}\n\nWelcome aboard!`);
+        
+        window.location.href = `mailto:${inviteData.email}?subject=${subject}&body=${body}`;
+        
+        alert(`Success! ✉️\n\nThe system has prepared an email draft for ${inviteData.name}.`);
+    }
+    
+    inviteBtn.innerText = originalText;
+    inviteBtn.disabled = false;
 }
 
 // --- FETCH PENDING & SCANNED INVITES ---
@@ -196,6 +276,11 @@ async function loadPendingInvites() {
             const initial = invite.name ? invite.name.charAt(0).toUpperCase() : '?';
             let statusText, statusColor, btnHtml;
             
+            let avatarHtml = `<div class="avatar" style="background: #f0f0f0; color: #333;">${initial}</div>`;
+            if (invite.face_image) {
+                avatarHtml = `<img src="${invite.face_image}" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid #4ade80;" alt="Face Preview">`;
+            }
+
             if (invite.status === 'pending') {
                 statusText = "WAITING FOR FACE SCAN";
                 statusColor = "#f59e0b"; 
@@ -207,9 +292,9 @@ async function loadPendingInvites() {
             }
 
             const card = `
-                <div class="directory-card" style="border: 1px solid #e0e0e0; background: #fff; margin-bottom: 10px;">
-                    <div class="avatar" style="background: #f0f0f0; color: #333;">${initial}</div>
-                    <div class="staff-info" style="flex-grow: 1;">
+                <div class="directory-card" style="border: 1px solid #e0e0e0; background: #fff; margin-bottom: 10px; align-items: center;">
+                    ${avatarHtml}
+                    <div class="staff-info" style="flex-grow: 1; margin-left: 10px;">
                         <span class="staff-name">${invite.name}</span>
                         <span class="staff-role">${invite.role}</span>
                         <span style="font-size: 10px; color: ${statusColor}; font-weight: bold; margin-top: 4px; display: block;">${statusText}</span>
@@ -253,7 +338,8 @@ async function approveInvite(inviteId, employeeName) {
                 role: inviteData.role,
                 joined_date: today,
                 name: inviteData.name,
-                face_data: inviteData.face_data
+                face_data: inviteData.face_data,
+                face_image: inviteData.face_image
             }]);
 
         if (insertError) throw insertError;
@@ -367,7 +453,7 @@ async function startFaceScan() {
     }
 }
 
-// --- CAPTURE ONBOARDING FACE ---
+// --- CAPTURE ONBOARDING FACE & SNAPSHOT ---
 async function captureFace() {
     const video = document.getElementById('video');
     const captureBtn = document.getElementById('capture-btn');
@@ -375,43 +461,60 @@ async function captureFace() {
 
     if (captureBtn) {
         captureBtn.disabled = true;
-        captureBtn.innerText = "Scanning Face...";
+        captureBtn.innerText = "Analyzing & Snapping Photo...";
     }
-    aiStatus.innerText = "ANALYZING 68 FACIAL POINTS...";
+    aiStatus.innerText = "PROCESSING 68 FACIAL POINTS...";
     aiStatus.style.color = "#f59e0b";
 
     try {
         const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
 
         if (!detection) {
-            alert("No face detected!");
-            if (captureBtn) { captureBtn.disabled = false; captureBtn.innerText = "Try Again"; }
+            alert("No face detected clearly! Please look straight at the camera.");
+            if (captureBtn) { captureBtn.disabled = false; captureBtn.innerText = "Scan My Face"; }
             aiStatus.innerText = "WAITING FOR FACE...";
             return;
         }
 
         const faceDataString = JSON.stringify(Array.from(detection.descriptor));
-        aiStatus.innerText = "FACE SCANNED! UPLOADING...";
+
+        const canvasSnapshot = document.createElement('canvas');
+        canvasSnapshot.width = video.videoWidth || 320;
+        canvasSnapshot.height = video.videoHeight || 240;
+        const ctx = canvasSnapshot.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvasSnapshot.width, canvasSnapshot.height);
+        
+        const imageBase64 = canvasSnapshot.toDataURL('image/jpeg', 0.7);
+
+        aiStatus.innerText = "BIOMETRICS SECURED! UPLOADING TO CLOUD...";
 
         const urlParams = new URLSearchParams(window.location.search);
         const { error } = await supabaseClient
             .from('staff_invites')
-            .update({ face_data: faceDataString, status: 'scanned' })
+            .update({ 
+                face_data: faceDataString, 
+                face_image: imageBase64, 
+                status: 'scanned' 
+            })
             .eq('id', urlParams.get('id'));
 
         if (error) throw error;
 
-        video.srcObject.getTracks().forEach(track => track.stop());
+        if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => track.stop());
+        }
+
         document.getElementById('camera-container').style.display = 'none';
         document.getElementById('success-state').innerHTML = `
             <div style="text-align: center; color: #4ade80; margin-bottom: 20px;">
                 <svg viewBox="0 0 24 24" width="60" height="60" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             </div>
-            <h2 class="title" style="font-size: 24px; margin-bottom: 5px;">Biometrics Saved!</h2>
-            <p style="font-size: 14px; color: #888;">You can close this page.</p>
+            <h2 class="title" style="font-size: 24px; margin-bottom: 5px;">Biometrics & Photo Saved!</h2>
+            <p style="font-size: 14px; color: #888;">Your photo has been sent to the boss for verification. You can close this page.</p>
         `;
     } catch (err) {
-        alert("Error saving data.");
+        console.error(err);
+        alert("Error saving biometric data.");
         if (captureBtn) { captureBtn.disabled = false; captureBtn.innerText = "Scan My Face"; }
     }
 }
@@ -869,7 +972,6 @@ async function startDailyScanner() {
         const day = String(now.getDate()).padStart(2, '0');
         const todayDateStr = `${year}-${month}-${day}`;
 
-        // 1. Holiday Check
         if (rules && rules.holidays) {
             const holidayArray = JSON.parse(rules.holidays);
             if (holidayArray.includes(todayDateStr)) {
@@ -878,7 +980,6 @@ async function startDailyScanner() {
             }
         }
 
-        // 2. Time Window Check
         const currentHours = String(now.getHours()).padStart(2, '0');
         const currentMinutes = String(now.getMinutes()).padStart(2, '0');
         const currentTime = `${currentHours}:${currentMinutes}`;
@@ -888,7 +989,6 @@ async function startDailyScanner() {
             return; 
         }
 
-        // 3. 3-Step Dynamic PIN Check
         if (rules && rules.require_pin) {
             const userPin = prompt("SECURITY CHECK: Enter the 4-digit Daily Access PIN provided by your Manager:");
             if (userPin !== rules.daily_pin) {
@@ -897,7 +997,6 @@ async function startDailyScanner() {
             }
         }
 
-        // 4. 2-Step GPS Geofencing Check
         if (rules && rules.require_gps) {
             if (!rules.office_lat || !rules.office_lng) {
                 alert("Manager Error: Office GPS location has not been pinned in settings yet!");
@@ -921,7 +1020,6 @@ async function startDailyScanner() {
             }
         }
 
-        // All security checks passed! Turn on camera and AI
         activateBtn.style.display = 'none';
         scannerContainer.style.display = 'block';
         scannerStatus.innerText = "LOADING AI MODELS...";
@@ -1003,6 +1101,44 @@ async function startDailyScanner() {
         scannerStatus.innerText = "ERROR: System sync failed.";
         scannerStatus.style.color = "red";
         console.error(err);
+    }
+}
+
+// --- 6. ADD FUTURE SCHEDULE EXCEPTION ---
+function addException() {
+    const list = document.getElementById('exception-list');
+    const countSpan = document.getElementById('exception-count');
+    if (!list || !countSpan) return;
+
+    const currentCount = list.children.length;
+
+    if (currentCount >= 5) {
+        alert("You can only add up to 5 future schedule exceptions.");
+        return;
+    }
+
+    const exceptionDiv = document.createElement('div');
+    exceptionDiv.style.display = 'flex';
+    exceptionDiv.style.gap = '5px';
+    exceptionDiv.style.marginBottom = '10px';
+    exceptionDiv.style.alignItems = 'center';
+    
+    exceptionDiv.innerHTML = `
+        <input type="date" class="input-field" style="width: 40%; padding: 8px; font-size: 11px;">
+        <input type="time" class="input-field" style="width: 25%; padding: 8px; font-size: 11px;">
+        <input type="time" class="input-field" style="width: 25%; padding: 8px; font-size: 11px;">
+        <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; flex-shrink: 0;" onclick="this.parentElement.remove(); updateExceptionCount();">X</button>
+    `;
+    
+    list.appendChild(exceptionDiv);
+    updateExceptionCount();
+}
+
+function updateExceptionCount() {
+    const list = document.getElementById('exception-list');
+    const countSpan = document.getElementById('exception-count');
+    if (countSpan && list) {
+        countSpan.innerText = `(${list.children.length}/5)`;
     }
 }
 
