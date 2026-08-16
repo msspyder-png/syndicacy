@@ -15,15 +15,14 @@
         </div>
 
         <div class="analytics-header" id="analytics-header" style="display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                <div>
-                    <!-- NAME & SOPHISTICATED PENCIL ICON -->
-                    <h2 style="margin: 0; font-size: 24px; display: flex; align-items: center;">
-                        <span id="employee-name-title">Loading...</span>
-                        <svg onclick="renameEmployee()" style="cursor: pointer; width: 18px; height: 18px; stroke: #a0a0a0; fill: none; stroke-width: 2; margin-left: 10px; transition: 0.2s;" onmouseover="this.style.stroke='#1a1a1a'" onmouseout="this.style.stroke='#a0a0a0'" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                    </h2>
-                    <p id="employee-role-title" style="margin: 5px 0 20px 0; color: #888; font-size: 14px;"></p>
-                </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <!-- NAME & SOPHISTICATED PENCIL ICON -->
+                <h2 style="margin: 0; font-size: 24px; display: flex; align-items: center;">
+                    <span id="employee-name-title">Loading...</span>
+                    <svg onclick="renameEmployee()" style="cursor: pointer; width: 18px; height: 18px; stroke: #a0a0a0; fill: none; stroke-width: 2; margin-left: 10px; transition: 0.2s;" onmouseover="this.style.stroke='#1a1a1a'" onmouseout="this.style.stroke='#a0a0a0'" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                </h2>
+                <!-- ROLE ON FAR RIGHT -->
+                <p id="employee-role-title" style="margin: 0; color: #888; font-size: 14px; font-weight: 600; text-align: right;"></p>
             </div>
             
             <!-- 3-COLUMN STAT ROW -->
@@ -33,7 +32,7 @@
                     <span class="stat-value" id="total-checkins-value" style="color: #4ade80;">0 / 0</span>
                 </div>
                 <div class="stat-box" style="text-align: center;">
-                    <span class="stat-label">Avg In</span>
+                    <span class="stat-label">Avg Check-in</span>
                     <span class="stat-value" id="avg-in-time" style="color: #1a1a1a;">--:--</span>
                 </div>
                 <div class="stat-box" style="text-align: right;">
@@ -42,7 +41,7 @@
                 </div>
             </div>
 
-            <div class="stat-row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+            <div class="stat-row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0; margin-bottom: 15px;">
                 <div class="stat-box">
                     <span class="stat-label">Joined Date</span>
                     <span class="stat-value" id="employee-joined-box" style="font-size: 16px;">--</span>
@@ -53,14 +52,17 @@
                 </div>
             </div>
 
-            <!-- BOSS CREDENTIALS REVEAL -->
-            <div style="margin-top: 15px; padding: 12px; background-color: #f9f9f9; border-radius: 8px; border: 1px solid #eaeaea;">
+            <!-- BOSS CREDENTIALS REVEAL (Cleaned up, no white box) -->
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
                 <span style="font-size: 10px; color: #888; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">Access Credentials</span>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-                    <span style="font-size: 12px; color: #1a1a1a;" id="emp-cred-email">Loading...</span>
-                    <button class="i-btn" style="padding: 4px 8px; font-size: 10px; border-radius: 4px; background: #fff;" onclick="revealPassword()">Show Password</button>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                    <span style="font-size: 14px; color: #1a1a1a; font-weight: 500;" id="emp-cred-email">Loading...</span>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="google-btn" style="padding: 6px 12px; font-size: 11px;" onclick="revealPassword()">Show Password</button>
+                        <button class="main-btn form-btn" style="padding: 6px 12px; font-size: 11px; margin: 0; width: auto;" onclick="emailCredentials()">Email Staff</button>
+                    </div>
                 </div>
-                <div id="emp-cred-pass" style="font-size: 14px; font-weight: bold; color: #ef4444; margin-top: 8px; display: none;"></div>
+                <div id="emp-cred-pass" style="font-size: 14px; font-weight: bold; color: #ef4444; margin-top: 10px; display: none;"></div>
             </div>
         </div>
 

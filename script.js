@@ -837,6 +837,26 @@ async function revealPassword() {
     }
 }
 
+// --- EMAIL CREDENTIALS TO STAFF ---
+async function emailCredentials() {
+    if (!currentViewedUser) return;
+    const bossPass = prompt("SECURITY CHECK: Enter your Leader Password to send staff credentials.");
+    
+    try {
+        // Simple client-side check to ensure the boss isn't accidentally clicking it
+        if (bossPass && bossPass.trim() !== "") {
+            const subject = encodeURIComponent(`Your SYNDICACY Access Credentials`);
+            const body = encodeURIComponent(`Hi ${currentViewedUser.name},\n\nHere are your secure access credentials for the SYNDICACY portal:\n\nEmail: ${currentViewedUser.email}\nPassword: ${currentViewedUser.password}\n\nIMPORTANT SECURITY NOTE: Please delete this email immediately after logging in for the first time to maintain account security.\n\nBest,\nManagement`);
+            
+            window.location.href = `mailto:${currentViewedUser.email}?subject=${subject}&body=${body}`;
+        } else {
+            alert("Verification failed. Credentials not sent.");
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
 // --- RENAME EMPLOYEE ---
 async function renameEmployee() {
     if (!currentViewedUser || !supabaseClient) return;
