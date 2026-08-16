@@ -877,6 +877,7 @@ async function emailCredentials() {
         alert("Error sending credentials.");
     }
 }
+
 // --- RENAME EMPLOYEE ---
 async function renameEmployee() {
     if (!currentViewedUser || !supabaseClient) return;
