@@ -254,8 +254,7 @@ async function sendInviteLink() {
 // --- FETCH PENDING & SCANNED INVITES ---
 async function loadPendingInvites() {
     const pendingList = document.getElementById('pending-list');
-    if (!pendingList) return; 
-    if (!supabaseClient) return;
+    if (!pendingList || !supabaseClient) return;
 
     try {
         const { data, error } = await supabaseClient
@@ -290,6 +289,9 @@ async function loadPendingInvites() {
                 statusColor = "#4ade80"; 
                 btnHtml = `<button class="main-btn" style="padding: 6px 12px; font-size: 10px; background-color: #4ade80; color: black; border: none; cursor: pointer;" onclick="approveInvite('${invite.id}', '${invite.name}')">Approve Now</button>`;
             }
+
+            // ADDING THE REJECT 'X' BUTTON HERE
+            btnHtml += `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 26px; height: 26px; flex-shrink: 0; margin-left: 8px;" onclick="deleteInvite('${invite.id}', '${invite.name}')">×</button>`;
 
             const card = `
                 <div class="directory-card" style="border: 1px solid #e0e0e0; background: #fff; margin-bottom: 10px; align-items: center;">
@@ -357,6 +359,27 @@ async function approveInvite(inviteId, employeeName) {
     } catch (err) {
         console.error(err);
         alert("Error approving employee: " + err.message);
+    }
+}
+
+// --- REJECT / DELETE INVITE ---
+async function deleteInvite(inviteId, employeeName) {
+    if (!confirm(`Are you sure you want to reject and delete the invite for ${employeeName}?`)) return;
+
+    if (!supabaseClient) return;
+
+    try {
+        const { error } = await supabaseClient
+            .from('staff_invites')
+            .delete()
+            .eq('id', inviteId);
+
+        if (error) throw error;
+
+        loadPendingInvites(); // Refresh the list
+    } catch (err) {
+        console.error(err);
+        alert("Error deleting invite: " + err.message);
     }
 }
 
