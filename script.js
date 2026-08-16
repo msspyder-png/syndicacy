@@ -351,7 +351,7 @@ async function approveInvite(inviteId, employeeName) {
             .update({ status: 'approved' })
             .eq('id', inviteId);
 
-        alert(`SUCCESS! 🥳\n\n${employeeName} has been officially added to the team!\n\nTemporary password: ${tempPassword}`);
+        alert(`SUCCESS!\n\n${employeeName} has been officially added to the team!\n\nTemporary password: ${tempPassword}`);
 
         loadPendingInvites();
         loadTeamDirectory(); 
@@ -364,7 +364,7 @@ async function approveInvite(inviteId, employeeName) {
 
 // --- REJECT / DELETE INVITE ---
 async function deleteInvite(inviteId, employeeName) {
-    if (!confirm(`Are you sure you want to reject and delete the invite for ${employeeName}?`)) return;
+    if (!confirm(`Are you sure you want to delete the invite for ${employeeName}?`)) return;
 
     if (!supabaseClient) return;
 
@@ -383,7 +383,7 @@ async function deleteInvite(inviteId, employeeName) {
     }
 }
 
-// --- EMPLOYEE JOIN PAGE (READING THE INVITE LINK) ---
+// --- EMPLOYEE JOIN PAGE (READING & ENFORCING LINK SECURITY) ---
 async function verifyInviteLink() {
     const loadingState = document.getElementById('loading-state');
     const successState = document.getElementById('success-state');
@@ -408,6 +408,30 @@ async function verifyInviteLink() {
             .single();
 
         if (error || !invite) throw error;
+
+        // 1. SECURITY CHECK: Block link if face scan is already completed or approved
+        if (invite.status !== 'pending') {
+            const errorMsg = document.querySelector('#error-state p');
+            if (errorMsg) errorMsg.innerText = "This invitation link has already been used.";
+            loadingState.style.display = 'none';
+            errorState.style.display = 'block';
+            return;
+        }
+
+        // 2. EXPIRATION CHECK: Lock link if older than 7 days
+        if (invite.created_at) {
+            const createdDate = new Date(invite.created_at);
+            const currentDate = new Date();
+            const timeDifferenceDays = (currentDate - createdDate) / (1000 * 60 * 60 * 24);
+
+            if (timeDifferenceDays > 7) {
+                const errorMsg = document.querySelector('#error-state p');
+                if (errorMsg) errorMsg.innerText = "This invitation link has expired (7-day limit).";
+                loadingState.style.display = 'none';
+                errorState.style.display = 'block';
+                return;
+            }
+        }
 
         document.getElementById('emp-name').innerText = invite.name;
         document.getElementById('emp-role').innerText = invite.role;
