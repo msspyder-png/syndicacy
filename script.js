@@ -726,7 +726,7 @@ async function loadTeamLedger() {
     } catch (err) { console.error(err); }
 }
 
-// --- INDIVIDUAL ANALYTICS (WITH WORKING DAYS, RENAME & PASSWORD) ---
+// --- INDIVIDUAL ANALYTICS ---
 let analyticsDate = new Date(); 
 let currentViewedUser = null; 
 
@@ -749,10 +749,15 @@ async function loadIndividualAnalytics() {
         if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays);
 
         document.getElementById('analytics-header').style.display = 'block';
+        document.getElementById('credentials-card').style.display = 'block';
         document.getElementById('employee-name-title').innerText = user.name;
         document.getElementById('employee-role-title').innerText = user.role; 
         document.getElementById('employee-joined-box').innerText = user.joined_date || "N/A";
         document.getElementById('emp-cred-email').innerText = user.email || "No Email";
+        
+        // Dynamically update button text to include employee name
+        const firstName = user.name ? user.name.split(' ')[0] : 'Staff';
+        document.getElementById('email-staff-btn').innerText = `Email ${firstName}`;
 
         const today = new Date();
         let workingDays = 1;
@@ -768,7 +773,6 @@ async function loadIndividualAnalytics() {
 
         const totalChecks = logs ? logs.length : 0;
         document.getElementById('total-checkins-value').innerText = `${totalChecks} / ${workingDays}`;
-        
         document.getElementById('avg-in-time').innerText = calculateAvgCheckInTime(logs);
         
         let percent = Math.round((totalChecks / workingDays) * 100);
@@ -814,26 +818,34 @@ async function loadIndividualAnalytics() {
     } catch (err) { console.error(err); }
 }
 
-function changeMonth(offset) {
-    analyticsDate.setMonth(analyticsDate.getMonth() + offset);
-    loadIndividualAnalytics(); 
-}
-
-// --- SECURE PASSWORD REVEAL ---
+// --- SECURE PASSWORD REVEAL (STRICTLY ENFORCED) ---
 async function revealPassword() {
     if (!currentViewedUser) return;
     const bossPass = prompt("SECURITY CHECK: Enter your Leader Password to reveal staff credentials.");
-    
+    if (!bossPass) return;
+
     try {
-        if (bossPass && bossPass.trim() !== "") {
-            const passBox = document.getElementById('emp-cred-pass');
-            passBox.innerText = `Password: ${currentViewedUser.password}`;
-            passBox.style.display = 'block';
-        } else {
-            alert("Verification failed.");
+        // Fetch the leader's actual email from session/local storage, or query session state
+        // Here we query Supabase to find a leader account matching the typed password or verify against stored leader profile
+        const { data: leaders, error } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('role', 'leader')
+            .eq('password', bossPass.trim());
+
+        if (error || !leaders || leaders.length === 0) {
+            alert("ACCESS DENIED: Incorrect leader password.");
+            return;
         }
+
+        // If verification passes:
+        const passBox = document.getElementById('emp-cred-pass');
+        passBox.innerText = `Password: ${currentViewedUser.password}`;
+        passBox.style.display = 'block';
+
     } catch (err) {
         console.error(err);
+        alert("Verification error occurred.");
     }
 }
 
@@ -841,22 +853,30 @@ async function revealPassword() {
 async function emailCredentials() {
     if (!currentViewedUser) return;
     const bossPass = prompt("SECURITY CHECK: Enter your Leader Password to send staff credentials.");
+    if (!bossPass) return;
     
     try {
-        // Simple client-side check to ensure the boss isn't accidentally clicking it
-        if (bossPass && bossPass.trim() !== "") {
-            const subject = encodeURIComponent(`Your SYNDICACY Access Credentials`);
-            const body = encodeURIComponent(`Hi ${currentViewedUser.name},\n\nHere are your secure access credentials for the SYNDICACY portal:\n\nEmail: ${currentViewedUser.email}\nPassword: ${currentViewedUser.password}\n\nIMPORTANT SECURITY NOTE: Please delete this email immediately after logging in for the first time to maintain account security.\n\nBest,\nManagement`);
-            
-            window.location.href = `mailto:${currentViewedUser.email}?subject=${subject}&body=${body}`;
-        } else {
-            alert("Verification failed. Credentials not sent.");
+        const { data: leaders, error } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('role', 'leader')
+            .eq('password', bossPass.trim());
+
+        if (error || !leaders || leaders.length === 0) {
+            alert("ACCESS DENIED: Incorrect leader password. Email not sent.");
+            return;
         }
+
+        const subject = encodeURIComponent(`Your SYNDICACY Access Credentials`);
+        const body = encodeURIComponent(`Hi ${currentViewedUser.name},\n\nHeres your secure access credentials for the SYNDICACY portal:\n\nEmail: ${currentViewedUser.email}\nPassword: ${currentViewedUser.password}\n\nIMPORTANT SECURITY NOTE: Please delete this email immediately after logging in for the first time to maintain account security.\n\nBest,\nManagement`);
+        
+        window.location.href = `mailto:${currentViewedUser.email}?subject=${subject}&body=${body}`;
+
     } catch (err) {
         console.error(err);
+        alert("Error sending credentials.");
     }
 }
-
 // --- RENAME EMPLOYEE ---
 async function renameEmployee() {
     if (!currentViewedUser || !supabaseClient) return;
