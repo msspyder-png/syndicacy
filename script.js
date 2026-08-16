@@ -818,11 +818,6 @@ async function loadIndividualAnalytics() {
     } catch (err) { console.error(err); }
 }
 
-function changeMonth(offset) {
-    analyticsDate.setMonth(analyticsDate.getMonth() + offset);
-    loadIndividualAnalytics(); 
-}
-
 // --- SECURE PASSWORD REVEAL (STRICTLY ENFORCED) ---
 async function revealPassword() {
     if (!currentViewedUser) return;
@@ -830,6 +825,8 @@ async function revealPassword() {
     if (!bossPass) return;
 
     try {
+        // Fetch the leader's actual email from session/local storage, or query session state
+        // Here we query Supabase to find a leader account matching the typed password or verify against stored leader profile
         const { data: leaders, error } = await supabaseClient
             .from('users')
             .select('*')
@@ -841,6 +838,7 @@ async function revealPassword() {
             return;
         }
 
+        // If verification passes:
         const passBox = document.getElementById('emp-cred-pass');
         passBox.innerText = `Password: ${currentViewedUser.password}`;
         passBox.style.display = 'block';
@@ -870,7 +868,7 @@ async function emailCredentials() {
         }
 
         const subject = encodeURIComponent(`Your SYNDICACY Access Credentials`);
-        const body = encodeURIComponent(`Hi ${currentViewedUser.name},\n\nHere are your secure access credentials for the SYNDICACY portal:\n\nEmail: ${currentViewedUser.email}\nPassword: ${currentViewedUser.password}\n\nIMPORTANT SECURITY NOTE: Please delete this email immediately after logging in for the first time to maintain account security.\n\nBest,\nManagement`);
+        const body = encodeURIComponent(`Hi ${currentViewedUser.name},\n\nHeres your secure access credentials for the SYNDICACY portal:\n\nEmail: ${currentViewedUser.email}\nPassword: ${currentViewedUser.password}\n\nIMPORTANT SECURITY NOTE: Please delete this email immediately after logging in for the first time to maintain account security.\n\nBest,\nManagement`);
         
         window.location.href = `mailto:${currentViewedUser.email}?subject=${subject}&body=${body}`;
 
@@ -879,7 +877,6 @@ async function emailCredentials() {
         alert("Error sending credentials.");
     }
 }
-
 // --- RENAME EMPLOYEE ---
 async function renameEmployee() {
     if (!currentViewedUser || !supabaseClient) return;
@@ -891,7 +888,7 @@ async function renameEmployee() {
             if (error) throw error;
             
             alert(`Success! Employee renamed to ${newName.trim()}`);
-            loadIndividualAnalytics(); 
+            loadIndividualAnalytics(); // Refresh the page UI instantly
         } catch (err) {
             alert("Failed to update name in database.");
             console.error(err);
