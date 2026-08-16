@@ -14,17 +14,48 @@ try {
 // --- POPUP / MODAL CONTROLS ---
 function openModal(id) {
     const modal = document.getElementById(id);
-    if (modal) modal.style.display = 'flex';
-}
-function closeModal(id) {
-    const modal = document.getElementById(id);
-    if (modal) modal.style.display = 'none';
-}
-window.onclick = function(event) {
-    if (event.target.classList.contains('modal-bg')) {
-        event.target.style.display = 'none';
+    if (modal) {
+        modal.style.display = 'flex';
+        // If the records modal is opened, fetch the live staff list!
+        if (id === 'records-modal') {
+            loadModalStaffList();
+        }
     }
-};
+}
+
+// --- DYNAMICALLY LOAD STAFF INTO RECORDS MODAL ---
+async function loadModalStaffList() {
+    const listContainer = document.getElementById('individual-list');
+    if (!listContainer || !supabaseClient) return;
+
+    try {
+        // Fetch all non-leader staff from Supabase
+        const { data, error } = await supabaseClient.from('users').select('*').neq('role', 'leader');
+        if (error) throw error;
+
+        // Start building the HTML structure (Title)
+        let html = `<p style="font-size: 12px; color: #888; margin-top: 0;">Select a member to view records:</p>`;
+        
+        // Loop through the real database users and create clickable buttons
+        if (!data || data.length === 0) {
+            html += `<div class="name-item" style="color: #ccc; font-style: italic;">No active records yet...</div>`;
+        } else {
+            data.forEach(user => {
+                // Notice how it securely attaches their email to the URL so the next page knows who to load!
+                html += `<div class="name-item" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'">${user.name}</div>`;
+            });
+        }
+        
+        // Add the "Back" button at the bottom
+        html += `<button class="google-btn" style="margin-top: 15px; padding: 8px; font-size: 12px;" onclick="document.getElementById('individual-list').style.display='none'; document.getElementById('report-options').style.display='flex';">← Back</button>`;
+        
+        // Inject it into the modal, overwriting the dummy HTML!
+        listContainer.innerHTML = html;
+
+    } catch (err) {
+        console.error("Error loading modal list:", err);
+    }
+}
 
 // --- SMART AUTHENTICATION (DETECTIVE MODE) ---
 async function handleLeaderAuth() {
@@ -654,7 +685,9 @@ async function loadTeamLedger() {
     } catch (err) { console.error(err); }
 }
 
-// --- INDIVIDUAL ANALYTICS ---
+// --- INDIVIDUAL ANALYTICS (WITH MONTH NAVIGATION) ---
+let analyticsDate = new Date(); // Remembers which month you are viewing
+
 async function loadIndividualAnalytics() {
     const calendarGrid = document.getElementById('analytics-calendar');
     if (!calendarGrid || !supabaseClient) return; 
@@ -674,11 +707,20 @@ async function loadIndividualAnalytics() {
         document.getElementById('employee-joined-box').innerText = user.joined_date || "Unknown";
         document.getElementById('total-checkins-value').innerText = logs ? logs.length : 0;
 
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth();
+        const year = analyticsDate.getFullYear();
+        const month = analyticsDate.getMonth();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        document.getElementById('calendar-month-title').innerText = `${monthNames[month]} ${year}`;
+        
+        // Inject the Left/Right arrows directly into the HTML title
+        const monthTitleEl = document.getElementById('calendar-month-title');
+        monthTitleEl.innerHTML = `
+            <button class="i-btn" style="width: 24px; height: 24px; padding: 0; line-height: 1; margin-right: 10px;" onclick="changeMonth(-1)">&#8592;</button>
+            <span>${monthNames[month]} ${year}</span>
+            <button class="i-btn" style="width: 24px; height: 24px; padding: 0; line-height: 1; margin-left: 10px;" onclick="changeMonth(1)">&#8594;</button>
+        `;
+        monthTitleEl.style.display = 'flex';
+        monthTitleEl.style.alignItems = 'center';
+        monthTitleEl.style.justifyContent = 'center';
 
         calendarGrid.innerHTML = `
             <div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div>
@@ -697,13 +739,29 @@ async function loadIndividualAnalytics() {
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none;"></div>`);
         }
 
+        const today = new Date();
         for (let day = 1; day <= daysInMonth; day++) {
             const checkDate = new Date(year, month, day).toLocaleDateString();
             const wasPresent = logs && logs.some(log => log.date === checkDate);
-            const styleClass = wasPresent ? "cal-day cal-present" : (day <= now.getDate() ? "cal-day cal-absent" : "cal-day");
+            
+            const currentIterationDate = new Date(year, month, day);
+            let styleClass = "cal-day";
+            
+            if (wasPresent) {
+                styleClass = "cal-day cal-present";
+            } else if (currentIterationDate <= today) {
+                styleClass = "cal-day cal-absent";
+            }
+            
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="${styleClass}">${day}</div>`);
         }
     } catch (err) { console.error(err); }
+}
+
+// --- HELPER TO FLIP THE MONTH ---
+function changeMonth(offset) {
+    analyticsDate.setMonth(analyticsDate.getMonth() + offset);
+    loadIndividualAnalytics(); // Redraw the calendar!
 }
 
 // --- TEAM DIRECTORY ---
