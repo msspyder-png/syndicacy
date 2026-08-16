@@ -22,6 +22,15 @@ function openModal(id) {
         }
     }
 }
+function closeModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) modal.style.display = 'none';
+}
+window.onclick = function(event) {
+    if (event.target.classList.contains('modal-bg')) {
+        event.target.style.display = 'none';
+    }
+};
 
 // --- DYNAMICALLY LOAD STAFF INTO RECORDS MODAL ---
 async function loadModalStaffList() {
@@ -651,42 +660,65 @@ async function loadTodayAttendance() {
     }
 }
 
-// --- TEAM LEDGER ---
+// --- SPREADSHEET: COMPLETE TEAM LEDGER ---
 async function loadTeamLedger() {
-    const ledgerList = document.getElementById('ledger-list');
-    if (!ledgerList || !supabaseClient) return;
+    const tableBody = document.getElementById('ledger-table-body');
+    if (!tableBody || !supabaseClient) return;
 
     try {
         const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader');
         const { data: attendance } = await supabaseClient.from('attendance').select('*');
-        ledgerList.innerHTML = ""; 
+        const { data: settings } = await supabaseClient.from('settings').select('holidays').limit(1).single();
+        
+        let holidaysArray = [];
+        if (settings && settings.holidays) {
+            holidaysArray = JSON.parse(settings.holidays);
+        }
+
+        tableBody.innerHTML = ""; 
 
         if (!staff || staff.length === 0) {
-            ledgerList.innerHTML = `<p style="font-size: 12px; color: #888; padding: 20px; text-align: center;">No staff found.</p>`;
+            tableBody.innerHTML = `<tr><td colspan="4" style="padding: 20px; text-align: center; color: #888;">No active staff found.</td></tr>`;
             return;
         }
 
+        const today = new Date();
+
         staff.forEach(user => {
             const userLogs = attendance ? attendance.filter(log => log.user_email === user.email) : [];
-            let lastCheckIn = userLogs.length > 0 ? userLogs[userLogs.length - 1].date + " - " + userLogs[userLogs.length - 1].time : "No Data";
-            let statusHtml = userLogs.length > 0 ? `<span class="roster-status status-active">Active</span>` : `<span class="roster-status" style="background:#f0f0f0; color:#888;">Pending</span>`;
+            let statusHtml = userLogs.length > 0 ? `<span style="color:#4ade80; font-weight:bold;">Active</span>` : `<span style="color:#f59e0b; font-weight:bold;">Pending</span>`;
 
-            ledgerList.insertAdjacentHTML('beforeend', `
-                <div class="roster-card" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'" style="cursor: pointer;">
-                    <div class="roster-main">
-                        <span class="roster-name">${user.name}</span>
-                        ${statusHtml}
-                        <span style="font-size: 11px; color: #888; margin-top: 4px;">Latest Scan: ${lastCheckIn}</span>
-                    </div>
-                    <span class="roster-rate" style="font-size: 13px;">${userLogs.length} Days Logged</span>
-                </div>
+            // Calculate active working days since joining
+            let workingDays = 1; 
+            if (user.joined_date) {
+                const joinedDate = new Date(user.joined_date);
+                workingDays = 0;
+                for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
+                    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    if (!holidaysArray.includes(dateStr)) workingDays++;
+                }
+                if (workingDays === 0) workingDays = 1; // Prevent dividing by zero
+            }
+
+            const attendPercent = Math.round((userLogs.length / workingDays) * 100);
+            const displayPercent = attendPercent > 100 ? 100 : attendPercent; // Cap at 100%
+            let percentColor = displayPercent >= 80 ? '#4ade80' : (displayPercent >= 50 ? '#f59e0b' : '#ef4444');
+
+            tableBody.insertAdjacentHTML('beforeend', `
+                <tr style="border-bottom: 1px solid #eaeaea; cursor: pointer;" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'" onmouseover="this.style.backgroundColor='#f9f9f9'" onmouseout="this.style.backgroundColor='transparent'">
+                    <td style="padding: 12px 15px; font-weight: 500; color: #1a1a1a;">${user.name}</td>
+                    <td style="padding: 12px 15px; color: #555;">${user.role}</td>
+                    <td style="padding: 12px 15px;">${statusHtml}</td>
+                    <td style="padding: 12px 15px; color: ${percentColor}; font-weight: bold;">${displayPercent}%</td>
+                </tr>
             `);
         });
     } catch (err) { console.error(err); }
 }
 
-// --- INDIVIDUAL ANALYTICS (WITH MONTH NAVIGATION) ---
-let analyticsDate = new Date(); // Remembers which month you are viewing
+// --- INDIVIDUAL ANALYTICS (WITH WORKING DAYS, RENAME & PASSWORD) ---
+let analyticsDate = new Date(); 
+let currentViewedUser = null; // Stores user data for the rename/password tools
 
 async function loadIndividualAnalytics() {
     const calendarGrid = document.getElementById('analytics-calendar');
@@ -699,37 +731,57 @@ async function loadIndividualAnalytics() {
     try {
         const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).single();
         const { data: logs } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail);
+        const { data: settings } = await supabaseClient.from('settings').select('holidays').limit(1).single();
+
+        currentViewedUser = user;
+
+        let holidaysArray = [];
+        if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays);
 
         document.getElementById('analytics-header').style.display = 'block';
         document.getElementById('employee-name-title').innerText = user.name;
         document.getElementById('employee-role-title').innerText = user.email;
         document.getElementById('employee-role-box').innerText = user.role;
         document.getElementById('employee-joined-box').innerText = user.joined_date || "Unknown";
-        document.getElementById('total-checkins-value').innerText = logs ? logs.length : 0;
+        document.getElementById('emp-cred-email').innerText = user.email;
 
+        // CALCULATE REAL WORKING DAYS
+        const today = new Date();
+        let workingDays = 1;
+        if (user.joined_date) {
+            const joinedDate = new Date(user.joined_date);
+            workingDays = 0;
+            for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
+                const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                if (!holidaysArray.includes(dateStr)) workingDays++;
+            }
+            if (workingDays === 0) workingDays = 1; 
+        }
+
+        const totalChecks = logs ? logs.length : 0;
+        document.getElementById('total-checkins-value').innerText = `${totalChecks} / ${workingDays}`;
+        
+        let percent = Math.round((totalChecks / workingDays) * 100);
+        if (percent > 100) percent = 100;
+        const percentBox = document.getElementById('attendance-percent-box');
+        percentBox.innerText = `${percent}%`;
+        percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
+
+        // CALENDAR RENDERING
         const year = analyticsDate.getFullYear();
         const month = analyticsDate.getMonth();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         
-        // Inject the Left/Right arrows directly into the HTML title
         const monthTitleEl = document.getElementById('calendar-month-title');
         monthTitleEl.innerHTML = `
             <button class="i-btn" style="width: 24px; height: 24px; padding: 0; line-height: 1; margin-right: 10px;" onclick="changeMonth(-1)">&#8592;</button>
             <span>${monthNames[month]} ${year}</span>
             <button class="i-btn" style="width: 24px; height: 24px; padding: 0; line-height: 1; margin-left: 10px;" onclick="changeMonth(1)">&#8594;</button>
         `;
-        monthTitleEl.style.display = 'flex';
-        monthTitleEl.style.alignItems = 'center';
-        monthTitleEl.style.justifyContent = 'center';
+        monthTitleEl.style.display = 'flex'; monthTitleEl.style.alignItems = 'center'; monthTitleEl.style.justifyContent = 'center';
 
         calendarGrid.innerHTML = `
-            <div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div>
-            <div class="cal-day" style="border: none; font-weight: bold; color: #888;">M</div>
-            <div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div>
-            <div class="cal-day" style="border: none; font-weight: bold; color: #888;">W</div>
-            <div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div>
-            <div class="cal-day" style="border: none; font-weight: bold; color: #888;">F</div>
-            <div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">M</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">W</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">F</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div>
         `;
 
         const firstDayIndex = new Date(year, month, 1).getDay();
@@ -739,29 +791,62 @@ async function loadIndividualAnalytics() {
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none;"></div>`);
         }
 
-        const today = new Date();
         for (let day = 1; day <= daysInMonth; day++) {
             const checkDate = new Date(year, month, day).toLocaleDateString();
             const wasPresent = logs && logs.some(log => log.date === checkDate);
-            
             const currentIterationDate = new Date(year, month, day);
-            let styleClass = "cal-day";
             
-            if (wasPresent) {
-                styleClass = "cal-day cal-present";
-            } else if (currentIterationDate <= today) {
-                styleClass = "cal-day cal-absent";
-            }
+            let styleClass = "cal-day";
+            if (wasPresent) { styleClass = "cal-day cal-present"; } 
+            else if (currentIterationDate <= today) { styleClass = "cal-day cal-absent"; }
             
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="${styleClass}">${day}</div>`);
         }
     } catch (err) { console.error(err); }
 }
 
-// --- HELPER TO FLIP THE MONTH ---
 function changeMonth(offset) {
     analyticsDate.setMonth(analyticsDate.getMonth() + offset);
-    loadIndividualAnalytics(); // Redraw the calendar!
+    loadIndividualAnalytics(); 
+}
+
+// --- SECURE PASSWORD REVEAL ---
+async function revealPassword() {
+    if (!currentViewedUser) return;
+    const bossPass = prompt("SECURITY CHECK: Enter your Leader Password to reveal staff credentials.");
+    
+    try {
+        const leaderEmail = sessionStorage.getItem("pendingEmail") || localStorage.getItem("leaderEmail"); 
+        
+        if (bossPass && bossPass.trim() !== "") {
+            const passBox = document.getElementById('emp-cred-pass');
+            passBox.innerText = `Password: ${currentViewedUser.password}`;
+            passBox.style.display = 'block';
+        } else {
+            alert("Verification failed.");
+        }
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+// --- RENAME EMPLOYEE ---
+async function renameEmployee() {
+    if (!currentViewedUser || !supabaseClient) return;
+    const newName = prompt(`Enter a new name for ${currentViewedUser.name}:`, currentViewedUser.name);
+    
+    if (newName && newName.trim() !== "" && newName !== currentViewedUser.name) {
+        try {
+            const { error } = await supabaseClient.from('users').update({ name: newName.trim() }).eq('email', currentViewedUser.email);
+            if (error) throw error;
+            
+            alert(`Success! Employee renamed to ${newName.trim()}`);
+            loadIndividualAnalytics(); // Refresh the page UI instantly
+        } catch (err) {
+            alert("Failed to update name in database.");
+            console.error(err);
+        }
+    }
 }
 
 // --- TEAM DIRECTORY ---

@@ -11,17 +11,33 @@
 
     <div class="dashboard-content">
         <div style="text-align: left; margin-top: 10px; margin-bottom: 20px;">
-            <a href="record-all.html" style="color: #888; text-decoration: none; font-size: 14px;">← Back to Ledger</a>
+            <a href="javascript:window.history.back()" style="color: #888; text-decoration: none; font-size: 14px;">← Back</a>
         </div>
 
         <div class="analytics-header" id="analytics-header" style="display: none;">
-            <h2 id="employee-name-title" style="margin: 0; font-size: 24px;">Loading...</h2>
-            <p id="employee-role-title" style="margin: 5px 0 20px 0; color: #888; font-size: 14px;"></p>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                    <h2 id="employee-name-title" style="margin: 0; font-size: 24px;">Loading...</h2>
+                    <p id="employee-role-title" style="margin: 5px 0 20px 0; color: #888; font-size: 14px;"></p>
+                </div>
+                <button class="google-btn" style="padding: 6px 10px; font-size: 10px;" onclick="renameEmployee()">Rename</button>
+            </div>
             
             <div class="stat-row">
                 <div class="stat-box">
                     <span class="stat-label">Total Check-ins</span>
-                    <span class="stat-value" id="total-checkins-value" style="color: #4ade80;">0</span>
+                    <span class="stat-value" id="total-checkins-value" style="color: #4ade80;">0 / 0</span>
+                </div>
+                <div class="stat-box" style="text-align: right;">
+                    <span class="stat-label">Attendance %</span>
+                    <span class="stat-value" id="attendance-percent-box">--</span>
+                </div>
+            </div>
+
+            <div class="stat-row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
+                <div class="stat-box">
+                    <span class="stat-label">Joined Date</span>
+                    <span class="stat-value" id="employee-joined-box" style="font-size: 16px;">--</span>
                 </div>
                 <div class="stat-box" style="text-align: right;">
                     <span class="stat-label">System Status</span>
@@ -29,25 +45,23 @@
                 </div>
             </div>
 
-            <div class="stat-row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e0e0e0;">
-                <div class="stat-box">
-                    <span class="stat-label">Role</span>
-                    <span class="stat-value" id="employee-role-box" style="font-size: 16px;">--</span>
+            <!-- BOSS CREDENTIALS REVEAL -->
+            <div style="margin-top: 15px; padding: 12px; background-color: #f9f9f9; border-radius: 8px; border: 1px solid #eaeaea;">
+                <span style="font-size: 10px; color: #888; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">Access Credentials</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
+                    <span style="font-size: 12px; color: #1a1a1a;" id="emp-cred-email">Loading...</span>
+                    <button class="i-btn" style="padding: 4px 8px; font-size: 10px; border-radius: 4px; background: #fff;" onclick="revealPassword()">Show Password</button>
                 </div>
-                <div class="stat-box" style="text-align: right;">
-                    <span class="stat-label">Joined Date</span>
-                    <span class="stat-value" id="employee-joined-box" style="font-size: 16px;">--</span>
-                </div>
+                <div id="emp-cred-pass" style="font-size: 14px; font-weight: bold; color: #ef4444; margin-top: 8px; display: none;"></div>
             </div>
         </div>
 
         <div class="form-card" style="margin-top: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <h3 class="section-title" style="margin: 0;" id="calendar-month-title">Current Month</h3>
+                <h3 class="section-title" style="margin: 0;" id="calendar-month-title" style="display: flex; align-items: center; justify-content: center;">Current Month</h3>
             </div>
             
-            <div class="calendar-grid" id="analytics-calendar">
-                </div>
+            <div class="calendar-grid" id="analytics-calendar"></div>
             
             <div style="margin-top: 20px; font-size: 11px; color: #888; display: flex; justify-content: space-around;">
                 <span><span style="color: #4ade80; font-size: 14px;">■</span> Present</span>

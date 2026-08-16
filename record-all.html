@@ -14,17 +14,30 @@
             <a href="leader-dashboard.html" style="color: #888; text-decoration: none; font-size: 14px;">← Back to Overview</a>
         </div>
 
-        <div class="roster-header">
-            <h2 class="title" style="font-size: 20px; margin: 0;">Complete Team Ledger</h2>
-            
-            <select id="roster-sort" class="input-field select-field" style="width: auto; padding: 8px 12px; font-size: 12px;" onchange="sortRoster()">
-                <option value="az">Sort: A-Z</option>
-                <option value="high">Most Check-ins</option>
-            </select>
+        <div class="roster-header" style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px;">
+            <div>
+                <h2 class="title" style="font-size: 20px; margin: 0;">Complete Team Ledger</h2>
+                <p style="font-size: 12px; color: #888; margin: 4px 0 0 0;">Master attendance overview</p>
+            </div>
         </div>
 
-        <div class="directory-list" id="ledger-list">
-            <p style="font-size: 12px; color: #888; padding: 20px; text-align: center;">Loading ledger data...</p>
+        <!-- THE SPREADSHEET GRID -->
+        <div class="form-card" style="padding: 0; overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12px; white-space: nowrap;">
+                <thead>
+                    <tr style="background-color: #f9f9f9; border-bottom: 2px solid #eaeaea;">
+                        <th style="padding: 12px 15px; color: #888; font-weight: 600;">Name</th>
+                        <th style="padding: 12px 15px; color: #888; font-weight: 600;">Role</th>
+                        <th style="padding: 12px 15px; color: #888; font-weight: 600;">Status</th>
+                        <th style="padding: 12px 15px; color: #888; font-weight: 600;">Attend %</th>
+                    </tr>
+                </thead>
+                <tbody id="ledger-table-body">
+                    <tr>
+                        <td colspan="4" style="padding: 20px; text-align: center; color: #888;">Loading ledger data...</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
