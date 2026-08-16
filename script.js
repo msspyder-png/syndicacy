@@ -16,10 +16,7 @@ function openModal(id) {
     const modal = document.getElementById(id);
     if (modal) {
         modal.style.display = 'flex';
-        // If the records modal is opened, fetch the live staff list!
-        if (id === 'records-modal') {
-            loadModalStaffList();
-        }
+        if (id === 'records-modal') loadModalStaffList();
     }
 }
 function closeModal(id) {
@@ -38,29 +35,21 @@ async function loadModalStaffList() {
     if (!listContainer || !supabaseClient) return;
 
     try {
-        // Fetch all non-leader staff from Supabase
         const { data, error } = await supabaseClient.from('users').select('*').neq('role', 'leader');
         if (error) throw error;
 
-        // Start building the HTML structure (Title)
         let html = `<p style="font-size: 12px; color: #888; margin-top: 0;">Select a member to view records:</p>`;
         
-        // Loop through the real database users and create clickable buttons
         if (!data || data.length === 0) {
             html += `<div class="name-item" style="color: #ccc; font-style: italic;">No active records yet...</div>`;
         } else {
             data.forEach(user => {
-                // Notice how it securely attaches their email to the URL so the next page knows who to load!
                 html += `<div class="name-item" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'">${user.name}</div>`;
             });
         }
         
-        // Add the "Back" button at the bottom
         html += `<button class="google-btn" style="margin-top: 15px; padding: 8px; font-size: 12px;" onclick="document.getElementById('individual-list').style.display='none'; document.getElementById('report-options').style.display='flex';">← Back</button>`;
-        
-        // Inject it into the modal, overwriting the dummy HTML!
         listContainer.innerHTML = html;
-
     } catch (err) {
         console.error("Error loading modal list:", err);
     }
@@ -330,7 +319,6 @@ async function loadPendingInvites() {
                 btnHtml = `<button class="main-btn" style="padding: 6px 12px; font-size: 10px; background-color: #4ade80; color: black; border: none; cursor: pointer;" onclick="approveInvite('${invite.id}', '${invite.name}')">Approve Now</button>`;
             }
 
-            // ADDING THE REJECT 'X' BUTTON HERE
             btnHtml += `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 26px; height: 26px; flex-shrink: 0; margin-left: 8px;" onclick="deleteInvite('${invite.id}', '${invite.name}')">×</button>`;
 
             const card = `
@@ -405,18 +393,12 @@ async function approveInvite(inviteId, employeeName) {
 // --- REJECT / DELETE INVITE ---
 async function deleteInvite(inviteId, employeeName) {
     if (!confirm(`Are you sure you want to delete the invite for ${employeeName}?`)) return;
-
     if (!supabaseClient) return;
 
     try {
-        const { error } = await supabaseClient
-            .from('staff_invites')
-            .delete()
-            .eq('id', inviteId);
-
+        const { error } = await supabaseClient.from('staff_invites').delete().eq('id', inviteId);
         if (error) throw error;
-
-        loadPendingInvites(); // Refresh the list
+        loadPendingInvites();
     } catch (err) {
         console.error(err);
         alert("Error deleting invite: " + err.message);
@@ -449,7 +431,6 @@ async function verifyInviteLink() {
 
         if (error || !invite) throw error;
 
-        // 1. SECURITY CHECK: Block link if face scan is already completed or approved
         if (invite.status !== 'pending') {
             const errorMsg = document.querySelector('#error-state p');
             if (errorMsg) errorMsg.innerText = "This invitation link has already been used.";
@@ -458,7 +439,6 @@ async function verifyInviteLink() {
             return;
         }
 
-        // 2. EXPIRATION CHECK: Lock link if older than 7 days
         if (invite.created_at) {
             const createdDate = new Date(invite.created_at);
             const currentDate = new Date();
@@ -564,7 +544,6 @@ async function captureFace() {
         }
 
         const faceDataString = JSON.stringify(Array.from(detection.descriptor));
-
         const canvasSnapshot = document.createElement('canvas');
         canvasSnapshot.width = video.videoWidth || 320;
         canvasSnapshot.height = video.videoHeight || 240;
@@ -660,6 +639,35 @@ async function loadTodayAttendance() {
     }
 }
 
+// --- HELPER: CALCULATE AVERAGE CHECK-IN TIME ---
+function calculateAvgCheckInTime(logs) {
+    if (!logs || logs.length === 0) return "--:--";
+    let totalMins = 0;
+    let count = 0;
+    logs.forEach(log => {
+        if (log.time) {
+            const match = log.time.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/);
+            if (match) {
+                let h = parseInt(match[1]);
+                let m = parseInt(match[2]);
+                let ampm = match[3] ? match[3].toUpperCase() : null;
+                if (ampm === 'PM' && h < 12) h += 12;
+                if (ampm === 'AM' && h === 12) h = 0;
+                totalMins += (h * 60) + m;
+                count++;
+            }
+        }
+    });
+    if (count === 0) return "--:--";
+    let avg = Math.round(totalMins / count);
+    let avgH = Math.floor(avg / 60);
+    let avgM = avg % 60;
+    let ampm = avgH >= 12 ? 'PM' : 'AM';
+    let displayH = avgH % 12;
+    if (displayH === 0) displayH = 12;
+    return `${String(displayH).padStart(2, '0')}:${String(avgM).padStart(2, '0')} ${ampm}`;
+}
+
 // --- SPREADSHEET: COMPLETE TEAM LEDGER ---
 async function loadTeamLedger() {
     const tableBody = document.getElementById('ledger-table-body');
@@ -678,7 +686,7 @@ async function loadTeamLedger() {
         tableBody.innerHTML = ""; 
 
         if (!staff || staff.length === 0) {
-            tableBody.innerHTML = `<tr><td colspan="4" style="padding: 20px; text-align: center; color: #888;">No active staff found.</td></tr>`;
+            tableBody.innerHTML = `<tr><td colspan="5" style="padding: 20px; text-align: center; color: #888;">No active staff found.</td></tr>`;
             return;
         }
 
@@ -687,8 +695,9 @@ async function loadTeamLedger() {
         staff.forEach(user => {
             const userLogs = attendance ? attendance.filter(log => log.user_email === user.email) : [];
             let statusHtml = userLogs.length > 0 ? `<span style="color:#4ade80; font-weight:bold;">Active</span>` : `<span style="color:#f59e0b; font-weight:bold;">Pending</span>`;
+            
+            let avgTimeStr = calculateAvgCheckInTime(userLogs);
 
-            // Calculate active working days since joining
             let workingDays = 1; 
             if (user.joined_date) {
                 const joinedDate = new Date(user.joined_date);
@@ -697,19 +706,20 @@ async function loadTeamLedger() {
                     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
                     if (!holidaysArray.includes(dateStr)) workingDays++;
                 }
-                if (workingDays === 0) workingDays = 1; // Prevent dividing by zero
+                if (workingDays === 0) workingDays = 1; 
             }
 
             const attendPercent = Math.round((userLogs.length / workingDays) * 100);
-            const displayPercent = attendPercent > 100 ? 100 : attendPercent; // Cap at 100%
+            const displayPercent = attendPercent > 100 ? 100 : attendPercent; 
             let percentColor = displayPercent >= 80 ? '#4ade80' : (displayPercent >= 50 ? '#f59e0b' : '#ef4444');
 
             tableBody.insertAdjacentHTML('beforeend', `
                 <tr style="border-bottom: 1px solid #eaeaea; cursor: pointer;" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'" onmouseover="this.style.backgroundColor='#f9f9f9'" onmouseout="this.style.backgroundColor='transparent'">
                     <td style="padding: 12px 15px; font-weight: 500; color: #1a1a1a;">${user.name}</td>
                     <td style="padding: 12px 15px; color: #555;">${user.role}</td>
-                    <td style="padding: 12px 15px;">${statusHtml}</td>
+                    <td style="padding: 12px 15px; color: #555;">${avgTimeStr}</td>
                     <td style="padding: 12px 15px; color: ${percentColor}; font-weight: bold;">${displayPercent}%</td>
+                    <td style="padding: 12px 15px; text-align: right;">${statusHtml}</td>
                 </tr>
             `);
         });
@@ -718,7 +728,7 @@ async function loadTeamLedger() {
 
 // --- INDIVIDUAL ANALYTICS (WITH WORKING DAYS, RENAME & PASSWORD) ---
 let analyticsDate = new Date(); 
-let currentViewedUser = null; // Stores user data for the rename/password tools
+let currentViewedUser = null; 
 
 async function loadIndividualAnalytics() {
     const calendarGrid = document.getElementById('analytics-calendar');
@@ -740,12 +750,10 @@ async function loadIndividualAnalytics() {
 
         document.getElementById('analytics-header').style.display = 'block';
         document.getElementById('employee-name-title').innerText = user.name;
-        document.getElementById('employee-role-title').innerText = user.email;
-        document.getElementById('employee-role-box').innerText = user.role;
-        document.getElementById('employee-joined-box').innerText = user.joined_date || "Unknown";
-        document.getElementById('emp-cred-email').innerText = user.email;
+        document.getElementById('employee-role-title').innerText = user.role; 
+        document.getElementById('employee-joined-box').innerText = user.joined_date || "N/A";
+        document.getElementById('emp-cred-email').innerText = user.email || "No Email";
 
-        // CALCULATE REAL WORKING DAYS
         const today = new Date();
         let workingDays = 1;
         if (user.joined_date) {
@@ -761,13 +769,14 @@ async function loadIndividualAnalytics() {
         const totalChecks = logs ? logs.length : 0;
         document.getElementById('total-checkins-value').innerText = `${totalChecks} / ${workingDays}`;
         
+        document.getElementById('avg-in-time').innerText = calculateAvgCheckInTime(logs);
+        
         let percent = Math.round((totalChecks / workingDays) * 100);
         if (percent > 100) percent = 100;
         const percentBox = document.getElementById('attendance-percent-box');
         percentBox.innerText = `${percent}%`;
         percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
 
-        // CALENDAR RENDERING
         const year = analyticsDate.getFullYear();
         const month = analyticsDate.getMonth();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -816,8 +825,6 @@ async function revealPassword() {
     const bossPass = prompt("SECURITY CHECK: Enter your Leader Password to reveal staff credentials.");
     
     try {
-        const leaderEmail = sessionStorage.getItem("pendingEmail") || localStorage.getItem("leaderEmail"); 
-        
         if (bossPass && bossPass.trim() !== "") {
             const passBox = document.getElementById('emp-cred-pass');
             passBox.innerText = `Password: ${currentViewedUser.password}`;
@@ -1143,7 +1150,6 @@ async function handleStaffLogin() {
     }
 }
 
-// --- FULLY SYNCHRONIZED BOUNCER (TIME, HOLIDAY, PIN, & GPS ENFORCED) ---
 async function startDailyScanner() {
     const activateBtn = document.getElementById('activate-scanner-btn');
     const scannerContainer = document.getElementById('scanner-container');
