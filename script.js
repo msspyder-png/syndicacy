@@ -1154,6 +1154,7 @@ function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
 
 let currentStaff = null; 
 let scannerInterval = null;
+let staffAnalyticsDate = new Date();
 
 async function handleStaffLogin() {
     const email = document.getElementById('staff-email').value.trim();
@@ -1170,7 +1171,6 @@ async function handleStaffLogin() {
         if (error) throw error;
 
         if (user && user.password === pass) {
-            // SUCCESS! Redirect directly to the dashboard, skip the restricted scanner UI
             sessionStorage.setItem('loggedInStaff', JSON.stringify(user));
             window.location.href = 'staff-dashboard.html';
         } else {
@@ -1186,20 +1186,19 @@ async function handleStaffLogin() {
     }
 }
 
-// --- INITIALIZE REAL STAFF DASHBOARD ---
 function loadStaffDashboard() {
     const checkInBtn = document.getElementById('check-in-btn');
-    if (!checkInBtn) return; // Not on the staff dashboard
+    if (!checkInBtn) return; // Not on the staff dashboard page
 
     const sessionData = sessionStorage.getItem('loggedInStaff');
     if (!sessionData) {
-        window.location.href = 'staff.html'; // Kick out if not logged in
+        window.location.href = 'staff.html';
         return;
     }
 
     currentStaff = JSON.parse(sessionData);
 
-    // Personalize Dashboard
+    // Personalize Home Dashboard
     const dashHeader = document.querySelector('.dash-header h2');
     if (dashHeader && dashHeader.innerText.includes("Good Morning")) {
         dashHeader.innerText = `Good Morning, ${currentStaff.name.split(' ')[0]}`;
@@ -1210,8 +1209,7 @@ function loadStaffDashboard() {
         avatar.innerText = currentStaff.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
     }
 
-    // Secure Logout intercept (Removes session and sends them out safely)
-    const logOutBtn = document.querySelector("button[onclick*='index.html']");
+    const logOutBtn = document.getElementById("secure-logout-btn");
     if (logOutBtn) {
         logOutBtn.onclick = function(e) {
             e.preventDefault();
@@ -1220,11 +1218,165 @@ function loadStaffDashboard() {
         };
     }
 
-    // OVERRIDE DUMMY BUTTON WITH REAL SCANNER
     checkInBtn.onclick = function(event) {
         event.preventDefault(); 
         startDailyScanner();
     };
+
+    // Load their cloud analytics immediately
+    loadStaffRecords();
+}
+
+async function loadStaffRecords() {
+    if (!currentStaff || !supabaseClient) return;
+
+    try {
+        const targetEmail = currentStaff.email;
+        const { data: logs } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail);
+        const { data: settings } = await supabaseClient.from('settings').select('*').limit(1).single();
+
+        let holidaysArray = [];
+        if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays);
+
+        if(document.getElementById('staff-window-display')) {
+            document.getElementById('staff-window-display').innerText = `${settings.check_in_start || "09:00"} - ${settings.check_in_end || "10:00"}`;
+        }
+
+        // Fill the black box headers
+        document.getElementById('staff-ledger-name').innerText = currentStaff.name;
+        document.getElementById('staff-ledger-role').innerText = currentStaff.role;
+        document.getElementById('staff-ledger-joined').innerText = currentStaff.joined_date || "N/A";
+
+        const today = new Date();
+        let workingDays = 1;
+        if (currentStaff.joined_date) {
+            const joinedDate = new Date(currentStaff.joined_date);
+            workingDays = 0;
+            for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
+                const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                if (!holidaysArray.includes(dateStr)) workingDays++;
+            }
+            if (workingDays === 0) workingDays = 1; 
+        }
+
+        const totalChecks = logs ? logs.length : 0;
+        document.getElementById('staff-ledger-checkins').innerText = `${totalChecks} / ${workingDays}`;
+        document.getElementById('staff-ledger-avg').innerText = calculateAvgCheckInTime(logs);
+        
+        let percent = Math.round((totalChecks / workingDays) * 100);
+        if (percent > 100) percent = 100;
+        const percentBox = document.getElementById('staff-ledger-percent');
+        percentBox.innerText = `${percent}%`;
+        percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
+
+        // Dynamic Status Logic
+        const todayStr2 = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const isHoliday = holidaysArray.includes(todayStr2);
+        const localDateStr = today.toLocaleDateString();
+        const checkedInToday = logs && logs.some(log => log.date === localDateStr);
+
+        const statusBox = document.getElementById('staff-ledger-status');
+        if (isHoliday) {
+            statusBox.innerText = "Holiday / Off";
+            statusBox.style.color = "#a0a0a0";
+            document.getElementById('status-text').innerText = "Holiday / Off";
+            document.getElementById('check-in-btn').style.display = "none";
+        } else if (checkedInToday) {
+            statusBox.innerText = "Present";
+            statusBox.style.color = "#4ade80";
+            
+            // Sync Home tab if already checked in
+            const card = document.getElementById('status-card');
+            card.innerHTML = `
+                <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
+                <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
+            `;
+            card.classList.remove('ghost-theme');
+            card.style.border = '1px solid #e0e0e0';
+            card.style.backgroundColor = '#ffffff';
+        } else {
+            statusBox.innerText = "Absent";
+            statusBox.style.color = "#ef4444";
+        }
+
+        // Render Calendar
+        const calendarGrid = document.getElementById('staff-analytics-calendar');
+        if (calendarGrid) {
+            const year = staffAnalyticsDate.getFullYear();
+            const month = staffAnalyticsDate.getMonth();
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            
+            document.getElementById('cal-month-display').innerText = `${monthNames[month]} ${year}`;
+
+            calendarGrid.innerHTML = `
+                <div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">M</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">W</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">F</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div>
+            `;
+
+            const firstDayIndex = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            for (let i = 0; i < firstDayIndex; i++) {
+                calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none;"></div>`);
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const checkDate = new Date(year, month, day).toLocaleDateString();
+                const wasPresent = logs && logs.some(log => log.date === checkDate);
+                const currentIterationDate = new Date(year, month, day);
+                const dateStrIteration = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                
+                let styleClass = "cal-day";
+                if (holidaysArray.includes(dateStrIteration)) {
+                    styleClass = "cal-day cal-holiday";
+                } else if (wasPresent) { 
+                    styleClass = "cal-day cal-present"; 
+                } else if (currentIterationDate <= today) { 
+                    styleClass = "cal-day cal-absent"; 
+                }
+                
+                calendarGrid.insertAdjacentHTML('beforeend', `<div class="${styleClass}">${day}</div>`);
+            }
+        }
+
+        // Find Next Upcoming Holiday
+        const nextHolidayBox = document.getElementById('staff-next-holiday');
+        if (nextHolidayBox) {
+            const upcoming = holidaysArray.filter(d => new Date(d) >= today).sort();
+            if (upcoming.length > 0) {
+                const parts = upcoming[0].split('-');
+                nextHolidayBox.innerText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])}, ${parts[0]}`;
+            } else {
+                nextHolidayBox.innerText = "No upcoming holidays";
+            }
+        }
+
+    } catch (err) { console.error("Error loading staff ledger:", err); }
+}
+
+function changeStaffMonth(offset) {
+    staffAnalyticsDate.setMonth(staffAnalyticsDate.getMonth() + offset);
+    loadStaffRecords(); 
+}
+
+function switchStaffTab(tabName) {
+    document.getElementById('view-home').style.display = 'none';
+    document.getElementById('view-records').style.display = 'none';
+    document.getElementById('view-settings').style.display = 'none';
+    
+    document.getElementById('nav-home').classList.remove('active');
+    document.getElementById('nav-records').classList.remove('active');
+    document.getElementById('nav-settings').classList.remove('active');
+    
+    document.getElementById('view-' + tabName).style.display = 'block';
+    document.getElementById('nav-' + tabName).classList.add('active');
+    
+    if (tabName === 'records') loadStaffRecords();
+}
+
+function openStaffModal(title, desc) {
+    document.getElementById('staff-modal-title').innerText = title;
+    document.getElementById('staff-modal-desc').innerText = desc;
+    document.getElementById('staff-modal').style.display = 'flex';
 }
 
 async function startDailyScanner() {
@@ -1235,7 +1387,6 @@ async function startDailyScanner() {
     }
 
     try {
-        // RULES ENGINE CALLED *ONLY* WHEN CHECK-IN BUTTON CLICKED
         const { data: rules, error: rulesErr } = await supabaseClient.from('settings').select('*').limit(1).single();
         if (rulesErr) throw rulesErr;
 
@@ -1291,7 +1442,6 @@ async function startDailyScanner() {
             }
         }
 
-        // --- BUILD REAL SCANNER UI INSIDE THE DASHBOARD CARD ---
         const statusCard = document.getElementById('status-card');
         statusCard.innerHTML = `
             <div id="scanner-container" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; border: 3px solid #1a1a1a; background-color: #000; margin-bottom: 15px;">
@@ -1362,7 +1512,6 @@ async function startDailyScanner() {
                                 return;
                             }
                             
-                            // TRANSFORM UI TO SUCCESS STATE
                             statusCard.innerHTML = `
                                 <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
                                 <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
@@ -1371,13 +1520,8 @@ async function startDailyScanner() {
                             statusCard.classList.remove('ghost-theme');
                             statusCard.style.border = '1px solid #e0e0e0';
                             statusCard.style.backgroundColor = '#ffffff';
-
-                            // Update ledger dynamically
-                            const ledgerTime = document.getElementById('ledger-today-time');
-                            if(ledgerTime) {
-                                ledgerTime.innerText = timeStr;
-                                ledgerTime.style.color = '#4ade80';
-                            }
+                            
+                            loadStaffRecords();
                         });
                     }
                 } else {
