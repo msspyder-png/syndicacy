@@ -1148,13 +1148,7 @@ function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
     return R * c; 
 }
 
-// ==========================================
 // --- STAFF PORTAL & FULLY ENFORCED SCANNER ---
-// ==========================================
-
-let currentStaff = null; 
-let scannerInterval = null;
-
 async function handleStaffLogin() {
     const email = document.getElementById('staff-email').value.trim();
     const pass = document.getElementById('staff-pass').value;
@@ -1171,7 +1165,7 @@ async function handleStaffLogin() {
 
         if (user && user.password === pass) {
             currentStaff = user; 
-            document.querySelector('.container').innerHTML = `
+            document.querySelector('.form-card').innerHTML = `
                 <h2 class="title" style="font-size: 24px; margin-bottom: 10px;">Daily Check-In</h2>
                 <p class="subtitle" style="margin-bottom: 20px;">Welcome, <strong>${user.name}</strong>.</p>
                 <div id="scanner-container" style="display: none; margin-bottom: 20px; position: relative;">
@@ -1182,12 +1176,13 @@ async function handleStaffLogin() {
             `;
         } else {
             alert("Incorrect email or password.");
-            loginBtn.innerText = "Enter";
+            loginBtn.innerText = "Login";
             loginBtn.disabled = false;
         }
     } catch (err) {
-        alert("Login error.");
-        loginBtn.innerText = "Enter";
+        console.error("Staff Login Crash:", err);
+        alert("Database Error: " + err.message);
+        loginBtn.innerText = "Login";
         loginBtn.disabled = false;
     }
 }
