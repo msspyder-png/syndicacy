@@ -379,7 +379,8 @@ async function approveInvite(inviteId, employeeName) {
             .update({ status: 'approved' })
             .eq('id', inviteId);
 
-        alert(`SUCCESS!\n\n${employeeName} has been officially added to the team!\n\nTemporary password: ${tempPassword}`);
+        // Trigger the sleek new custom UI popup instead of a basic alert
+        showApprovalSuccessModal(employeeName);
 
         loadPendingInvites();
         loadTeamDirectory(); 
@@ -388,6 +389,32 @@ async function approveInvite(inviteId, employeeName) {
         console.error(err);
         alert("Error approving employee: " + err.message);
     }
+}
+
+// --- CUSTOM SUCCESS POPUP FOR ADD SECTION ---
+function showApprovalSuccessModal(name) {
+    const modalDiv = document.createElement('div');
+    modalDiv.className = 'modal-bg';
+    modalDiv.id = 'approval-success-modal';
+    modalDiv.style.display = 'flex';
+    
+    modalDiv.innerHTML = `
+        <div class="modal-box animated-modal" style="text-align: center; max-width: 320px;">
+            <h3 class="section-title" style="color: #4ade80; margin-bottom: 10px; font-size: 20px;">Success!</h3>
+            <p style="font-size: 14px; color: #1a1a1a; margin-bottom: 20px;"><strong>${name}</strong> has been officially approved.</p>
+            
+            <div style="background-color: #f9f9f9; border: 1px solid #eaeaea; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: left;">
+                <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">Next Step</span>
+                <p style="font-size: 13px; color: #555; margin: 8px 0 0 0; line-height: 1.5;">
+                    Their access credentials have been securely generated. Go to the <strong>Records</strong> section to view their individual report and email them their login details so they can access the portal.
+                </p>
+            </div>
+            
+            <button class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white; border: none;" onclick="document.getElementById('approval-success-modal').remove()">Understood</button>
+        </div>
+    `;
+    
+    document.body.appendChild(modalDiv);
 }
 
 // --- REJECT / DELETE INVITE ---
@@ -818,6 +845,11 @@ async function loadIndividualAnalytics() {
     } catch (err) { console.error(err); }
 }
 
+function changeMonth(offset) {
+    analyticsDate.setMonth(analyticsDate.getMonth() + offset);
+    loadIndividualAnalytics(); 
+}
+
 // --- SECURE PASSWORD REVEAL (STRICTLY ENFORCED) ---
 async function revealPassword() {
     if (!currentViewedUser) return;
@@ -868,7 +900,7 @@ async function emailCredentials() {
         }
 
         const subject = encodeURIComponent(`Your SYNDICACY Access Credentials`);
-        const body = encodeURIComponent(`Hi ${currentViewedUser.name},\n\nHeres your secure access credentials for the SYNDICACY portal:\n\nEmail: ${currentViewedUser.email}\nPassword: ${currentViewedUser.password}\n\nIMPORTANT SECURITY NOTE: Please delete this email immediately after logging in for the first time to maintain account security.\n\nBest,\nManagement`);
+        const body = encodeURIComponent(`Hi ${currentViewedUser.name},\n\nHere,s your secure access credentials for the SYNDICACY portal:\n\nEmail: ${currentViewedUser.email}\nPassword: ${currentViewedUser.password}\n\nIMPORTANT SECURITY NOTE: Please delete this email immediately after logging in for the first time to maintain account security.\n\nBest,\nManagement`);
         
         window.location.href = `mailto:${currentViewedUser.email}?subject=${subject}&body=${body}`;
 
