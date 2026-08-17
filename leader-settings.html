@@ -115,25 +115,7 @@
             <button class="main-btn form-btn" style="width: 100%;" onclick="closeInfoModal()">Understood</button>
         </div>
     </div>
-<div id="records-modal" class="modal-bg">
-        <div class="modal-box animated-modal">
-            <span class="close" onclick="closeModal('records-modal')">×</span>
-            <h3 class="section-title" style="text-align: center; margin-bottom: 20px;">Generate Report</h3>
-            
-            <div id="report-options" class="button-stack">
-                <button class="main-btn form-btn" onclick="document.getElementById('report-options').style.display='none'; document.getElementById('individual-list').style.display='block';">Individual Report</button>
-                <a href="record-all.html" class="google-btn" style="display: block; text-align: center; text-decoration: none; box-sizing: border-box;">Complete Team Ledger</a>
-            </div>
-
-            <div id="individual-list" class="name-list" style="display: none;">
-                <p style="font-size: 12px; color: #888; margin-top: 0;">Select a member to view records:</p>
-                <div class="name-item" onclick="window.location.href='record-individual.html'">Steve Jobs</div>
-                <div class="name-item" onclick="window.location.href='record-individual.html'">Elon Musk</div>
-                
-                <button class="google-btn" style="margin-top: 15px; padding: 8px; font-size: 12px;" onclick="document.getElementById('individual-list').style.display='none'; document.getElementById('report-options').style.display='flex';">← Back</button>
-            </div>
-        </div>
-    </div>
+    
     <nav class="bottom-nav" style="position: fixed; bottom: 0; left: 0; width: 100%; z-index: 9999; background: #ffffff;">
         <a href="leader-dashboard.html" class="nav-item">
             <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
@@ -147,7 +129,7 @@
             <svg viewBox="0 0 24 24" class="nav-icon"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
             <span>Add</span>
         </a>
- <a href="javascript:void(0);" onclick="openModal('records-modal')" class="nav-item" style="text-decoration: none; color: #888; text-align: center;">
+        <a href="record-all.html" class="nav-item" style="text-decoration: none; color: #888; text-align: center;">
             <svg viewBox="0 0 24 24" class="nav-icon" style="width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 2;"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
             <span style="display: block; font-size: 10px; margin-top: 4px;">Records</span>
         </a>

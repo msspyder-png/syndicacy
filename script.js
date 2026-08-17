@@ -16,7 +16,6 @@ function openModal(id) {
     const modal = document.getElementById(id);
     if (modal) {
         modal.style.display = 'flex';
-        if (id === 'records-modal') loadModalStaffList();
     }
 }
 function closeModal(id) {
@@ -28,32 +27,6 @@ window.onclick = function(event) {
         event.target.style.display = 'none';
     }
 };
-
-// --- DYNAMICALLY LOAD STAFF INTO RECORDS MODAL ---
-async function loadModalStaffList() {
-    const listContainer = document.getElementById('individual-list');
-    if (!listContainer || !supabaseClient) return;
-
-    try {
-        const { data, error } = await supabaseClient.from('users').select('*').neq('role', 'leader');
-        if (error) throw error;
-
-        let html = `<p style="font-size: 12px; color: #888; margin-top: 0;">Select a member to view records:</p>`;
-        
-        if (!data || data.length === 0) {
-            html += `<div class="name-item" style="color: #ccc; font-style: italic;">No active records yet...</div>`;
-        } else {
-            data.forEach(user => {
-                html += `<div class="name-item" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'">${user.name}</div>`;
-            });
-        }
-        
-        html += `<button class="google-btn" style="margin-top: 15px; padding: 8px; font-size: 12px;" onclick="document.getElementById('individual-list').style.display='none'; document.getElementById('report-options').style.display='flex';">← Back</button>`;
-        listContainer.innerHTML = html;
-    } catch (err) {
-        console.error("Error loading modal list:", err);
-    }
-}
 
 // --- SMART AUTHENTICATION (DETECTIVE MODE) ---
 async function handleLeaderAuth() {
@@ -379,7 +352,6 @@ async function approveInvite(inviteId, employeeName) {
             .update({ status: 'approved' })
             .eq('id', inviteId);
 
-        // Trigger the sleek new custom UI popup instead of a basic alert
         showApprovalSuccessModal(employeeName);
 
         loadPendingInvites();
@@ -857,8 +829,6 @@ async function revealPassword() {
     if (!bossPass) return;
 
     try {
-        // Fetch the leader's actual email from session/local storage, or query session state
-        // Here we query Supabase to find a leader account matching the typed password or verify against stored leader profile
         const { data: leaders, error } = await supabaseClient
             .from('users')
             .select('*')
@@ -870,7 +840,6 @@ async function revealPassword() {
             return;
         }
 
-        // If verification passes:
         const passBox = document.getElementById('emp-cred-pass');
         passBox.innerText = `Password: ${currentViewedUser.password}`;
         passBox.style.display = 'block';
@@ -921,7 +890,7 @@ async function renameEmployee() {
             if (error) throw error;
             
             alert(`Success! Employee renamed to ${newName.trim()}`);
-            loadIndividualAnalytics(); // Refresh the page UI instantly
+            loadIndividualAnalytics(); 
         } catch (err) {
             alert("Failed to update name in database.");
             console.error(err);
