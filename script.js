@@ -1148,7 +1148,13 @@ function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
     return R * c; 
 }
 
+// ==========================================
 // --- STAFF PORTAL & FULLY ENFORCED SCANNER ---
+// ==========================================
+
+let currentStaff = null; 
+let scannerInterval = null;
+
 async function handleStaffLogin() {
     const email = document.getElementById('staff-email').value.trim();
     const pass = document.getElementById('staff-pass').value;
@@ -1164,16 +1170,9 @@ async function handleStaffLogin() {
         if (error) throw error;
 
         if (user && user.password === pass) {
-            currentStaff = user; 
-            document.querySelector('.form-card').innerHTML = `
-                <h2 class="title" style="font-size: 24px; margin-bottom: 10px;">Daily Check-In</h2>
-                <p class="subtitle" style="margin-bottom: 20px;">Welcome, <strong>${user.name}</strong>.</p>
-                <div id="scanner-container" style="display: none; margin-bottom: 20px; position: relative;">
-                    <video id="staff-video" width="100%" height="auto" autoplay muted playsinline style="border-radius: 8px; border: 3px solid #e5e7eb; background-color: #000;"></video>
-                    <p id="scanner-status" style="font-size: 12px; color: #f59e0b; font-weight: bold; margin-top: 15px;">INITIALIZING SCANNER...</p>
-                </div>
-                <button id="activate-scanner-btn" class="main-btn form-btn" onclick="startDailyScanner()">Activate Scanner</button>
-            `;
+            // SUCCESS! Redirect directly to the dashboard, skip the restricted scanner UI
+            sessionStorage.setItem('loggedInStaff', JSON.stringify(user));
+            window.location.href = 'staff-dashboard.html';
         } else {
             alert("Incorrect email or password.");
             loginBtn.innerText = "Login";
@@ -1187,15 +1186,56 @@ async function handleStaffLogin() {
     }
 }
 
-async function startDailyScanner() {
-    const activateBtn = document.getElementById('activate-scanner-btn');
-    const scannerContainer = document.getElementById('scanner-container');
-    const video = document.getElementById('staff-video');
-    const scannerStatus = document.getElementById('scanner-status');
+// --- INITIALIZE REAL STAFF DASHBOARD ---
+function loadStaffDashboard() {
+    const checkInBtn = document.getElementById('check-in-btn');
+    if (!checkInBtn) return; // Not on the staff dashboard
 
-    if (!video || !currentStaff) return;
+    const sessionData = sessionStorage.getItem('loggedInStaff');
+    if (!sessionData) {
+        window.location.href = 'staff.html'; // Kick out if not logged in
+        return;
+    }
+
+    currentStaff = JSON.parse(sessionData);
+
+    // Personalize Dashboard
+    const dashHeader = document.querySelector('.dash-header h2');
+    if (dashHeader && dashHeader.innerText.includes("Good Morning")) {
+        dashHeader.innerText = `Good Morning, ${currentStaff.name.split(' ')[0]}`;
+    }
+    
+    const avatar = document.getElementById('status-avatar');
+    if (avatar && currentStaff.name) {
+        avatar.innerText = currentStaff.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
+    }
+
+    // Secure Logout intercept (Removes session and sends them out safely)
+    const logOutBtn = document.querySelector("button[onclick*='index.html']");
+    if (logOutBtn) {
+        logOutBtn.onclick = function(e) {
+            e.preventDefault();
+            sessionStorage.removeItem('loggedInStaff');
+            window.location.href = 'index.html';
+        };
+    }
+
+    // OVERRIDE DUMMY BUTTON WITH REAL SCANNER
+    checkInBtn.onclick = function(event) {
+        event.preventDefault(); 
+        startDailyScanner();
+    };
+}
+
+async function startDailyScanner() {
+    if (!currentStaff) {
+        alert("Session Expired. Please log in again.");
+        window.location.href = 'staff.html';
+        return;
+    }
 
     try {
+        // RULES ENGINE CALLED *ONLY* WHEN CHECK-IN BUTTON CLICKED
         const { data: rules, error: rulesErr } = await supabaseClient.from('settings').select('*').limit(1).single();
         if (rulesErr) throw rulesErr;
 
@@ -1235,9 +1275,7 @@ async function startDailyScanner() {
                 alert("Manager Error: Office GPS location has not been pinned in settings yet!");
                 return;
             }
-
             alert("Verifying your location within campus limits...");
-
             const position = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
             }).catch(err => {
@@ -1253,10 +1291,17 @@ async function startDailyScanner() {
             }
         }
 
-        activateBtn.style.display = 'none';
-        scannerContainer.style.display = 'block';
-        scannerStatus.innerText = "LOADING AI MODELS...";
-        scannerStatus.style.color = "#f59e0b";
+        // --- BUILD REAL SCANNER UI INSIDE THE DASHBOARD CARD ---
+        const statusCard = document.getElementById('status-card');
+        statusCard.innerHTML = `
+            <div id="scanner-container" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; border: 3px solid #1a1a1a; background-color: #000; margin-bottom: 15px;">
+                <video id="staff-video" width="100%" height="auto" autoplay muted playsinline></video>
+            </div>
+            <p id="scanner-status" style="font-size: 12px; color: #f59e0b; font-weight: bold; margin: 0;">LOADING AI MODELS...</p>
+        `;
+
+        const video = document.getElementById('staff-video');
+        const scannerStatus = document.getElementById('scanner-status');
 
         const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
         await Promise.all([
@@ -1281,7 +1326,7 @@ async function startDailyScanner() {
             canvas.style.position = 'absolute';
             canvas.style.top = '0';
             canvas.style.left = '0';
-            scannerContainer.append(canvas);
+            document.getElementById('scanner-container').append(canvas);
 
             const displaySize = { width: video.clientWidth, height: video.clientHeight };
             faceapi.matchDimensions(canvas, displaySize);
@@ -1317,12 +1362,22 @@ async function startDailyScanner() {
                                 return;
                             }
                             
-                            document.getElementById('scanner-container').innerHTML = `
-                                <div style="text-align: center; color: #4ade80; padding: 20px;">
-                                    <h2>Access Granted!</h2>
-                                    <p style="color: #666; font-size: 14px;">Successfully clocked in at ${timeStr}</p>
-                                </div>
+                            // TRANSFORM UI TO SUCCESS STATE
+                            statusCard.innerHTML = `
+                                <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
+                                <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
+                                <p style="font-size: 12px; color: #4ade80; margin-top: 5px; font-weight: 600;">Successfully clocked in at ${timeStr}</p>
                             `;
+                            statusCard.classList.remove('ghost-theme');
+                            statusCard.style.border = '1px solid #e0e0e0';
+                            statusCard.style.backgroundColor = '#ffffff';
+
+                            // Update ledger dynamically
+                            const ledgerTime = document.getElementById('ledger-today-time');
+                            if(ledgerTime) {
+                                ledgerTime.innerText = timeStr;
+                                ledgerTime.style.color = '#4ade80';
+                            }
                         });
                     }
                 } else {
@@ -1331,8 +1386,7 @@ async function startDailyScanner() {
             }, 500); 
         };
     } catch (err) {
-        scannerStatus.innerText = "ERROR: System sync failed.";
-        scannerStatus.style.color = "red";
+        alert("System verification failed.");
         console.error(err);
     }
 }
@@ -1386,4 +1440,5 @@ window.addEventListener('DOMContentLoaded', () => {
     loadIndividualAnalytics(); 
     loadSettings(); 
     loadTodayPIN(); 
+    loadStaffDashboard(); 
 });
