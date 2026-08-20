@@ -11,6 +11,12 @@ try {
     console.error("Supabase initialization error:", e);
 }
 
+// --- GLOBAL WORKSPACE HELPER ---
+function getLeader() {
+    const data = sessionStorage.getItem('loggedInLeader');
+    return data ? JSON.parse(data) : null;
+}
+
 // --- POPUP / MODAL CONTROLS ---
 function openModal(id) {
     const modal = document.getElementById(id);
@@ -62,6 +68,14 @@ async function handleLeaderAuth() {
 
         if (user) {
             if (user.password === passInput) {
+                // If it's an old account that doesn't have a company ID yet, generate one automatically
+                if (!user.company_id) {
+                    user.company_id = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
+                    await supabaseClient.from('users').update({ company_id: user.company_id }).eq('id', user.id);
+                }
+                
+                // Store leader safely in session memory
+                sessionStorage.setItem('loggedInLeader', JSON.stringify(user));
                 window.location.href = 'leader-dashboard.html';
             } else {
                 alert("Incorrect password for this email account.");
@@ -110,18 +124,24 @@ async function verifyOTP() {
             const newEmail = sessionStorage.getItem("pendingEmail");
             const newPass = sessionStorage.getItem("pendingPass");
             const today = new Date().toLocaleDateString();
+            
+            // Create a unique workspace ID for this brand new boss
+            const newCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
 
             if (!supabaseClient) return;
 
             const { data, error } = await supabaseClient
                 .from('users')
-                .insert([{ email: newEmail, password: newPass, role: 'leader', joined_date: today }]);
+                .insert([{ email: newEmail, password: newPass, role: 'leader', joined_date: today, company_id: newCompanyId }])
+                .select();
 
             if (error) throw error;
 
             sessionStorage.removeItem("pendingEmail");
             sessionStorage.removeItem("pendingPass");
             sessionStorage.removeItem("savedOTP");
+            
+            sessionStorage.setItem('loggedInLeader', JSON.stringify(data[0]));
             window.location.href = 'leader-dashboard.html'; 
         } else {
             alert("Incorrect OTP. Please try again.");
@@ -162,6 +182,9 @@ function filterDirectory() {
 
 // --- 3. GENERATE INVITE DATA (Helper Function) ---
 async function generateInvite() {
+    const leader = getLeader();
+    if (!leader) { alert("Session expired. Please log in again."); return null; }
+
     const nameEl = document.getElementById('staff-name');
     const emailEl = document.getElementById('staff-email');
     const roleSelectEl = document.getElementById('staff-role');
@@ -185,7 +208,7 @@ async function generateInvite() {
     try {
         const { data, error } = await supabaseClient
             .from('staff_invites')
-            .insert([{ email: email, name: name, role: role, status: 'pending' }])
+            .insert([{ email: email, name: name, role: role, status: 'pending', company_id: leader.company_id }])
             .select();
             
         if (error) throw error;
@@ -256,12 +279,14 @@ async function sendInviteLink() {
 // --- FETCH PENDING & SCANNED INVITES ---
 async function loadPendingInvites() {
     const pendingList = document.getElementById('pending-list');
-    if (!pendingList || !supabaseClient) return;
+    const leader = getLeader();
+    if (!pendingList || !supabaseClient || !leader) return;
 
     try {
         const { data, error } = await supabaseClient
             .from('staff_invites')
             .select('*')
+            .eq('company_id', leader.company_id)
             .in('status', ['pending', 'scanned']); 
 
         if (error) throw error;
@@ -342,7 +367,8 @@ async function approveInvite(inviteId, employeeName) {
                 joined_date: today,
                 name: inviteData.name,
                 face_data: inviteData.face_data,
-                face_image: inviteData.face_image
+                face_image: inviteData.face_image,
+                company_id: inviteData.company_id // Attach to boss's workspace
             }]);
 
         if (insertError) throw insertError;
@@ -588,16 +614,17 @@ async function captureFace() {
 async function loadTodayAttendance() {
     const activeList = document.getElementById('active-today-list');
     const pendingList = document.getElementById('pending-today-list');
+    const leader = getLeader();
 
-    if (!activeList || !pendingList || !supabaseClient) return;
+    if (!activeList || !pendingList || !supabaseClient || !leader) return;
 
     const todayStr = new Date().toLocaleDateString();
 
     try {
-        const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('*').neq('role', 'leader');
+        const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         if (staffErr) throw staffErr;
 
-        const { data: attendanceLogs, error: attErr } = await supabaseClient.from('attendance').select('*').eq('date', todayStr);
+        const { data: attendanceLogs, error: attErr } = await supabaseClient.from('attendance').select('*').eq('date', todayStr).eq('company_id', leader.company_id);
         if (attErr) throw attErr;
 
         activeList.innerHTML = "";
@@ -670,12 +697,13 @@ function calculateAvgCheckInTime(logs) {
 // --- SPREADSHEET: COMPLETE TEAM LEDGER ---
 async function loadTeamLedger() {
     const tableBody = document.getElementById('ledger-table-body');
-    if (!tableBody || !supabaseClient) return;
+    const leader = getLeader();
+    if (!tableBody || !supabaseClient || !leader) return;
 
     try {
-        const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader');
-        const { data: attendance } = await supabaseClient.from('attendance').select('*');
-        const { data: settings } = await supabaseClient.from('settings').select('holidays').limit(1).single();
+        const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+        const { data: attendance } = await supabaseClient.from('attendance').select('*').eq('company_id', leader.company_id);
+        const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
         let holidaysArray = [];
         if (settings && settings.holidays) {
@@ -731,16 +759,17 @@ let currentViewedUser = null;
 
 async function loadIndividualAnalytics() {
     const calendarGrid = document.getElementById('analytics-calendar');
-    if (!calendarGrid || !supabaseClient) return; 
+    const leader = getLeader();
+    if (!calendarGrid || !supabaseClient || !leader) return; 
 
     const urlParams = new URLSearchParams(window.location.search);
     const targetEmail = urlParams.get('email');
     if (!targetEmail) return;
 
     try {
-        const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).single();
+        const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).maybeSingle();
         const { data: logs } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail);
-        const { data: settings } = await supabaseClient.from('settings').select('holidays').limit(1).single();
+        const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
         currentViewedUser = user;
 
@@ -749,18 +778,18 @@ async function loadIndividualAnalytics() {
 
         document.getElementById('analytics-header').style.display = 'block';
         document.getElementById('credentials-card').style.display = 'block';
-        document.getElementById('employee-name-title').innerText = user.name;
-        document.getElementById('employee-role-title').innerText = user.role; 
-        document.getElementById('employee-joined-box').innerText = user.joined_date || "N/A";
-        document.getElementById('emp-cred-email').innerText = user.email || "No Email";
+        document.getElementById('employee-name-title').innerText = user?.name || "Unknown";
+        document.getElementById('employee-role-title').innerText = user?.role || "Unknown"; 
+        document.getElementById('employee-joined-box').innerText = user?.joined_date || "N/A";
+        document.getElementById('emp-cred-email').innerText = user?.email || "No Email";
         
         // Dynamically update button text to include employee name
-        const firstName = user.name ? user.name.split(' ')[0] : 'Staff';
+        const firstName = user?.name ? user.name.split(' ')[0] : 'Staff';
         document.getElementById('email-staff-btn').innerText = `Email ${firstName}`;
 
         const today = new Date();
         let workingDays = 1;
-        if (user.joined_date) {
+        if (user && user.joined_date) {
             const joinedDate = new Date(user.joined_date);
             workingDays = 0;
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
@@ -828,12 +857,16 @@ async function revealPassword() {
     const bossPass = prompt("SECURITY CHECK: Enter your Leader Password to reveal staff credentials.");
     if (!bossPass) return;
 
+    const leader = getLeader();
+    if (!leader) return;
+
     try {
         const { data: leaders, error } = await supabaseClient
             .from('users')
             .select('*')
             .eq('role', 'leader')
-            .eq('password', bossPass.trim());
+            .eq('password', bossPass.trim())
+            .eq('company_id', leader.company_id);
 
         if (error || !leaders || leaders.length === 0) {
             alert("ACCESS DENIED: Incorrect leader password.");
@@ -856,12 +889,16 @@ async function emailCredentials() {
     const bossPass = prompt("SECURITY CHECK: Enter your Leader Password to send staff credentials.");
     if (!bossPass) return;
     
+    const leader = getLeader();
+    if (!leader) return;
+
     try {
         const { data: leaders, error } = await supabaseClient
             .from('users')
             .select('*')
             .eq('role', 'leader')
-            .eq('password', bossPass.trim());
+            .eq('password', bossPass.trim())
+            .eq('company_id', leader.company_id);
 
         if (error || !leaders || leaders.length === 0) {
             alert("ACCESS DENIED: Incorrect leader password. Email not sent.");
@@ -901,10 +938,11 @@ async function renameEmployee() {
 // --- TEAM DIRECTORY ---
 async function loadTeamDirectory() {
     const directoryList = document.getElementById('directory-list');
-    if (!directoryList || !supabaseClient) return;
+    const leader = getLeader();
+    if (!directoryList || !supabaseClient || !leader) return;
 
     try {
-        const { data } = await supabaseClient.from('users').select('*').neq('role', 'leader');
+        const { data } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         directoryList.innerHTML = ""; 
         if (!data || data.length === 0) {
             directoryList.innerHTML = `<p style="font-size: 12px; color: #888; padding: 20px; text-align: center;">No staff members yet.</p>`;
@@ -1012,10 +1050,11 @@ function markSecondSaturdays() {
 
 async function loadSettings() {
     const startInput = document.getElementById('check-in-start');
-    if (!startInput || !supabaseClient) return;
+    const leader = getLeader();
+    if (!startInput || !supabaseClient || !leader) return;
 
     try {
-        const { data, error } = await supabaseClient.from('settings').select('*').limit(1).single();
+        const { data, error } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
         if (error) throw error;
         
         if (data) {
@@ -1036,18 +1075,22 @@ async function loadSettings() {
 
 async function saveSettings() {
     const saveBtn = document.getElementById('save-settings-btn');
+    const leader = getLeader();
+    if (!leader) return;
+
     saveBtn.innerText = "Saving to Cloud...";
     saveBtn.disabled = true;
 
     try {
-        const { data: existingData } = await supabaseClient.from('settings').select('id').limit(1).single();
+        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
         const payload = {
             check_in_start: document.getElementById('check-in-start').value,
             check_in_end: document.getElementById('check-in-end').value,
             require_gps: document.getElementById('require-gps').checked,
             require_pin: document.getElementById('require-pin').checked,
-            holidays: JSON.stringify(localHolidays)
+            holidays: JSON.stringify(localHolidays),
+            company_id: leader.company_id
         };
 
         if (existingData) {
@@ -1076,23 +1119,28 @@ async function saveSettings() {
 // --- DAILY PIN GENERATOR ---
 async function loadTodayPIN() {
     const pinDisplay = document.getElementById('live-pin-display');
-    if (!pinDisplay || !supabaseClient) return;
+    const leader = getLeader();
+    if (!pinDisplay || !supabaseClient || !leader) return;
 
     try {
-        const { data } = await supabaseClient.from('settings').select('daily_pin').limit(1).single();
+        const { data } = await supabaseClient.from('settings').select('daily_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
         if (data && data.daily_pin) pinDisplay.innerText = data.daily_pin;
     } catch (err) { console.error(err); }
 }
 
 async function generateNewPIN() {
-    if (!supabaseClient) return;
+    const leader = getLeader();
+    if (!supabaseClient || !leader) return;
+    
     const newPin = Math.floor(1000 + Math.random() * 9000).toString();
     document.getElementById('live-pin-display').innerText = newPin;
 
     try {
-        const { data: existingData } = await supabaseClient.from('settings').select('id').limit(1).single();
+        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', leader.company_id).limit(1).maybeSingle();
         if (existingData) {
             await supabaseClient.from('settings').update({ daily_pin: newPin }).eq('id', existingData.id);
+        } else {
+            await supabaseClient.from('settings').insert([{ daily_pin: newPin, company_id: leader.company_id }]);
         }
     } catch (err) { console.error(err); }
 }
@@ -1102,8 +1150,9 @@ async function generateNewPIN() {
 // ==========================================
 
 async function pinpointWorkplaceLocation() {
-    if (!navigator.geolocation) {
-        alert("Geolocation is not supported by your browser.");
+    const leader = getLeader();
+    if (!navigator.geolocation || !leader) {
+        alert("Geolocation is not supported or session is missing.");
         return;
     }
 
@@ -1114,15 +1163,20 @@ async function pinpointWorkplaceLocation() {
         const lng = position.coords.longitude;
 
         try {
-            const { data: existingData } = await supabaseClient.from('settings').select('id').limit(1).single();
+            const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', leader.company_id).limit(1).maybeSingle();
             if (existingData) {
                 await supabaseClient.from('settings').update({ 
                     office_lat: lat, 
                     office_lng: lng 
                 }).eq('id', existingData.id);
-
-                alert(`SUCCESS! 📍 Office Location Saved:\nLatitude: ${lat.toFixed(4)}\nLongitude: ${lng.toFixed(4)}`);
+            } else {
+                await supabaseClient.from('settings').insert([{ 
+                    office_lat: lat, 
+                    office_lng: lng,
+                    company_id: leader.company_id
+                }]);
             }
+            alert(`SUCCESS! 📍 Office Location Saved:\nLatitude: ${lat.toFixed(4)}\nLongitude: ${lng.toFixed(4)}`);
         } catch (err) {
             console.error("GPS Save Error:", err);
             alert("Failed to save office location to cloud.");
@@ -1232,20 +1286,24 @@ async function loadStaffRecords() {
 
     try {
         const targetEmail = currentStaff.email;
-        const { data: logs } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail);
-        const { data: settings } = await supabaseClient.from('settings').select('*').limit(1).single();
+        // Notice we now filter by the staff's specific company_id
+        const { data: logs, error: logsErr } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail).eq('company_id', currentStaff.company_id);
+        if (logsErr) console.error("Logs error:", logsErr);
+
+        const { data: settings, error: setErr } = await supabaseClient.from('settings').select('*').eq('company_id', currentStaff.company_id).limit(1).maybeSingle();
+        if (setErr) console.error("Settings error:", setErr);
 
         let holidaysArray = [];
         if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays);
 
         if(document.getElementById('staff-window-display')) {
-            document.getElementById('staff-window-display').innerText = `${settings.check_in_start || "09:00"} - ${settings.check_in_end || "10:00"}`;
+            document.getElementById('staff-window-display').innerText = `${settings?.check_in_start || "09:00"} - ${settings?.check_in_end || "10:00"}`;
         }
 
         // Fill the black box headers
-        document.getElementById('staff-ledger-name').innerText = currentStaff.name;
-        document.getElementById('staff-ledger-role').innerText = currentStaff.role;
-        document.getElementById('staff-ledger-joined').innerText = currentStaff.joined_date || "N/A";
+        if(document.getElementById('staff-ledger-name')) document.getElementById('staff-ledger-name').innerText = currentStaff.name;
+        if(document.getElementById('staff-ledger-role')) document.getElementById('staff-ledger-role').innerText = currentStaff.role;
+        if(document.getElementById('staff-ledger-joined')) document.getElementById('staff-ledger-joined').innerText = currentStaff.joined_date || "N/A";
 
         const today = new Date();
         let workingDays = 1;
@@ -1260,14 +1318,16 @@ async function loadStaffRecords() {
         }
 
         const totalChecks = logs ? logs.length : 0;
-        document.getElementById('staff-ledger-checkins').innerText = `${totalChecks} / ${workingDays}`;
-        document.getElementById('staff-ledger-avg').innerText = calculateAvgCheckInTime(logs);
+        if(document.getElementById('staff-ledger-checkins')) document.getElementById('staff-ledger-checkins').innerText = `${totalChecks} / ${workingDays}`;
+        if(document.getElementById('staff-ledger-avg')) document.getElementById('staff-ledger-avg').innerText = calculateAvgCheckInTime(logs);
         
         let percent = Math.round((totalChecks / workingDays) * 100);
         if (percent > 100) percent = 100;
         const percentBox = document.getElementById('staff-ledger-percent');
-        percentBox.innerText = `${percent}%`;
-        percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
+        if(percentBox) {
+            percentBox.innerText = `${percent}%`;
+            percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
+        }
 
         // Dynamic Status Logic
         const todayStr2 = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -1276,27 +1336,35 @@ async function loadStaffRecords() {
         const checkedInToday = logs && logs.some(log => log.date === localDateStr);
 
         const statusBox = document.getElementById('staff-ledger-status');
-        if (isHoliday) {
-            statusBox.innerText = "Holiday / Off";
-            statusBox.style.color = "#a0a0a0";
-            document.getElementById('status-text').innerText = "Holiday / Off";
-            document.getElementById('check-in-btn').style.display = "none";
-        } else if (checkedInToday) {
-            statusBox.innerText = "Present";
-            statusBox.style.color = "#4ade80";
-            
-            // Sync Home tab if already checked in
-            const card = document.getElementById('status-card');
-            card.innerHTML = `
-                <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
-                <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
-            `;
-            card.classList.remove('ghost-theme');
-            card.style.border = '1px solid #e0e0e0';
-            card.style.backgroundColor = '#ffffff';
-        } else {
-            statusBox.innerText = "Absent";
-            statusBox.style.color = "#ef4444";
+        if (statusBox) {
+            if (isHoliday) {
+                statusBox.innerText = "Holiday / Off";
+                statusBox.style.color = "#a0a0a0";
+                
+                const homeStatusText = document.getElementById('status-text');
+                if (homeStatusText) homeStatusText.innerText = "Holiday / Off";
+                
+                const checkInBtn = document.getElementById('check-in-btn');
+                if (checkInBtn) checkInBtn.style.display = "none";
+            } else if (checkedInToday) {
+                statusBox.innerText = "Present";
+                statusBox.style.color = "#4ade80";
+                
+                // Sync Home tab if already checked in
+                const card = document.getElementById('status-card');
+                if (card) {
+                    card.innerHTML = `
+                        <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
+                        <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
+                    `;
+                    card.classList.remove('ghost-theme');
+                    card.style.border = '1px solid #e0e0e0';
+                    card.style.backgroundColor = '#ffffff';
+                }
+            } else {
+                statusBox.innerText = "Absent";
+                statusBox.style.color = "#ef4444";
+            }
         }
 
         // Render Calendar
@@ -1306,7 +1374,7 @@ async function loadStaffRecords() {
             const month = staffAnalyticsDate.getMonth();
             const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
             
-            document.getElementById('cal-month-display').innerText = `${monthNames[month]} ${year}`;
+            if(document.getElementById('cal-month-display')) document.getElementById('cal-month-display').innerText = `${monthNames[month]} ${year}`;
 
             calendarGrid.innerHTML = `
                 <div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">M</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">W</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">F</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div>
@@ -1387,7 +1455,7 @@ async function startDailyScanner() {
     }
 
     try {
-        const { data: rules, error: rulesErr } = await supabaseClient.from('settings').select('*').limit(1).single();
+        const { data: rules, error: rulesErr } = await supabaseClient.from('settings').select('*').eq('company_id', currentStaff.company_id).limit(1).maybeSingle();
         if (rulesErr) throw rulesErr;
 
         const now = new Date();
@@ -1505,7 +1573,8 @@ async function startDailyScanner() {
                             user_name: currentStaff.name,
                             date: todayStr,
                             time: timeStr,
-                            status: 'Present'
+                            status: 'Present',
+                            company_id: currentStaff.company_id // Safely logged to the specific workspace
                         }]).then(({ error }) => {
                             if (error) {
                                 alert("Failed to log attendance to cloud!");
