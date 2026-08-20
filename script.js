@@ -28,6 +28,23 @@ function closeModal(id) {
     const modal = document.getElementById(id);
     if (modal) modal.style.display = 'none';
 }
+
+// --- MISSING SETTINGS MODAL CONTROLS ---
+function openInfoModal(title, desc) {
+    const titleEl = document.getElementById('info-title');
+    const descEl = document.getElementById('info-desc');
+    const modalEl = document.getElementById('info-modal');
+    if (titleEl && descEl && modalEl) {
+        titleEl.innerText = title;
+        descEl.innerText = desc;
+        modalEl.style.display = 'flex';
+    }
+}
+function closeInfoModal() {
+    const modalEl = document.getElementById('info-modal');
+    if (modalEl) modalEl.style.display = 'none';
+}
+
 window.onclick = function(event) {
     if (event.target.classList.contains('modal-bg')) {
         event.target.style.display = 'none';
@@ -1067,6 +1084,26 @@ async function loadSettings() {
                 localHolidays = JSON.parse(data.holidays);
                 initializeSettingsCalendar();
             }
+
+            // Load saved exceptions onto the screen
+            if (data.exceptions) {
+                const savedExceptions = JSON.parse(data.exceptions);
+                const list = document.getElementById('exception-list');
+                if (list) {
+                    list.innerHTML = ""; // Clear existing
+                    savedExceptions.forEach(exc => {
+                        addException(); // Creates the UI row
+                        const rows = list.children;
+                        const lastRow = rows[rows.length - 1];
+                        const inputs = lastRow.querySelectorAll('input');
+                        if(inputs.length >= 3) {
+                            inputs[0].value = exc.date;
+                            inputs[1].value = exc.start;
+                            inputs[2].value = exc.end;
+                        }
+                    });
+                }
+            }
         }
     } catch (err) {
         console.error("Error loading settings:", err);
@@ -1082,6 +1119,20 @@ async function saveSettings() {
     saveBtn.disabled = true;
 
     try {
+        // Scrape the visual exception rows to save them
+        const exceptionRows = document.querySelectorAll('#exception-list div');
+        let exceptionsArray = [];
+        exceptionRows.forEach(row => {
+            const inputs = row.querySelectorAll('input');
+            if(inputs.length >= 3 && inputs[0].value && inputs[1].value && inputs[2].value) {
+                exceptionsArray.push({
+                    date: inputs[0].value,
+                    start: inputs[1].value,
+                    end: inputs[2].value
+                });
+            }
+        });
+
         const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
         const payload = {
@@ -1090,6 +1141,7 @@ async function saveSettings() {
             require_gps: document.getElementById('require-gps').checked,
             require_pin: document.getElementById('require-pin').checked,
             holidays: JSON.stringify(localHolidays),
+            exceptions: JSON.stringify(exceptionsArray),
             company_id: leader.company_id
         };
 
@@ -1286,26 +1338,66 @@ async function loadStaffRecords() {
 
     try {
         const targetEmail = currentStaff.email;
-        // Notice we now filter by the staff's specific company_id
         const { data: logs, error: logsErr } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail).eq('company_id', currentStaff.company_id);
         if (logsErr) console.error("Logs error:", logsErr);
 
         const { data: settings, error: setErr } = await supabaseClient.from('settings').select('*').eq('company_id', currentStaff.company_id).limit(1).maybeSingle();
         if (setErr) console.error("Settings error:", setErr);
 
+        const today = new Date();
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         let holidaysArray = [];
         if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays);
 
+        // --- POPULATE WORKSPACE TAB DYNAMICALLY ---
         if(document.getElementById('staff-window-display')) {
             document.getElementById('staff-window-display').innerText = `${settings?.check_in_start || "09:00"} - ${settings?.check_in_end || "10:00"}`;
         }
+        
+        const excDisplay = document.getElementById('staff-exception-display');
+        if (excDisplay && settings?.exceptions) {
+            const excArray = JSON.parse(settings.exceptions);
+            const futureExc = excArray.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
+            if (futureExc.length > 0) {
+                const next = futureExc[0];
+                const parts = next.date.split('-');
+                excDisplay.innerText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${next.start} - ${next.end})`;
+            } else {
+                excDisplay.innerText = "None scheduled";
+            }
+        }
 
-        // Fill the black box headers
+        const gpsDisplay = document.getElementById('staff-gps-display');
+        if (gpsDisplay) {
+            if (settings?.require_gps) {
+                gpsDisplay.innerText = "ENABLED";
+                gpsDisplay.style.color = "#4ade80";
+                gpsDisplay.style.background = "#dcfce7";
+            } else {
+                gpsDisplay.innerText = "DISABLED";
+                gpsDisplay.style.color = "#888";
+                gpsDisplay.style.background = "#e8e8e8";
+            }
+        }
+
+        const pinDisplay = document.getElementById('staff-pin-display');
+        if (pinDisplay) {
+            if (settings?.require_pin) {
+                pinDisplay.innerText = "ENABLED";
+                pinDisplay.style.color = "#4ade80";
+                pinDisplay.style.background = "#dcfce7";
+            } else {
+                pinDisplay.innerText = "DISABLED";
+                pinDisplay.style.color = "#888";
+                pinDisplay.style.background = "#e8e8e8";
+            }
+        }
+
+        // --- POPULATE LEDGER HEADERS ---
         if(document.getElementById('staff-ledger-name')) document.getElementById('staff-ledger-name').innerText = currentStaff.name;
         if(document.getElementById('staff-ledger-role')) document.getElementById('staff-ledger-role').innerText = currentStaff.role;
         if(document.getElementById('staff-ledger-joined')) document.getElementById('staff-ledger-joined').innerText = currentStaff.joined_date || "N/A";
 
-        const today = new Date();
         let workingDays = 1;
         if (currentStaff.joined_date) {
             const joinedDate = new Date(currentStaff.joined_date);
@@ -1329,7 +1421,7 @@ async function loadStaffRecords() {
             percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
         }
 
-        // Dynamic Status Logic
+        // --- DYNAMIC STATUS LOGIC ---
         const todayStr2 = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         const isHoliday = holidaysArray.includes(todayStr2);
         const localDateStr = today.toLocaleDateString();
@@ -1350,7 +1442,6 @@ async function loadStaffRecords() {
                 statusBox.innerText = "Present";
                 statusBox.style.color = "#4ade80";
                 
-                // Sync Home tab if already checked in
                 const card = document.getElementById('status-card');
                 if (card) {
                     card.innerHTML = `
@@ -1367,12 +1458,11 @@ async function loadStaffRecords() {
             }
         }
 
-        // Render Calendar
+        // --- RENDER CALENDAR ---
         const calendarGrid = document.getElementById('staff-analytics-calendar');
         if (calendarGrid) {
             const year = staffAnalyticsDate.getFullYear();
             const month = staffAnalyticsDate.getMonth();
-            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
             
             if(document.getElementById('cal-month-display')) document.getElementById('cal-month-display').innerText = `${monthNames[month]} ${year}`;
 
@@ -1406,7 +1496,7 @@ async function loadStaffRecords() {
             }
         }
 
-        // Find Next Upcoming Holiday
+        // --- NEXT UPCOMING HOLIDAY ---
         const nextHolidayBox = document.getElementById('staff-next-holiday');
         if (nextHolidayBox) {
             const upcoming = holidaysArray.filter(d => new Date(d) >= today).sort();
@@ -1420,7 +1510,6 @@ async function loadStaffRecords() {
 
     } catch (err) { console.error("Error loading staff ledger:", err); }
 }
-
 function changeStaffMonth(offset) {
     staffAnalyticsDate.setMonth(staffAnalyticsDate.getMonth() + offset);
     loadStaffRecords(); 
