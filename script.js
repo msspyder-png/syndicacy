@@ -17,6 +17,14 @@ function getLeader() {
     return data ? JSON.parse(data) : null;
 }
 
+// --- UNIVERSAL DATE FORMATTER ---
+function getUniversalDate(dateObj = new Date()) {
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const day = String(dateObj.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 // --- POPUP / MODAL CONTROLS ---
 function openModal(id) {
     const modal = document.getElementById(id);
@@ -140,7 +148,7 @@ async function verifyOTP() {
         if (typedOTP !== "" && typedOTP === savedOTP) {
             const newEmail = sessionStorage.getItem("pendingEmail");
             const newPass = sessionStorage.getItem("pendingPass");
-            const today = new Date().toLocaleDateString();
+            const today = getUniversalDate();
             
             // Create a unique workspace ID for this brand new boss
             const newCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
@@ -373,7 +381,7 @@ async function approveInvite(inviteId, employeeName) {
         if (fetchError) throw fetchError;
 
         const tempPassword = "Staff" + Math.floor(1000 + Math.random() * 9000);
-        const today = new Date().toLocaleDateString();
+        const today = getUniversalDate();
 
         const { error: insertError } = await supabaseClient
             .from('users')
@@ -635,7 +643,7 @@ async function loadTodayAttendance() {
 
     if (!activeList || !pendingList || !supabaseClient || !leader) return;
 
-    const todayStr = new Date().toLocaleDateString();
+    const todayStr = getUniversalDate();
 
     try {
         const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
@@ -747,7 +755,7 @@ async function loadTeamLedger() {
                 const joinedDate = new Date(user.joined_date);
                 workingDays = 0;
                 for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
-                    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                    const dateStr = getUniversalDate(d);
                     if (!holidaysArray.includes(dateStr)) workingDays++;
                 }
                 if (workingDays === 0) workingDays = 1; 
@@ -810,7 +818,7 @@ async function loadIndividualAnalytics() {
             const joinedDate = new Date(user.joined_date);
             workingDays = 0;
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
-                const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const dateStr = getUniversalDate(d);
                 if (!holidaysArray.includes(dateStr)) workingDays++;
             }
             if (workingDays === 0) workingDays = 1; 
@@ -849,14 +857,22 @@ async function loadIndividualAnalytics() {
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none;"></div>`);
         }
 
+        const todayStr2 = getUniversalDate(today);
+        const checkedInToday = logs && logs.some(log => log.date === todayStr2);
+
         for (let day = 1; day <= daysInMonth; day++) {
-            const checkDate = new Date(year, month, day).toLocaleDateString();
-            const wasPresent = logs && logs.some(log => log.date === checkDate);
             const currentIterationDate = new Date(year, month, day);
+            const dateStrIteration = getUniversalDate(currentIterationDate);
+            const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
             
             let styleClass = "cal-day";
-            if (wasPresent) { styleClass = "cal-day cal-present"; } 
-            else if (currentIterationDate <= today) { styleClass = "cal-day cal-absent"; }
+            if (holidaysArray.includes(dateStrIteration)) {
+                styleClass = "cal-day cal-holiday";
+            } else if (wasPresent) { 
+                styleClass = "cal-day cal-present"; 
+            } else if (currentIterationDate <= today) { 
+                styleClass = "cal-day cal-absent"; 
+            }
             
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="${styleClass}">${day}</div>`);
         }
@@ -986,6 +1002,7 @@ async function loadTeamDirectory() {
 // ==========================================
 
 let localHolidays = [];
+let customSchedules = []; // Global Array for Custom Employee Times
 
 function initializeSettingsCalendar() {
     const calendar = document.getElementById('settings-calendar');
@@ -1006,7 +1023,7 @@ function initializeSettingsCalendar() {
         dayDiv.innerText = i;
         dayDiv.style.cursor = 'pointer';
         
-        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        const dateStr = getUniversalDate(new Date(year, month, i));
         dayDiv.dataset.date = dateStr;
 
         if (localHolidays.includes(dateStr)) {
@@ -1021,6 +1038,7 @@ function initializeSettingsCalendar() {
                 this.classList.replace('cal-holiday', 'cal-present');
                 localHolidays = localHolidays.filter(d => d !== dateStr);
             }
+            saveSettings(); // Auto-save on calendar tap
         };
         calendar.appendChild(dayDiv);
     }
@@ -1037,11 +1055,12 @@ function markAllSundays() {
     for (let i = 1; i <= daysInMonth; i++) {
         const d = new Date(year, month, i);
         if (d.getDay() === 0) { 
-            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+            const dateStr = getUniversalDate(d);
             if (!localHolidays.includes(dateStr)) localHolidays.push(dateStr);
         }
     }
     initializeSettingsCalendar();
+    saveSettings(); // Auto-save
 }
 
 function markSecondSaturdays() {
@@ -1056,13 +1075,14 @@ function markSecondSaturdays() {
         if (d.getDay() === 6) { 
             saturdayCount++;
             if (saturdayCount === 2) { 
-                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                const dateStr = getUniversalDate(d);
                 if (!localHolidays.includes(dateStr)) localHolidays.push(dateStr);
                 break;
             }
         }
     }
     initializeSettingsCalendar();
+    saveSettings(); // Auto-save
 }
 
 async function loadSettings() {
@@ -1075,6 +1095,7 @@ async function loadSettings() {
         if (error) throw error;
         
         if (data) {
+            // Load the boss's custom saved settings
             startInput.value = data.check_in_start || "09:00";
             document.getElementById('check-in-end').value = data.check_in_end || "10:00";
             document.getElementById('require-gps').checked = data.require_gps;
@@ -1085,14 +1106,13 @@ async function loadSettings() {
                 initializeSettingsCalendar();
             }
 
-            // Load saved exceptions onto the screen
             if (data.exceptions) {
                 const savedExceptions = JSON.parse(data.exceptions);
                 const list = document.getElementById('exception-list');
                 if (list) {
-                    list.innerHTML = ""; // Clear existing
+                    list.innerHTML = ""; 
                     savedExceptions.forEach(exc => {
-                        addException(); // Creates the UI row
+                        addException(); 
                         const rows = list.children;
                         const lastRow = rows[rows.length - 1];
                         const inputs = lastRow.querySelectorAll('input');
@@ -1104,22 +1124,42 @@ async function loadSettings() {
                     });
                 }
             }
+
+            // Load Custom Employee Times
+            if (data.custom_schedules) {
+                customSchedules = JSON.parse(data.custom_schedules);
+            } else {
+                customSchedules = [];
+            }
+            renderCustomTimeList();
+
+        } else {
+            // SMART DEFAULTS: Enforce completely OFF if never saved
+            if(startInput) startInput.value = "09:00";
+            if(document.getElementById('check-in-end')) document.getElementById('check-in-end').value = "10:00";
+            if(document.getElementById('require-gps')) document.getElementById('require-gps').checked = false;
+            if(document.getElementById('require-pin')) document.getElementById('require-pin').checked = false;
         }
     } catch (err) {
         console.error("Error loading settings:", err);
     }
 }
 
+// THE AUTO-SAVE ENGINE
 async function saveSettings() {
-    const saveBtn = document.getElementById('save-settings-btn');
     const leader = getLeader();
     if (!leader) return;
 
-    saveBtn.innerText = "Saving to Cloud...";
-    saveBtn.disabled = true;
+    // Show invisible background saving via subtitle
+    const subtitle = document.querySelector('.dash-header .subtitle');
+    let originalText = "Organizational parameters";
+    if (subtitle && !subtitle.innerText.includes("Saving")) {
+        originalText = subtitle.innerText;
+        subtitle.innerText = "Saving changes to cloud...";
+        subtitle.style.color = "#f59e0b"; // Highlight orange
+    }
 
     try {
-        // Scrape the visual exception rows to save them
         const exceptionRows = document.querySelectorAll('#exception-list div');
         let exceptionsArray = [];
         exceptionRows.forEach(row => {
@@ -1136,12 +1176,13 @@ async function saveSettings() {
         const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
         const payload = {
-            check_in_start: document.getElementById('check-in-start').value,
-            check_in_end: document.getElementById('check-in-end').value,
-            require_gps: document.getElementById('require-gps').checked,
-            require_pin: document.getElementById('require-pin').checked,
+            check_in_start: document.getElementById('check-in-start') ? document.getElementById('check-in-start').value : "09:00",
+            check_in_end: document.getElementById('check-in-end') ? document.getElementById('check-in-end').value : "10:00",
+            require_gps: document.getElementById('require-gps') ? document.getElementById('require-gps').checked : false,
+            require_pin: document.getElementById('require-pin') ? document.getElementById('require-pin').checked : false,
             holidays: JSON.stringify(localHolidays),
             exceptions: JSON.stringify(exceptionsArray),
+            custom_schedules: JSON.stringify(customSchedules),
             company_id: leader.company_id
         };
 
@@ -1151,21 +1192,107 @@ async function saveSettings() {
             await supabaseClient.from('settings').insert([payload]);
         }
 
-        saveBtn.innerText = "Saved & Synced!";
-        saveBtn.style.backgroundColor = "#fff";
-        saveBtn.style.border = "2px solid #4ade80";
-        
-        setTimeout(() => {
-            saveBtn.innerText = "Save Configuration";
-            saveBtn.style.backgroundColor = "#4ade80";
-            saveBtn.style.border = "none";
-            saveBtn.disabled = false;
-        }, 2000);
+        if (subtitle) {
+            subtitle.innerText = "All changes saved ✓";
+            subtitle.style.color = "#4ade80"; // Turn green
+            setTimeout(() => {
+                subtitle.innerText = "Organizational parameters";
+                subtitle.style.color = "#888"; // Reset
+            }, 2000);
+        }
     } catch (err) {
-        alert("Error saving settings to cloud.");
-        saveBtn.innerText = "Save Configuration";
-        saveBtn.disabled = false;
+        console.error("Error saving settings to cloud:", err);
+        if (subtitle) {
+            subtitle.innerText = "Error saving changes";
+            subtitle.style.color = "red";
+        }
     }
+}
+
+// --- CUSTOM EMPLOYEE TIME LOGIC ---
+async function openCustomTimeModal() {
+    const leader = getLeader();
+    if (!leader || !supabaseClient) return;
+
+    const select = document.getElementById('custom-time-emp-select');
+    select.innerHTML = '<option value="" disabled selected>Loading staff...</option>';
+    openModal('custom-time-modal');
+
+    try {
+        const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+        if (staff && staff.length > 0) {
+            select.innerHTML = '<option value="" disabled selected>Select an employee</option>';
+            staff.forEach(s => {
+                select.innerHTML += `<option value="${s.email}">${s.name} (${s.role})</option>`;
+            });
+        } else {
+            select.innerHTML = '<option value="" disabled selected>No staff found</option>';
+        }
+    } catch (err) {
+        console.error(err);
+        select.innerHTML = '<option value="" disabled selected>Error loading staff</option>';
+    }
+}
+
+function saveCustomTime() {
+    const select = document.getElementById('custom-time-emp-select');
+    const start = document.getElementById('custom-time-start').value;
+    const end = document.getElementById('custom-time-end').value;
+
+    if (!select.value || !start || !end) {
+        alert("Please select an employee and set both times.");
+        return;
+    }
+
+    const email = select.value;
+    const name = select.options[select.selectedIndex].text.split(' (')[0];
+
+    // Remove if already exists so we can overwrite
+    customSchedules = customSchedules.filter(c => c.email !== email);
+    
+    customSchedules.push({ email, name, start, end });
+    
+    renderCustomTimeList();
+    closeModal('custom-time-modal');
+    saveSettings(); // Trigger Auto-Save
+}
+
+function removeCustomTime(email) {
+    customSchedules = customSchedules.filter(c => c.email !== email);
+    renderCustomTimeList();
+    saveSettings(); // Trigger Auto-Save
+}
+
+function renderCustomTimeList() {
+    const list = document.getElementById('custom-time-list');
+    if (!list) return;
+    
+    list.innerHTML = "";
+    if (customSchedules.length === 0) {
+        list.innerHTML = `<p style="font-size: 11px; color: #888;">No custom schedules set.</p>`;
+        return;
+    }
+
+    customSchedules.forEach(c => {
+        const div = document.createElement('div');
+        div.style.display = 'flex';
+        div.style.justifyContent = 'space-between';
+        div.style.alignItems = 'center';
+        div.style.marginBottom = '8px';
+        div.style.padding = '8px';
+        div.style.backgroundColor = '#f9f9f9';
+        div.style.border = '1px solid #eaeaea';
+        div.style.borderRadius = '4px';
+
+        div.innerHTML = `
+            <div style="display: flex; flex-direction: column;">
+                <span style="font-size: 12px; font-weight: 600; color: #1a1a1a;">${c.name}</span>
+                <span style="font-size: 10px; color: #888;">${c.start} - ${c.end}</span>
+            </div>
+            <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 24px; height: 24px;" onclick="removeCustomTime('${c.email}')">X</button>
+        `;
+        list.appendChild(div);
+    });
 }
 
 // --- DAILY PIN GENERATOR ---
@@ -1338,6 +1465,7 @@ async function loadStaffRecords() {
 
     try {
         const targetEmail = currentStaff.email;
+        // Notice we now filter by the staff's specific company_id
         const { data: logs, error: logsErr } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail).eq('company_id', currentStaff.company_id);
         if (logsErr) console.error("Logs error:", logsErr);
 
@@ -1403,7 +1531,7 @@ async function loadStaffRecords() {
             const joinedDate = new Date(currentStaff.joined_date);
             workingDays = 0;
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
-                const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                const dateStr = getUniversalDate(d);
                 if (!holidaysArray.includes(dateStr)) workingDays++;
             }
             if (workingDays === 0) workingDays = 1; 
@@ -1422,10 +1550,9 @@ async function loadStaffRecords() {
         }
 
         // --- DYNAMIC STATUS LOGIC ---
-        const todayStr2 = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const todayStr2 = getUniversalDate(today);
         const isHoliday = holidaysArray.includes(todayStr2);
-        const localDateStr = today.toLocaleDateString();
-        const checkedInToday = logs && logs.some(log => log.date === localDateStr);
+        const checkedInToday = logs && logs.some(log => log.date === todayStr2);
 
         const statusBox = document.getElementById('staff-ledger-status');
         if (statusBox) {
@@ -1478,10 +1605,9 @@ async function loadStaffRecords() {
             }
 
             for (let day = 1; day <= daysInMonth; day++) {
-                const checkDate = new Date(year, month, day).toLocaleDateString();
-                const wasPresent = logs && logs.some(log => log.date === checkDate);
                 const currentIterationDate = new Date(year, month, day);
-                const dateStrIteration = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const dateStrIteration = getUniversalDate(currentIterationDate);
+                const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
                 
                 let styleClass = "cal-day";
                 if (holidaysArray.includes(dateStrIteration)) {
@@ -1510,6 +1636,7 @@ async function loadStaffRecords() {
 
     } catch (err) { console.error("Error loading staff ledger:", err); }
 }
+
 function changeStaffMonth(offset) {
     staffAnalyticsDate.setMonth(staffAnalyticsDate.getMonth() + offset);
     loadStaffRecords(); 
@@ -1544,14 +1671,38 @@ async function startDailyScanner() {
     }
 
     try {
+        // --- 1. TIME TRAVEL FIX ---
+        // Fetch true network time instead of trusting the device's local clock
+        let now = new Date();
+        try {
+            const timeRes = await fetch('https://worldtimeapi.org/api/ip');
+            if (timeRes.ok) {
+                const timeData = await timeRes.json();
+                now = new Date(timeData.datetime);
+            }
+        } catch (e) {
+            console.warn("Time sync failed, using local time.");
+        }
+        
+        const todayDateStr = getUniversalDate(now);
+
+        // --- 2. DUPLICATE CHECK-IN FIX ---
+        // Verify if a log already exists for this exact user, company, and date
+        const { data: existingLog } = await supabaseClient
+            .from('attendance')
+            .select('id')
+            .eq('user_email', currentStaff.email)
+            .eq('company_id', currentStaff.company_id)
+            .eq('date', todayDateStr)
+            .maybeSingle();
+
+        if (existingLog) {
+            alert("Action Denied 🚫\n\nYou have already checked in today. Duplicate scans are not permitted.");
+            return;
+        }
+
         const { data: rules, error: rulesErr } = await supabaseClient.from('settings').select('*').eq('company_id', currentStaff.company_id).limit(1).maybeSingle();
         if (rulesErr) throw rulesErr;
-
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const todayDateStr = `${year}-${month}-${day}`;
 
         if (rules && rules.holidays) {
             const holidayArray = JSON.parse(rules.holidays);
@@ -1561,12 +1712,37 @@ async function startDailyScanner() {
             }
         }
 
+        // --- 3. RULE HIERARCHY LOGIC ---
+        // Base global rules
+        let allowedStart = rules && rules.check_in_start ? rules.check_in_start : "09:00";
+        let allowedEnd = rules && rules.check_in_end ? rules.check_in_end : "10:00";
+
+        // Override 1: Custom Employee Time (wins over global)
+        if (rules && rules.custom_schedules) {
+            const customArray = JSON.parse(rules.custom_schedules);
+            const myCustom = customArray.find(c => c.email === currentStaff.email);
+            if (myCustom) {
+                allowedStart = myCustom.start;
+                allowedEnd = myCustom.end;
+            }
+        }
+
+        // Override 2: Future Exceptions (wins over Custom Employee Time)
+        if (rules && rules.exceptions) {
+            const exceptionsArray = JSON.parse(rules.exceptions);
+            const todayException = exceptionsArray.find(ex => ex.date === todayDateStr);
+            if (todayException) {
+                allowedStart = todayException.start;
+                allowedEnd = todayException.end;
+            }
+        }
+
         const currentHours = String(now.getHours()).padStart(2, '0');
         const currentMinutes = String(now.getMinutes()).padStart(2, '0');
         const currentTime = `${currentHours}:${currentMinutes}`;
 
-        if (rules && (currentTime < rules.check_in_start || currentTime > rules.check_in_end)) {
-            alert(`Scanner Locked 🔒\n\nYou can only check in between ${rules.check_in_start} and ${rules.check_in_end}.`);
+        if (currentTime < allowedStart || currentTime > allowedEnd) {
+            alert(`Scanner Locked 🔒\n\nYou can only check in between ${allowedStart} and ${allowedEnd}.`);
             return; 
         }
 
@@ -1653,14 +1829,13 @@ async function startDailyScanner() {
                         video.srcObject.getTracks().forEach(track => track.stop()); 
                         
                         const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                        const todayStr = now.toLocaleDateString();
 
                         scannerStatus.innerText = "MATCH FOUND! SYNCING ATTENDANCE...";
                         
                         supabaseClient.from('attendance').insert([{
                             user_email: currentStaff.email,
                             user_name: currentStaff.name,
-                            date: todayStr,
+                            date: todayDateStr,
                             time: timeStr,
                             status: 'Present',
                             company_id: currentStaff.company_id // Safely logged to the specific workspace
@@ -1712,11 +1887,12 @@ function addException() {
     exceptionDiv.style.marginBottom = '10px';
     exceptionDiv.style.alignItems = 'center';
     
+    // Auto-save added to input onchange events
     exceptionDiv.innerHTML = `
-        <input type="date" class="input-field" style="width: 40%; padding: 8px; font-size: 11px;">
-        <input type="time" class="input-field" style="width: 25%; padding: 8px; font-size: 11px;">
-        <input type="time" class="input-field" style="width: 25%; padding: 8px; font-size: 11px;">
-        <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; flex-shrink: 0;" onclick="this.parentElement.remove(); updateExceptionCount();">X</button>
+        <input type="date" class="input-field" style="width: 40%; padding: 8px; font-size: 11px;" onchange="saveSettings()">
+        <input type="time" class="input-field" style="width: 25%; padding: 8px; font-size: 11px;" onchange="saveSettings()">
+        <input type="time" class="input-field" style="width: 25%; padding: 8px; font-size: 11px;" onchange="saveSettings()">
+        <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; flex-shrink: 0;" onclick="this.parentElement.remove(); updateExceptionCount(); saveSettings();">X</button>
     `;
     
     list.appendChild(exceptionDiv);
@@ -1740,7 +1916,16 @@ window.addEventListener('DOMContentLoaded', () => {
     loadTodayAttendance(); 
     loadTeamLedger(); 
     loadIndividualAnalytics(); 
-    loadSettings(); 
+    
+    // Load settings, and ONLY after they load, bind the auto-save listeners to avoid accidental resets
+    loadSettings().then(() => {
+        const fields = ['check-in-start', 'check-in-end', 'require-gps', 'require-pin'];
+        fields.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.addEventListener('change', saveSettings);
+        });
+    });
+    
     loadTodayPIN(); 
     loadStaffDashboard(); 
 });

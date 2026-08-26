@@ -51,13 +51,29 @@
                 <input type="time" id="check-in-end" class="input-field" value="10:00" style="width: 50%;">
             </div>
 
-            <div style="border-top: 1px solid #eaeaea; padding-top: 15px;">
-                <div class="setting-header">
-                    <span style="font-size: 13px; font-weight: 600;">Future Exceptions <span id="exception-count">(0/5)</span></span>
-                    <button class="i-btn" onclick="openInfoModal('Future Exceptions', 'Need a different schedule for an upcoming event? You can set up to 5 custom check-in windows for specific future dates.')">i</button>
+            <!-- TWO-COLUMN LAYOUT: EXCEPTIONS & CUSTOM TIMES -->
+            <div style="display: flex; gap: 20px; border-top: 1px solid #eaeaea; padding-top: 15px; flex-wrap: wrap;">
+                
+                <!-- Left: Future Exceptions -->
+                <div style="flex: 1; min-width: 200px;">
+                    <div class="setting-header">
+                        <span style="font-size: 13px; font-weight: 600;">Future Exceptions <span id="exception-count">(0/5)</span></span>
+                        <button class="i-btn" onclick="openInfoModal('Future Exceptions', 'Need a different schedule for an upcoming event? You can set up to 5 custom check-in windows for specific future dates.')">i</button>
+                    </div>
+                    <div id="exception-list" style="margin-top: 10px;"></div>
+                    <button class="google-btn" style="margin-top: 10px; font-size: 12px;" onclick="addException()">+ Add Exception Date</button>
                 </div>
-                <div id="exception-list" style="margin-top: 10px;"></div>
-                <button class="google-btn" style="margin-top: 10px; font-size: 12px;" onclick="addException()">+ Add Exception Date</button>
+
+                <!-- Right: Custom Employee Times -->
+                <div style="flex: 1; min-width: 200px;">
+                    <div class="setting-header">
+                        <span style="font-size: 13px; font-weight: 600;">Custom Employee Times</span>
+                        <button class="i-btn" onclick="openInfoModal('Custom Employee Times', 'Set permanent custom check-in windows for specific employees (like shift workers). This overrides the standard global time.')">i</button>
+                    </div>
+                    <div id="custom-time-list" style="margin-top: 10px;"></div>
+                    <button class="google-btn" style="margin-top: 10px; font-size: 12px;" onclick="openCustomTimeModal()">+ Add Custom Schedule</button>
+                </div>
+
             </div>
         </div>
 
@@ -81,7 +97,7 @@
                 </div>
                 
                 <label class="switch">
-                    <input type="checkbox" id="require-gps" checked>
+                    <input type="checkbox" id="require-gps">
                     <span class="slider"></span>
                 </label>
             </div>
@@ -98,15 +114,15 @@
                 </div>
                 
                 <label class="switch">
-                    <input type="checkbox" id="require-pin" checked>
+                    <input type="checkbox" id="require-pin">
                     <span class="slider"></span>
                 </label>
             </div>
         </div>
 
-        <button id="save-settings-btn" class="main-btn form-btn" style="margin-bottom: 30px; background-color: #4ade80; color: black;" onclick="saveSettings()">Save Configuration</button>
     </div>
 
+    <!-- INFO MODAL -->
     <div id="info-modal" class="modal-bg">
         <div class="modal-box animated-modal">
             <span class="close" onclick="closeInfoModal()">×</span>
@@ -115,7 +131,35 @@
             <button class="main-btn form-btn" style="width: 100%;" onclick="closeInfoModal()">Understood</button>
         </div>
     </div>
+
+    <!-- CUSTOM EMPLOYEE TIME MODAL -->
+    <div id="custom-time-modal" class="modal-bg">
+        <div class="modal-box animated-modal" style="max-width: 350px;">
+            <span class="close" onclick="closeModal('custom-time-modal')">×</span>
+            <h3 class="section-title" style="text-align: center; margin-bottom: 15px;">Custom Schedule</h3>
+            
+            <div class="input-group">
+                <select id="custom-time-emp-select" class="input-field select-field">
+                    <option value="" disabled selected>Loading staff...</option>
+                </select>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 15px; margin-bottom: 15px;">
+                <div style="width: 50%;">
+                    <label style="font-size: 10px; color: #888; display: block; margin-bottom: 4px;">Start Time</label>
+                    <input type="time" id="custom-time-start" class="input-field" value="09:00">
+                </div>
+                <div style="width: 50%;">
+                    <label style="font-size: 10px; color: #888; display: block; margin-bottom: 4px;">End Time</label>
+                    <input type="time" id="custom-time-end" class="input-field" value="10:00">
+                </div>
+            </div>
+
+            <button class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="saveCustomTime()">Save Custom Schedule</button>
+        </div>
+    </div>
     
+    <!-- BOTTOM NAV -->
     <nav class="bottom-nav" style="position: fixed; bottom: 0; left: 0; width: 100%; z-index: 9999; background: #ffffff;">
         <a href="leader-dashboard.html" class="nav-item">
             <svg viewBox="0 0 24 24" class="nav-icon"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
@@ -139,6 +183,6 @@
         </a>
     </nav>
 
-    <script src="script.js?v=1010"></script>
+    <script src="script.js?v=1016"></script>
 </body>
 </html>
