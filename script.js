@@ -1002,7 +1002,7 @@ async function loadTeamDirectory() {
 // ==========================================
 
 let localHolidays = [];
-let customSchedules = []; // Global Array for Custom Employee Times
+let customSchedules = []; 
 
 function initializeSettingsCalendar() {
     const calendar = document.getElementById('settings-calendar');
@@ -1038,7 +1038,7 @@ function initializeSettingsCalendar() {
                 this.classList.replace('cal-holiday', 'cal-present');
                 localHolidays = localHolidays.filter(d => d !== dateStr);
             }
-            saveSettings(); // Auto-save on calendar tap
+            saveSettings(); 
         };
         calendar.appendChild(dayDiv);
     }
@@ -1060,7 +1060,7 @@ function markAllSundays() {
         }
     }
     initializeSettingsCalendar();
-    saveSettings(); // Auto-save
+    saveSettings(); 
 }
 
 function markSecondSaturdays() {
@@ -1082,7 +1082,7 @@ function markSecondSaturdays() {
         }
     }
     initializeSettingsCalendar();
-    saveSettings(); // Auto-save
+    saveSettings(); 
 }
 
 async function loadSettings() {
@@ -1095,12 +1095,18 @@ async function loadSettings() {
         if (error) throw error;
         
         if (data) {
-            // Load the boss's custom saved settings
             startInput.value = data.check_in_start || "09:00";
             document.getElementById('check-in-end').value = data.check_in_end || "10:00";
             document.getElementById('require-gps').checked = data.require_gps;
             document.getElementById('require-pin').checked = data.require_pin;
             
+            // Load map variables if they exist
+            if (data.office_lat && data.office_lng) {
+                mapSavedLat = data.office_lat;
+                mapSavedLng = data.office_lng;
+                mapSavedRadius = data.office_radius || 150;
+            }
+
             if (data.holidays) {
                 localHolidays = JSON.parse(data.holidays);
                 initializeSettingsCalendar();
@@ -1125,7 +1131,6 @@ async function loadSettings() {
                 }
             }
 
-            // Load Custom Employee Times
             if (data.custom_schedules) {
                 customSchedules = JSON.parse(data.custom_schedules);
             } else {
@@ -1134,7 +1139,6 @@ async function loadSettings() {
             renderCustomTimeList();
 
         } else {
-            // SMART DEFAULTS: Enforce completely OFF if never saved
             if(startInput) startInput.value = "09:00";
             if(document.getElementById('check-in-end')) document.getElementById('check-in-end').value = "10:00";
             if(document.getElementById('require-gps')) document.getElementById('require-gps').checked = false;
@@ -1150,13 +1154,12 @@ async function saveSettings() {
     const leader = getLeader();
     if (!leader) return;
 
-    // Show invisible background saving via subtitle
     const subtitle = document.querySelector('.dash-header .subtitle');
     let originalText = "Organizational parameters";
     if (subtitle && !subtitle.innerText.includes("Saving")) {
         originalText = subtitle.innerText;
         subtitle.innerText = "Saving changes to cloud...";
-        subtitle.style.color = "#f59e0b"; // Highlight orange
+        subtitle.style.color = "#f59e0b"; 
     }
 
     try {
@@ -1194,10 +1197,10 @@ async function saveSettings() {
 
         if (subtitle) {
             subtitle.innerText = "All changes saved ✓";
-            subtitle.style.color = "#4ade80"; // Turn green
+            subtitle.style.color = "#4ade80"; 
             setTimeout(() => {
                 subtitle.innerText = "Organizational parameters";
-                subtitle.style.color = "#888"; // Reset
+                subtitle.style.color = "#888"; 
             }, 2000);
         }
     } catch (err) {
@@ -1247,20 +1250,19 @@ function saveCustomTime() {
     const email = select.value;
     const name = select.options[select.selectedIndex].text.split(' (')[0];
 
-    // Remove if already exists so we can overwrite
     customSchedules = customSchedules.filter(c => c.email !== email);
     
     customSchedules.push({ email, name, start, end });
     
     renderCustomTimeList();
     closeModal('custom-time-modal');
-    saveSettings(); // Trigger Auto-Save
+    saveSettings(); 
 }
 
 function removeCustomTime(email) {
     customSchedules = customSchedules.filter(c => c.email !== email);
     renderCustomTimeList();
-    saveSettings(); // Trigger Auto-Save
+    saveSettings(); 
 }
 
 function renderCustomTimeList() {
@@ -1325,45 +1327,216 @@ async function generateNewPIN() {
 }
 
 // ==========================================
-// --- 2-STEP GPS GEOFENCING ENGINE ---
+// --- LEAFLET MAP & GEOFENCING ENGINE ---
 // ==========================================
 
-async function pinpointWorkplaceLocation() {
-    const leader = getLeader();
-    if (!navigator.geolocation || !leader) {
-        alert("Geolocation is not supported or session is missing.");
+let map = null;
+let geofenceCircle = null;
+let mapSavedLat = null;
+let mapSavedLng = null;
+let mapSavedRadius = 150;
+let leafletLoaded = false;
+
+// 1. Invisible Dynamic Map Injector (No HTML needed)
+function injectMapDependencies() {
+    if (document.querySelector('link[href*="leaflet"]')) {
+        leafletLoaded = true;
         return;
     }
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(link);
+    
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.onload = () => { leafletLoaded = true; };
+    document.head.appendChild(script);
+}
 
-    alert("Pinging your current GPS coordinates as the office location...");
+function injectMapModalHTML() {
+    if (document.getElementById('gps-map-modal') || !window.location.pathname.includes('settings')) return;
+    
+    const mapModalHtml = `
+        <div id="gps-map-modal" class="modal-bg" style="z-index: 10000; display: none;">
+            <div class="modal-box animated-modal" style="width: 90%; max-width: 500px; padding: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 class="section-title" style="margin: 0;">Set Geofence Boundary</h3>
+                    <span class="close" onclick="closeMapModal()" style="cursor: pointer; font-size: 20px;">×</span>
+                </div>
+                <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Drag the map to center the pin on your physical workplace.</p>
+                
+                <div id="map" style="height: 300px; border-radius: 8px; border: 2px solid #1a1a1a; margin-bottom: 15px; position: relative;">
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000; pointer-events: none; text-shadow: 0 0 5px white; font-size: 24px;">
+                        📍
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="font-size: 12px; font-weight: bold; color: #1a1a1a; display: flex; justify-content: space-between;">
+                        Allowed Radius: <span id="radius-display" style="color: #4ade80;">150 meters</span>
+                    </label>
+                    <input type="range" id="radius-slider" min="50" max="1000" step="10" value="150" style="width: 100%; margin-top: 10px; cursor: pointer;" oninput="updateCirclePreview()">
+                    <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa; margin-top: 5px;">
+                        <span>Tight (50m)</span>
+                        <span>Wide (1000m)</span>
+                    </div>
+                </div>
 
-    navigator.geolocation.getCurrentPosition(async (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
+                <button id="save-map-btn" class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="confirmMapLocation()">Save Boundary & Close</button>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', mapModalHtml);
+}
 
-        try {
-            const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', leader.company_id).limit(1).maybeSingle();
-            if (existingData) {
-                await supabaseClient.from('settings').update({ 
-                    office_lat: lat, 
-                    office_lng: lng 
-                }).eq('id', existingData.id);
-            } else {
-                await supabaseClient.from('settings').insert([{ 
-                    office_lat: lat, 
-                    office_lng: lng,
-                    company_id: leader.company_id
-                }]);
+function bindGPSControls() {
+    const gpsSwitch = document.getElementById('require-gps');
+    if (gpsSwitch) {
+        gpsSwitch.onchange = handleGPSToggle;
+    }
+
+    // Hijack old pinpoint button if it exists
+    const oldButton = document.querySelector('button[onclick="pinpointWorkplaceLocation()"]');
+    if (oldButton) {
+        oldButton.innerText = "📍 Edit Workplace Location & Radius";
+        oldButton.onclick = openMapModal;
+        oldButton.removeAttribute('onclick'); 
+    }
+}
+
+// 2. Map Execution Functions
+function handleGPSToggle() {
+    const isChecked = document.getElementById('require-gps').checked;
+    saveSettings(); 
+    if (isChecked) {
+        openMapModal();
+    }
+}
+
+function openMapModal() {
+    if (!leafletLoaded || typeof L === 'undefined') {
+        alert("Loading map engine... Please try again in 2 seconds.");
+        return;
+    }
+    document.getElementById('gps-map-modal').style.display = 'flex';
+    
+    setTimeout(() => {
+        if (!map) {
+            initMap();
+        } else {
+            map.invalidateSize();
+            if(mapSavedLat && mapSavedLng) {
+                map.setView([mapSavedLat, mapSavedLng], 16);
+                document.getElementById('radius-slider').value = mapSavedRadius;
+                updateCirclePreview();
             }
-            alert(`SUCCESS! 📍 Office Location Saved:\nLatitude: ${lat.toFixed(4)}\nLongitude: ${lng.toFixed(4)}`);
-        } catch (err) {
-            console.error("GPS Save Error:", err);
-            alert("Failed to save office location to cloud.");
         }
-    }, (error) => {
-        alert("Error getting location. Please allow browser location permissions.");
-        console.error(error);
-    }, { enableHighAccuracy: true });
+    }, 200);
+}
+
+function closeMapModal() {
+    document.getElementById('gps-map-modal').style.display = 'none';
+    if(!mapSavedLat && document.getElementById('require-gps').checked) {
+        document.getElementById('require-gps').checked = false;
+        saveSettings();
+    }
+}
+
+function initMap() {
+    let initialLat = 40.7128;
+    let initialLng = -74.0060;
+
+    if (mapSavedLat && mapSavedLng) {
+        initialLat = mapSavedLat;
+        initialLng = mapSavedLng;
+    }
+
+    map = L.map('map').setView([initialLat, initialLng], 16);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    geofenceCircle = L.circle(map.getCenter(), {
+        color: '#4ade80',
+        fillColor: '#4ade80',
+        fillOpacity: 0.2,
+        radius: document.getElementById('radius-slider').value
+    }).addTo(map);
+
+    map.on('move', function() {
+        geofenceCircle.setLatLng(map.getCenter());
+    });
+
+    if (!mapSavedLat && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(position => {
+            map.setView([position.coords.latitude, position.coords.longitude], 16);
+            geofenceCircle.setLatLng([position.coords.latitude, position.coords.longitude]);
+        });
+    }
+}
+
+function updateCirclePreview() {
+    const currentRadius = document.getElementById('radius-slider').value;
+    document.getElementById('radius-display').innerText = `${currentRadius} meters`;
+    if (geofenceCircle) {
+        geofenceCircle.setRadius(currentRadius);
+    }
+}
+
+async function confirmMapLocation() {
+    const leader = getLeader();
+    if (!leader || !map) return;
+
+    const center = map.getCenter();
+    const radius = document.getElementById('radius-slider').value;
+
+    const saveBtn = document.getElementById('save-map-btn');
+    saveBtn.innerText = "Saving to Cloud...";
+    saveBtn.disabled = true;
+
+    try {
+        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        
+        const payload = {
+            office_lat: center.lat,
+            office_lng: center.lng,
+            office_radius: parseInt(radius),
+            require_gps: true 
+        };
+
+        if (existingData) {
+            await supabaseClient.from('settings').update(payload).eq('id', existingData.id);
+        } else {
+            payload.company_id = leader.company_id;
+            await supabaseClient.from('settings').insert([payload]);
+        }
+
+        mapSavedLat = center.lat;
+        mapSavedLng = center.lng;
+        mapSavedRadius = radius;
+        
+        document.getElementById('require-gps').checked = true;
+
+        saveBtn.innerText = "Saved Successfully!";
+        saveBtn.style.backgroundColor = "#4ade80";
+        saveBtn.style.color = "black";
+        
+        setTimeout(() => {
+            closeMapModal();
+            saveBtn.innerText = "Save Boundary & Close";
+            saveBtn.style.backgroundColor = "#1a1a1a";
+            saveBtn.style.color = "white";
+            saveBtn.disabled = false;
+        }, 1500);
+
+    } catch (err) {
+        console.error("Map Save Error:", err);
+        alert("Failed to save location to cloud.");
+        saveBtn.innerText = "Save Boundary & Close";
+        saveBtn.disabled = false;
+    }
 }
 
 function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
@@ -1465,7 +1638,6 @@ async function loadStaffRecords() {
 
     try {
         const targetEmail = currentStaff.email;
-        // Notice we now filter by the staff's specific company_id
         const { data: logs, error: logsErr } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail).eq('company_id', currentStaff.company_id);
         if (logsErr) console.error("Logs error:", logsErr);
 
@@ -1671,8 +1843,6 @@ async function startDailyScanner() {
     }
 
     try {
-        // --- 1. TIME TRAVEL FIX ---
-        // Fetch true network time instead of trusting the device's local clock
         let now = new Date();
         try {
             const timeRes = await fetch('https://worldtimeapi.org/api/ip');
@@ -1686,8 +1856,6 @@ async function startDailyScanner() {
         
         const todayDateStr = getUniversalDate(now);
 
-        // --- 2. DUPLICATE CHECK-IN FIX ---
-        // Verify if a log already exists for this exact user, company, and date
         const { data: existingLog } = await supabaseClient
             .from('attendance')
             .select('id')
@@ -1712,12 +1880,9 @@ async function startDailyScanner() {
             }
         }
 
-        // --- 3. RULE HIERARCHY LOGIC ---
-        // Base global rules
         let allowedStart = rules && rules.check_in_start ? rules.check_in_start : "09:00";
         let allowedEnd = rules && rules.check_in_end ? rules.check_in_end : "10:00";
 
-        // Override 1: Custom Employee Time (wins over global)
         if (rules && rules.custom_schedules) {
             const customArray = JSON.parse(rules.custom_schedules);
             const myCustom = customArray.find(c => c.email === currentStaff.email);
@@ -1727,7 +1892,6 @@ async function startDailyScanner() {
             }
         }
 
-        // Override 2: Future Exceptions (wins over Custom Employee Time)
         if (rules && rules.exceptions) {
             const exceptionsArray = JSON.parse(rules.exceptions);
             const todayException = exceptionsArray.find(ex => ex.date === todayDateStr);
@@ -1767,10 +1931,12 @@ async function startDailyScanner() {
                 throw err;
             });
 
+            // Use the dynamically saved radius from the map, default to 150 if missing
+            const allowedRadius = rules.office_radius ? rules.office_radius : 150;
             const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, rules.office_lat, rules.office_lng);
 
-            if (distanceMeters > 150) {
-                alert(`Geofence Violation 🚫\n\nYou are too far from the office (${Math.round(distanceMeters)} meters away). You must be within 150 meters to clock in.`);
+            if (distanceMeters > allowedRadius) {
+                alert(`Geofence Violation 🚫\n\nYou are too far from the office (${Math.round(distanceMeters)} meters away). You must be within ${allowedRadius} meters to clock in.`);
                 return;
             }
         }
@@ -1890,8 +2056,8 @@ function addException() {
     // Auto-save added to input onchange events
     exceptionDiv.innerHTML = `
         <input type="date" class="input-field" style="width: 40%; padding: 8px; font-size: 11px;" onchange="saveSettings()">
-        <input type="time" class="input-field" style="width: 25%; padding: 8px; font-size: 11px;" onchange="saveSettings()">
-        <input type="time" class="input-field" style="width: 25%; padding: 8px; font-size: 11px;" onchange="saveSettings()">
+        <input type="time" class="input-field" style="width: 25%; padding: 8px; font-size: 11px;" onchange="saveSettings()" onclick="try{this.showPicker();}catch(e){}">
+        <input type="time" class="input-field" style="width: 25%; padding: 8px; font-size: 11px;" onchange="saveSettings()" onclick="try{this.showPicker();}catch(e){}">
         <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; flex-shrink: 0;" onclick="this.parentElement.remove(); updateExceptionCount(); saveSettings();">X</button>
     `;
     
@@ -1907,6 +2073,14 @@ function updateExceptionCount() {
     }
 }
 
+// Safari Time Fix
+function bindTimePickerFix() {
+    const t1 = document.getElementById('check-in-start');
+    const t2 = document.getElementById('check-in-end');
+    if(t1) t1.onclick = function() { try{ this.showPicker(); }catch(e){} };
+    if(t2) t2.onclick = function() { try{ this.showPicker(); }catch(e){} };
+}
+
 // --- RUN WHEN PAGE LOADS ---
 window.addEventListener('DOMContentLoaded', () => {
     initializeSettingsCalendar();
@@ -1917,15 +2091,15 @@ window.addEventListener('DOMContentLoaded', () => {
     loadTeamLedger(); 
     loadIndividualAnalytics(); 
     
-    // Load settings, and ONLY after they load, bind the auto-save listeners to avoid accidental resets
-    loadSettings().then(() => {
-        const fields = ['check-in-start', 'check-in-end', 'require-gps', 'require-pin'];
-        fields.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.addEventListener('change', saveSettings);
-        });
-    });
+    // Auto-inject Map completely via JS
+    injectMapDependencies();
+    injectMapModalHTML();
+    bindGPSControls();
     
+    // Bypass Safari Time Highlight Bug
+    bindTimePickerFix();
+
+    loadSettings(); 
     loadTodayPIN(); 
     loadStaffDashboard(); 
 });

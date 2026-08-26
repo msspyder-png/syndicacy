@@ -6,6 +6,10 @@
     <title>Workspace Settings - SYNDICACY</title>
     <link rel="stylesheet" href="style.css">
     
+    <!-- FREE MAP LIBRARIES (LEAFLET) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body class="dashboard-body">
@@ -54,7 +58,6 @@
             <!-- TWO-COLUMN LAYOUT: EXCEPTIONS & CUSTOM TIMES -->
             <div style="display: flex; gap: 20px; border-top: 1px solid #eaeaea; padding-top: 15px; flex-wrap: wrap;">
                 
-                <!-- Left: Future Exceptions -->
                 <div style="flex: 1; min-width: 200px;">
                     <div class="setting-header">
                         <span style="font-size: 13px; font-weight: 600;">Future Exceptions <span id="exception-count">(0/5)</span></span>
@@ -64,7 +67,6 @@
                     <button class="google-btn" style="margin-top: 10px; font-size: 12px;" onclick="addException()">+ Add Exception Date</button>
                 </div>
 
-                <!-- Right: Custom Employee Times -->
                 <div style="flex: 1; min-width: 200px;">
                     <div class="setting-header">
                         <span style="font-size: 13px; font-weight: 600;">Custom Employee Times</span>
@@ -97,12 +99,13 @@
                 </div>
                 
                 <label class="switch">
-                    <input type="checkbox" id="require-gps" onchange="saveSettings()">
+                    <!-- Updated to trigger the map if turned ON -->
+                    <input type="checkbox" id="require-gps" onchange="handleGPSToggle()">
                     <span class="slider"></span>
                 </label>
             </div>
             
-            <button class="google-btn" style="width: 100%; margin-bottom: 25px; border-style: dashed; font-size: 13px;" onclick="pinpointWorkplaceLocation()">📍 Pinpoint Workplace Location</button>
+            <button class="google-btn" style="width: 100%; margin-bottom: 25px; border-style: dashed; font-size: 13px;" onclick="openMapModal()">📍 Edit Workplace Location & Radius</button>
 
             <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
@@ -158,6 +161,37 @@
             <button class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="saveCustomTime()">Save Custom Schedule</button>
         </div>
     </div>
+
+    <!-- GPS MAP MODAL (NEW) -->
+    <div id="gps-map-modal" class="modal-bg" style="z-index: 10000;">
+        <div class="modal-box animated-modal" style="width: 90%; max-width: 500px; padding: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 class="section-title" style="margin: 0;">Set Geofence Boundary</h3>
+                <span class="close" onclick="closeMapModal()">×</span>
+            </div>
+            <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Drag the map to center the pin on your physical workplace.</p>
+            
+            <div id="map" style="height: 300px; border-radius: 8px; border: 2px solid #1a1a1a; margin-bottom: 15px; position: relative;">
+                <!-- A simple crosshair in the absolute center to show the boss where the pin drops -->
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000; pointer-events: none; text-shadow: 0 0 5px white;">
+                    📍
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="font-size: 12px; font-weight: bold; color: #1a1a1a; display: flex; justify-content: space-between;">
+                    Allowed Radius: <span id="radius-display" style="color: #4ade80;">150 meters</span>
+                </label>
+                <input type="range" id="radius-slider" min="50" max="1000" step="10" value="150" style="width: 100%; margin-top: 10px; cursor: pointer;" oninput="updateCirclePreview()">
+                <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa; margin-top: 5px;">
+                    <span>Tight (50m)</span>
+                    <span>Wide (1000m)</span>
+                </div>
+            </div>
+
+            <button id="save-map-btn" class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="confirmMapLocation()">Save Boundary & Close</button>
+        </div>
+    </div>
     
     <!-- BOTTOM NAV -->
     <nav class="bottom-nav" style="position: fixed; bottom: 0; left: 0; width: 100%; z-index: 9999; background: #ffffff;">
@@ -183,6 +217,6 @@
         </a>
     </nav>
 
-    <script src="script.js?v=1016"></script>
+    <script src="script.js?v=1018"></script>
 </body>
 </html>
