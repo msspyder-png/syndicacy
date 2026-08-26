@@ -46,9 +46,9 @@
             </div>
             
             <div style="display: flex; gap: 10px; margin-top: 15px; margin-bottom: 15px;">
-                <input type="time" id="check-in-start" class="input-field" value="09:00" style="width: 50%;">
+                <input type="time" id="check-in-start" class="input-field" value="09:00" style="width: 50%;" onchange="saveSettings()">
                 <span style="display: flex; align-items: center; color: #888;">to</span>
-                <input type="time" id="check-in-end" class="input-field" value="10:00" style="width: 50%;">
+                <input type="time" id="check-in-end" class="input-field" value="10:00" style="width: 50%;" onchange="saveSettings()">
             </div>
 
             <!-- TWO-COLUMN LAYOUT: EXCEPTIONS & CUSTOM TIMES -->
@@ -97,7 +97,7 @@
                 </div>
                 
                 <label class="switch">
-                    <input type="checkbox" id="require-gps">
+                    <input type="checkbox" id="require-gps" onchange="saveSettings()">
                     <span class="slider"></span>
                 </label>
             </div>
@@ -114,7 +114,7 @@
                 </div>
                 
                 <label class="switch">
-                    <input type="checkbox" id="require-pin">
+                    <input type="checkbox" id="require-pin" onchange="saveSettings()">
                     <span class="slider"></span>
                 </label>
             </div>
