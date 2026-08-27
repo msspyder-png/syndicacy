@@ -98,6 +98,8 @@ async function handleLeaderAuth() {
                     await supabaseClient.from('users').update({ company_id: user.company_id }).eq('id', user.id);
                 }
                 
+                // Clear any lingering staff sessions to prevent data bleeding
+                sessionStorage.removeItem('loggedInStaff');
                 sessionStorage.setItem('loggedInLeader', JSON.stringify(user));
                 window.location.href = 'leader-dashboard.html';
             } else {
@@ -163,6 +165,7 @@ async function verifyOTP() {
             sessionStorage.removeItem("pendingPass");
             sessionStorage.removeItem("savedOTP");
             
+            sessionStorage.removeItem('loggedInStaff');
             sessionStorage.setItem('loggedInLeader', JSON.stringify(data[0]));
             window.location.href = 'leader-dashboard.html'; 
         } else {
@@ -1568,6 +1571,8 @@ async function handleStaffLogin() {
         if (error) throw error;
 
         if (user && user.password === pass) {
+            // Clear any lingering boss sessions to prevent data bleeding
+            sessionStorage.removeItem('loggedInLeader');
             sessionStorage.setItem('loggedInStaff', JSON.stringify(user));
             window.location.href = 'staff-dashboard.html';
         } else {
@@ -1584,16 +1589,23 @@ async function handleStaffLogin() {
 }
 
 function loadStaffDashboard() {
-    const checkInBtn = document.getElementById('check-in-btn');
-    if (!checkInBtn) return; 
-
     const sessionData = sessionStorage.getItem('loggedInStaff');
-    if (!sessionData) {
-        window.location.href = 'staff.html';
-        return;
-    }
+    if (!sessionData) return; // Not an employee session
 
     currentStaff = JSON.parse(sessionData);
+
+    // FIX: Unconditionally load the cloud data first!
+    // This guarantees the sync engine runs regardless of which tab the employee is on.
+    loadStaffRecords();
+
+    // ONLY bind the Check-In button if it actually exists on the screen
+    const checkInBtn = document.getElementById('check-in-btn');
+    if (checkInBtn) {
+        checkInBtn.onclick = function(event) {
+            event.preventDefault(); 
+            startDailyScanner();
+        };
+    }
 
     const dashHeader = document.querySelector('.dash-header h2');
     if (dashHeader && dashHeader.innerText.includes("Good Morning")) {
@@ -1613,13 +1625,6 @@ function loadStaffDashboard() {
             window.location.href = 'index.html';
         };
     }
-
-    checkInBtn.onclick = function(event) {
-        event.preventDefault(); 
-        startDailyScanner();
-    };
-
-    loadStaffRecords();
 }
 
 async function loadStaffRecords() {
@@ -1683,7 +1688,7 @@ async function loadStaffRecords() {
             }
         }
 
-        // --- POPULATE LEDGER HEADERS (Supports both original Staff IDs and Boss Analytics IDs) ---
+        // --- POPULATE LEDGER HEADERS ---
         const nameEl = document.getElementById('staff-ledger-name') || document.getElementById('employee-name-title');
         if(nameEl) nameEl.innerText = currentStaff.name;
 
@@ -2041,7 +2046,6 @@ async function startDailyScanner() {
     }
 }
 
-// Safari Time Fix
 function bindTimePickerFix() {
     const t1 = document.getElementById('check-in-start');
     const t2 = document.getElementById('check-in-end');
