@@ -1588,17 +1588,41 @@ async function handleStaffLogin() {
     }
 }
 
-function loadStaffDashboard() {
+async function loadStaffDashboard() {
     const sessionData = sessionStorage.getItem('loggedInStaff');
-    if (!sessionData) return; // Not an employee session
+    if (!sessionData) return; 
 
     currentStaff = JSON.parse(sessionData);
 
-    // FIX: Unconditionally load the cloud data first!
-    // This guarantees the sync engine runs regardless of which tab the employee is on.
+    // --- THE AUTO-HEAL ENGINE ---
+    // This forcefully downloads the absolute newest profile from Supabase
+    // to fix any old "ghost" sessions that are missing a company_id
+    if (supabaseClient) {
+        try {
+            const { data: freshStaff } = await supabaseClient
+                .from('users')
+                .select('*')
+                .eq('email', currentStaff.email)
+                .maybeSingle();
+                
+            if (freshStaff) {
+                currentStaff = freshStaff;
+                sessionStorage.setItem('loggedInStaff', JSON.stringify(freshStaff));
+            }
+        } catch(e) { console.warn("Auto-Heal Check Failed"); }
+    }
+
+    // --- THE CRASH PREVENTER ---
+    // If the company_id is STILL somehow undefined, we give it a safe fallback string
+    // so it doesn't instantly crash the Supabase eq() filter and freeze the page.
+    if (!currentStaff.company_id) {
+        currentStaff.company_id = "UNASSIGNED_ID";
+    }
+
+    // Now that the session is healed and safe, load the data unconditionally
     loadStaffRecords();
 
-    // ONLY bind the Check-In button if it actually exists on the screen
+    // Bind the Check-In button ONLY if it exists on the screen
     const checkInBtn = document.getElementById('check-in-btn');
     if (checkInBtn) {
         checkInBtn.onclick = function(event) {
@@ -1632,10 +1656,12 @@ async function loadStaffRecords() {
 
     try {
         const targetEmail = currentStaff.email;
-        const { data: logs, error: logsErr } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail).eq('company_id', currentStaff.company_id);
+        const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
+
+        const { data: logs, error: logsErr } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail).eq('company_id', safeCompanyId);
         if (logsErr) console.error("Logs error:", logsErr);
 
-        const { data: settings, error: setErr } = await supabaseClient.from('settings').select('*').eq('company_id', currentStaff.company_id).limit(1).maybeSingle();
+        const { data: settings, error: setErr } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
         if (setErr) console.error("Settings error:", setErr);
 
         const today = new Date();
@@ -1660,6 +1686,8 @@ async function loadStaffRecords() {
             } else {
                 excDisplay.innerText = "None scheduled";
             }
+        } else if (excDisplay) {
+            excDisplay.innerText = "None scheduled";
         }
 
         const gpsDisplay = document.getElementById('staff-gps-display');
@@ -1690,10 +1718,10 @@ async function loadStaffRecords() {
 
         // --- POPULATE LEDGER HEADERS ---
         const nameEl = document.getElementById('staff-ledger-name') || document.getElementById('employee-name-title');
-        if(nameEl) nameEl.innerText = currentStaff.name;
+        if(nameEl) nameEl.innerText = currentStaff.name || "Staff";
 
         const roleEl = document.getElementById('staff-ledger-role') || document.getElementById('employee-role-title');
-        if(roleEl) roleEl.innerText = currentStaff.role;
+        if(roleEl) roleEl.innerText = currentStaff.role || "Unknown Role";
 
         const joinedEl = document.getElementById('staff-ledger-joined') || document.getElementById('employee-joined-box');
         if(joinedEl) joinedEl.innerText = currentStaff.joined_date || "N/A";
@@ -1865,12 +1893,13 @@ async function startDailyScanner() {
         }
         
         const todayDateStr = getUniversalDate(now);
+        const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
 
         const { data: existingLog } = await supabaseClient
             .from('attendance')
             .select('id')
             .eq('user_email', currentStaff.email)
-            .eq('company_id', currentStaff.company_id)
+            .eq('company_id', safeCompanyId)
             .eq('date', todayDateStr)
             .maybeSingle();
 
@@ -1879,7 +1908,7 @@ async function startDailyScanner() {
             return;
         }
 
-        const { data: rules, error: rulesErr } = await supabaseClient.from('settings').select('*').eq('company_id', currentStaff.company_id).limit(1).maybeSingle();
+        const { data: rules, error: rulesErr } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
         if (rulesErr) throw rulesErr;
 
         if (rules && rules.holidays) {
@@ -2016,7 +2045,7 @@ async function startDailyScanner() {
                             date: todayDateStr,
                             time: timeStr,
                             status: 'Present',
-                            company_id: currentStaff.company_id 
+                            company_id: safeCompanyId 
                         }]).then(({ error }) => {
                             if (error) {
                                 alert("Failed to log attendance to cloud!");
