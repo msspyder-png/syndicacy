@@ -690,3 +690,38 @@ input:checked + .slider {
 input:checked + .slider:before {
     transform: translateX(20px);
 }
+/* --- ANALYTICS CALENDAR STYLES --- */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 5px;
+}
+
+.cal-day {
+    aspect-ratio: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 12px;
+    border-radius: 4px;
+    border: 1px solid #eaeaea;
+    background-color: #ffffff;
+}
+
+.cal-day.cal-present {
+    background-color: #4ade80 !important;
+    color: #1a1a1a !important;
+    border-color: #4ade80 !important;
+}
+
+.cal-day.cal-absent {
+    background-color: transparent !important;
+    border: 1px dashed #ef4444 !important;
+    color: #ef4444 !important;
+}
+
+.cal-day.cal-holiday {
+    background-color: #1a1a1a !important;
+    color: #ffffff !important;
+    border-color: #1a1a1a !important;
+}
