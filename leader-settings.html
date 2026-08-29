@@ -36,9 +36,18 @@
             <div class="calendar-grid" id="settings-calendar" style="margin-bottom: 15px;">
             </div>
 
+            <!-- NEW INSTRUCTIONS AND LEGEND -->
+            <div style="margin-top: 10px; margin-bottom: 20px; font-size: 11px; color: #888; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                <span style="font-style: italic;">Click a date to mark as a day off</span>
+                <div style="display: flex; gap: 15px; margin-top: 5px;">
+                    <span><span style="color: #1a1a1a; font-size: 14px;">■</span> Holiday/Off</span>
+                    <span><span style="color: #ffffff; border: 1px solid #eaeaea; font-size: 14px; display: inline-block; width: 10px; height: 10px;"></span> Working Day</span>
+                </div>
+            </div>
+
             <div class="button-stack" style="flex-direction: row; gap: 10px;">
-                <button class="google-btn" style="font-size: 12px; padding: 8px;" onclick="markAllSundays()">Mark Sundays Off</button>
-                <button class="google-btn" style="font-size: 12px; padding: 8px;" onclick="markSecondSaturdays()">Mark 2nd Sat Off</button>
+                <button class="google-btn" id="btn-toggle-sundays" style="font-size: 12px; padding: 8px;" onclick="markAllSundays()">Turn all Sundays off</button>
+                <button class="google-btn" id="btn-toggle-saturdays" style="font-size: 12px; padding: 8px;" onclick="markSecondSaturdays()">Turn all 2nd Saturdays off</button>
             </div>
         </div>
 
@@ -216,6 +225,6 @@
         </a>
     </nav>
 
-    <script src="script.js?v=1019"></script>
+    <script src="script.js?v=1018"></script>
 </body>
 </html>

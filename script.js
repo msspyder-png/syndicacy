@@ -704,6 +704,7 @@ async function loadTodayAttendance() {
         const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         if (staffErr) throw staffErr;
 
+        // FIXED TABLE NAME: 'checkins'
         const { data: attendanceLogs, error: attErr } = await supabaseClient.from('checkins').select('*').eq('date', todayStr).eq('company_id', leader.company_id);
         if (attErr) throw attErr;
 
@@ -784,6 +785,7 @@ async function loadTeamLedger() {
     try {
         const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         
+        // FIXED TABLE NAME: 'checkins'
         const { data: attendance } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
         const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
@@ -850,6 +852,7 @@ async function loadIndividualAnalytics() {
     try {
         const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).maybeSingle();
         
+        // FIXED TABLE NAME: 'checkins'
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
         const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
@@ -857,6 +860,7 @@ async function loadIndividualAnalytics() {
 
         let holidaysArray = [];
         try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
+        if (!Array.isArray(holidaysArray)) holidaysArray = [];
 
         document.getElementById('analytics-header').style.display = 'block';
         document.getElementById('credentials-card').style.display = 'block';
@@ -893,6 +897,7 @@ async function loadIndividualAnalytics() {
         const todayStr2 = getUniversalDate(today);
         const checkedInToday = logs && logs.some(log => log.date === todayStr2);
 
+        // --- NEW TODAY'S STATUS LOGIC (PRO UPGRADE) ---
         try {
             const labels = document.querySelectorAll('.stat-label');
             let statusLabelEl = Array.from(labels).find(el => el.innerText.trim().toUpperCase() === 'SYSTEM STATUS');
@@ -942,6 +947,7 @@ async function loadIndividualAnalytics() {
                 }
             }
         } catch(e) { console.warn("Could not update system status UI"); }
+        // ----------------------------------------------
 
         const year = analyticsDate.getFullYear();
         const month = analyticsDate.getMonth();
@@ -1134,6 +1140,8 @@ async function loadTeamDirectory() {
 let localHolidays = [];
 let customSchedules = []; 
 let settingsDate = new Date();
+let sundaysToggled = false;
+let saturdaysToggled = false;
 
 function initializeSettingsCalendar() {
     const calendar = document.getElementById('settings-calendar');
@@ -1162,6 +1170,21 @@ function initializeSettingsCalendar() {
             prevBtn.style.cursor = 'pointer';
         }
     }
+    
+    const nextBtn = document.getElementById('settings-next-month');
+    if (nextBtn) {
+        const now = new Date();
+        const maxYear = (now.getMonth() === 11 && now.getDate() >= 25) ? now.getFullYear() + 1 : now.getFullYear();
+        if (year > maxYear || (year === maxYear && month >= 11)) {
+            nextBtn.disabled = true;
+            nextBtn.style.opacity = '0.3';
+            nextBtn.style.cursor = 'not-allowed';
+        } else {
+            nextBtn.disabled = false;
+            nextBtn.style.opacity = '1';
+            nextBtn.style.cursor = 'pointer';
+        }
+    }
 
     calendar.innerHTML = `
         <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
@@ -1180,6 +1203,8 @@ function initializeSettingsCalendar() {
         calendar.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
     }
 
+    const nowStrict = new Date();
+
     for (let i = 1; i <= daysInMonth; i++) {
         let dayDiv = document.createElement('div');
         const currentIterationDate = new Date(year, month, i);
@@ -1195,8 +1220,10 @@ function initializeSettingsCalendar() {
         dayDiv.style.alignItems = 'center';
         dayDiv.style.fontSize = '12px';
         dayDiv.style.borderRadius = '4px';
+        
+        const isToday = (dateStr === getUniversalDate(nowStrict));
 
-        if (currentIterationDate < joinedDate) {
+        if (currentIterationDate < joinedDate || (isToday && window.todayCheckinsCount > 0)) {
             dayDiv.style.cssText += CAL_STYLES.disabled;
         } else {
             dayDiv.style.cursor = 'pointer';
@@ -1231,40 +1258,75 @@ function changeSettingsMonth(offset) {
 }
 
 function markAllSundays() {
-    const calendar = document.getElementById('settings-calendar');
-    if (!calendar) return;
-    const year = settingsDate.getFullYear();
-    const month = settingsDate.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-    for (let i = 1; i <= daysInMonth; i++) {
-        const d = new Date(year, month, i);
-        if (d.getDay() === 0) { 
+    const btn = document.getElementById('btn-toggle-sundays');
+    const now = new Date();
+    const leader = getLeader();
+    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
+    joinedDate.setHours(0,0,0,0);
+    
+    const maxYear = (now.getMonth() === 11 && now.getDate() >= 25) ? now.getFullYear() + 1 : now.getFullYear();
+    const endDate = new Date(maxYear, 11, 31);
+    
+    sundaysToggled = !sundaysToggled;
+    
+    for (let d = new Date(joinedDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        if (d.getDay() === 0) {
             const dateStr = getUniversalDate(d);
-            if (!localHolidays.includes(dateStr)) localHolidays.push(dateStr);
+            const isToday = (dateStr === getUniversalDate(now));
+            if (isToday && window.todayCheckinsCount > 0) continue; 
+            
+            if (sundaysToggled && !localHolidays.includes(dateStr)) {
+                localHolidays.push(dateStr);
+            } else if (!sundaysToggled && localHolidays.includes(dateStr)) {
+                localHolidays = localHolidays.filter(h => h !== dateStr);
+            }
         }
     }
+    if (btn) btn.innerText = sundaysToggled ? "Undo Sundays Off" : "Turn all Sundays off";
     initializeSettingsCalendar();
     saveSettings(); 
 }
 
 function markSecondSaturdays() {
-    const year = settingsDate.getFullYear();
-    const month = settingsDate.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    let saturdayCount = 0;
+    const btn = document.getElementById('btn-toggle-saturdays');
+    const now = new Date();
+    const leader = getLeader();
+    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
+    joinedDate.setHours(0,0,0,0);
+    
+    const maxYear = (now.getMonth() === 11 && now.getDate() >= 25) ? now.getFullYear() + 1 : now.getFullYear();
+    
+    saturdaysToggled = !saturdaysToggled;
 
-    for (let i = 1; i <= daysInMonth; i++) {
-        const d = new Date(year, month, i);
-        if (d.getDay() === 6) { 
-            saturdayCount++;
-            if (saturdayCount === 2) { 
-                const dateStr = getUniversalDate(d);
-                if (!localHolidays.includes(dateStr)) localHolidays.push(dateStr);
-                break;
+    for (let y = joinedDate.getFullYear(); y <= maxYear; y++) {
+        for (let m = 0; m < 12; m++) {
+            if (y === joinedDate.getFullYear() && m < joinedDate.getMonth()) continue;
+            
+            let satCount = 0;
+            const daysInMonth = new Date(y, m + 1, 0).getDate();
+            for (let day = 1; day <= daysInMonth; day++) {
+                const d = new Date(y, m, day);
+                if (d.getDay() === 6) {
+                    satCount++;
+                    if (satCount === 2) {
+                        if (d >= joinedDate) {
+                            const dateStr = getUniversalDate(d);
+                            const isToday = (dateStr === getUniversalDate(now));
+                            if (isToday && window.todayCheckinsCount > 0) break; 
+
+                            if (saturdaysToggled && !localHolidays.includes(dateStr)) {
+                                localHolidays.push(dateStr);
+                            } else if (!saturdaysToggled && localHolidays.includes(dateStr)) {
+                                localHolidays = localHolidays.filter(h => h !== dateStr);
+                            }
+                        }
+                        break;
+                    }
+                }
             }
         }
     }
+    if (btn) btn.innerText = saturdaysToggled ? "Undo 2nd Saturdays Off" : "Turn all 2nd Saturdays off";
     initializeSettingsCalendar();
     saveSettings(); 
 }
@@ -1274,6 +1336,20 @@ async function loadSettings() {
     const leader = getLeader();
     if (!startInput || !leader) return;
     await ensureSupabase();
+
+    try {
+        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).maybeSingle();
+        if (fresh) { 
+            leader = fresh; 
+            sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
+        }
+    } catch(e) {}
+
+    try {
+        const todayStr = getUniversalDate();
+        const { count } = await supabaseClient.from('checkins').select('*', { count: 'exact', head: true }).eq('company_id', leader.company_id).eq('date', todayStr);
+        window.todayCheckinsCount = count || 0;
+    } catch(e) { window.todayCheckinsCount = 0; }
 
     try {
         const { data, error } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
