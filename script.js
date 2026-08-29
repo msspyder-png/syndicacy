@@ -639,7 +639,7 @@ async function captureFace() {
 async function loadTodayAttendance() {
     const activeList = document.getElementById('active-today-list');
     const pendingList = document.getElementById('pending-today-list');
-    const leader = getLeader();
+    let leader = getLeader();
 
     if (!activeList || !pendingList || !supabaseClient || !leader) return;
 
@@ -658,8 +658,8 @@ async function loadTodayAttendance() {
         let activeCount = 0;
         let pendingCount = 0;
 
-        staffMembers.forEach(staff => {
-            const log = attendanceLogs.find(a => a.user_email === staff.email);
+        (staffMembers || []).forEach(staff => {
+            const log = (attendanceLogs || []).find(a => a.user_email === staff.email);
             const initial = staff.name ? staff.name.charAt(0).toUpperCase() : '?';
             const shortName = staff.name ? staff.name.split(' ')[0] : 'Staff';
 
@@ -722,7 +722,7 @@ function calculateAvgCheckInTime(logs) {
 // --- SPREADSHEET: COMPLETE TEAM LEDGER ---
 async function loadTeamLedger() {
     const tableBody = document.getElementById('ledger-table-body');
-    const leader = getLeader();
+    let leader = getLeader();
     if (!tableBody || !supabaseClient || !leader) return;
 
     try {
@@ -782,7 +782,7 @@ let currentViewedUser = null;
 
 async function loadIndividualAnalytics() {
     const calendarGrid = document.getElementById('analytics-calendar');
-    const leader = getLeader();
+    let leader = getLeader();
     if (!calendarGrid || !supabaseClient || !leader) return; 
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -968,7 +968,7 @@ async function renameEmployee() {
 // --- TEAM DIRECTORY ---
 async function loadTeamDirectory() {
     const directoryList = document.getElementById('directory-list');
-    const leader = getLeader();
+    let leader = getLeader();
     if (!directoryList || !supabaseClient || !leader) return;
 
     try {
@@ -1084,8 +1084,17 @@ function markSecondSaturdays() {
 
 async function loadSettings() {
     const startInput = document.getElementById('check-in-start');
-    const leader = getLeader();
+    let leader = getLeader();
     if (!startInput || !supabaseClient || !leader) return;
+
+    // --- BOSS AUTO HEAL ---
+    try {
+        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).maybeSingle();
+        if (fresh) { 
+            leader = fresh; 
+            sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
+        }
+    } catch(e) {}
 
     try {
         const { data, error } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
@@ -1148,8 +1157,17 @@ async function loadSettings() {
 
 // THE AUTO-SAVE ENGINE
 async function saveSettings() {
-    const leader = getLeader();
+    let leader = getLeader();
     if (!leader) return;
+
+    // --- BOSS AUTO HEAL ---
+    try {
+        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).maybeSingle();
+        if (fresh) { 
+            leader = fresh; 
+            sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
+        }
+    } catch(e) {}
 
     const subtitle = document.querySelector('.dash-header .subtitle');
     let originalText = "Organizational parameters";
@@ -1173,7 +1191,16 @@ async function saveSettings() {
             }
         });
 
-        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        // Ensure company ID exists before saving
+        let safeCompanyId = leader.company_id;
+        if (!safeCompanyId) {
+            safeCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
+            await supabaseClient.from('users').update({ company_id: safeCompanyId }).eq('id', leader.id);
+            leader.company_id = safeCompanyId;
+            sessionStorage.setItem('loggedInLeader', JSON.stringify(leader));
+        }
+
+        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', safeCompanyId).limit(1).maybeSingle();
 
         const payload = {
             check_in_start: document.getElementById('check-in-start') ? document.getElementById('check-in-start').value : "09:00",
@@ -1183,7 +1210,7 @@ async function saveSettings() {
             holidays: JSON.stringify(localHolidays),
             exceptions: JSON.stringify(exceptionsArray),
             custom_schedules: JSON.stringify(customSchedules),
-            company_id: leader.company_id
+            company_id: safeCompanyId
         };
 
         if (existingData) {
@@ -1307,18 +1334,35 @@ async function loadTodayPIN() {
 }
 
 async function generateNewPIN() {
-    const leader = getLeader();
+    let leader = getLeader();
     if (!supabaseClient || !leader) return;
     
+    // --- BOSS AUTO HEAL ---
+    try {
+        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).maybeSingle();
+        if (fresh) { 
+            leader = fresh; 
+            sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
+        }
+    } catch(e) {}
+
     const newPin = Math.floor(1000 + Math.random() * 9000).toString();
     document.getElementById('live-pin-display').innerText = newPin;
 
     try {
-        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        let safeCompanyId = leader.company_id;
+        if (!safeCompanyId) {
+            safeCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
+            await supabaseClient.from('users').update({ company_id: safeCompanyId }).eq('id', leader.id);
+            leader.company_id = safeCompanyId;
+            sessionStorage.setItem('loggedInLeader', JSON.stringify(leader));
+        }
+
+        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', safeCompanyId).limit(1).maybeSingle();
         if (existingData) {
             await supabaseClient.from('settings').update({ daily_pin: newPin }).eq('id', existingData.id);
         } else {
-            await supabaseClient.from('settings').insert([{ daily_pin: newPin, company_id: leader.company_id }]);
+            await supabaseClient.from('settings').insert([{ daily_pin: newPin, company_id: safeCompanyId }]);
         }
     } catch (err) { console.error(err); }
 }
@@ -1480,8 +1524,17 @@ function updateCirclePreview() {
 }
 
 async function confirmMapLocation() {
-    const leader = getLeader();
+    let leader = getLeader();
     if (!leader || !map) return;
+
+    // --- BOSS AUTO HEAL ---
+    try {
+        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).maybeSingle();
+        if (fresh) { 
+            leader = fresh; 
+            sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
+        }
+    } catch(e) {}
 
     const center = map.getCenter();
     const radius = document.getElementById('radius-slider').value;
@@ -1491,19 +1544,27 @@ async function confirmMapLocation() {
     saveBtn.disabled = true;
 
     try {
-        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        let safeCompanyId = leader.company_id;
+        if (!safeCompanyId) {
+            safeCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
+            await supabaseClient.from('users').update({ company_id: safeCompanyId }).eq('id', leader.id);
+            leader.company_id = safeCompanyId;
+            sessionStorage.setItem('loggedInLeader', JSON.stringify(leader));
+        }
+
+        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', safeCompanyId).limit(1).maybeSingle();
         
         const payload = {
             office_lat: center.lat,
             office_lng: center.lng,
             office_radius: parseInt(radius),
-            require_gps: true 
+            require_gps: true,
+            company_id: safeCompanyId
         };
 
         if (existingData) {
             await supabaseClient.from('settings').update(payload).eq('id', existingData.id);
         } else {
-            payload.company_id = leader.company_id;
             await supabaseClient.from('settings').insert([payload]);
         }
 
@@ -1549,7 +1610,7 @@ function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
 }
 
 // ==========================================
-// --- STAFF PORTAL & FULLY ENFORCED SCANNER ---
+// --- STAFF PORTAL & DIRECT ID MAPPING ---
 // ==========================================
 
 let currentStaff = null; 
@@ -1571,7 +1632,6 @@ async function handleStaffLogin() {
         if (error) throw error;
 
         if (user && user.password === pass) {
-            // Clear any lingering boss sessions to prevent data bleeding
             sessionStorage.removeItem('loggedInLeader');
             sessionStorage.setItem('loggedInStaff', JSON.stringify(user));
             window.location.href = 'staff-dashboard.html';
@@ -1594,9 +1654,6 @@ async function loadStaffDashboard() {
 
     currentStaff = JSON.parse(sessionData);
 
-    // --- THE AUTO-HEAL ENGINE ---
-    // This forcefully downloads the absolute newest profile from Supabase
-    // to fix any old "ghost" sessions that are missing a company_id
     if (supabaseClient) {
         try {
             const { data: freshStaff } = await supabaseClient
@@ -1609,36 +1666,21 @@ async function loadStaffDashboard() {
                 currentStaff = freshStaff;
                 sessionStorage.setItem('loggedInStaff', JSON.stringify(freshStaff));
             }
-        } catch(e) { console.warn("Auto-Heal Check Failed"); }
+        } catch(e) {}
     }
 
-    // --- THE CRASH PREVENTER ---
-    // If the company_id is STILL somehow undefined, we give it a safe fallback string
-    // so it doesn't instantly crash the Supabase eq() filter and freeze the page.
     if (!currentStaff.company_id) {
         currentStaff.company_id = "UNASSIGNED_ID";
     }
 
-    // Now that the session is healed and safe, load the data unconditionally
     loadStaffRecords();
 
-    // Bind the Check-In button ONLY if it exists on the screen
     const checkInBtn = document.getElementById('check-in-btn');
     if (checkInBtn) {
         checkInBtn.onclick = function(event) {
             event.preventDefault(); 
             startDailyScanner();
         };
-    }
-
-    const dashHeader = document.querySelector('.dash-header h2');
-    if (dashHeader && dashHeader.innerText.includes("Good Morning")) {
-        dashHeader.innerText = `Good Morning, ${currentStaff.name.split(' ')[0]}`;
-    }
-    
-    const avatar = document.getElementById('status-avatar');
-    if (avatar && currentStaff.name) {
-        avatar.innerText = currentStaff.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
     }
 
     const logOutBtn = document.getElementById("secure-logout-btn");
@@ -1670,62 +1712,7 @@ async function loadStaffRecords() {
         let holidaysArray = [];
         try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
 
-        if(document.getElementById('staff-window-display')) {
-            document.getElementById('staff-window-display').innerText = `${settings?.check_in_start || "09:00"} - ${settings?.check_in_end || "10:00"}`;
-        }
-        
-        const excDisplay = document.getElementById('staff-exception-display');
-        if (excDisplay && settings?.exceptions) {
-            let excArray = [];
-            try { excArray = JSON.parse(settings.exceptions); } catch(e){}
-            const futureExc = excArray.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
-            if (futureExc.length > 0) {
-                const next = futureExc[0];
-                const parts = next.date.split('-');
-                excDisplay.innerText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${next.start} - ${next.end})`;
-            } else {
-                excDisplay.innerText = "None scheduled";
-            }
-        } else if (excDisplay) {
-            excDisplay.innerText = "None scheduled";
-        }
-
-        const gpsDisplay = document.getElementById('staff-gps-display');
-        if (gpsDisplay) {
-            if (settings?.require_gps) {
-                gpsDisplay.innerText = "ENABLED";
-                gpsDisplay.style.color = "#4ade80";
-                gpsDisplay.style.background = "#dcfce7";
-            } else {
-                gpsDisplay.innerText = "DISABLED";
-                gpsDisplay.style.color = "#888";
-                gpsDisplay.style.background = "#e8e8e8";
-            }
-        }
-
-        const pinDisplay = document.getElementById('staff-pin-display');
-        if (pinDisplay) {
-            if (settings?.require_pin) {
-                pinDisplay.innerText = "ENABLED";
-                pinDisplay.style.color = "#4ade80";
-                pinDisplay.style.background = "#dcfce7";
-            } else {
-                pinDisplay.innerText = "DISABLED";
-                pinDisplay.style.color = "#888";
-                pinDisplay.style.background = "#e8e8e8";
-            }
-        }
-
-        // --- POPULATE LEDGER HEADERS ---
-        const nameEl = document.getElementById('staff-ledger-name') || document.getElementById('employee-name-title');
-        if(nameEl) nameEl.innerText = currentStaff.name || "Staff";
-
-        const roleEl = document.getElementById('staff-ledger-role') || document.getElementById('employee-role-title');
-        if(roleEl) roleEl.innerText = currentStaff.role || "Unknown Role";
-
-        const joinedEl = document.getElementById('staff-ledger-joined') || document.getElementById('employee-joined-box');
-        if(joinedEl) joinedEl.innerText = currentStaff.joined_date || "N/A";
-
+        // CALCULATE LEDGER STATS SAFELY
         let workingDays = 1;
         if (currentStaff.joined_date) {
             const joinedDate = new Date(currentStaff.joined_date);
@@ -1737,57 +1724,92 @@ async function loadStaffRecords() {
             if (workingDays === 0) workingDays = 1; 
         }
 
-        const totalChecks = logs ? logs.length : 0;
-        
-        const checksEl = document.getElementById('staff-ledger-checkins') || document.getElementById('total-checkins-value');
-        if(checksEl) checksEl.innerText = `${totalChecks} / ${workingDays}`;
-        
-        const avgEl = document.getElementById('staff-ledger-avg') || document.getElementById('avg-in-time');
-        if(avgEl) avgEl.innerText = calculateAvgCheckInTime(logs);
-        
+        let safeLogs = Array.isArray(logs) ? logs : [];
+        const totalChecks = safeLogs.length;
         let percent = Math.round((totalChecks / workingDays) * 100);
         if (percent > 100) percent = 100;
         
-        const percentBox = document.getElementById('staff-ledger-percent') || document.getElementById('attendance-percent-box');
-        if(percentBox) {
-            percentBox.innerText = `${percent}%`;
-            percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
-        }
-
         const todayStr2 = getUniversalDate(today);
         const isHoliday = holidaysArray.includes(todayStr2);
-        const checkedInToday = logs && logs.some(log => log.date === todayStr2);
+        const checkedInToday = safeLogs.some(log => log.date === todayStr2);
 
-        const statusBox = document.getElementById('staff-ledger-status') || document.getElementById('employee-status-box');
-        if (statusBox) {
-            if (isHoliday) {
-                statusBox.innerText = "Holiday / Off";
-                statusBox.style.color = "#a0a0a0";
-                
-                const homeStatusText = document.getElementById('status-text');
-                if (homeStatusText) homeStatusText.innerText = "Holiday / Off";
-                
-                const checkInBtn = document.getElementById('check-in-btn');
-                if (checkInBtn) checkInBtn.style.display = "none";
-            } else if (checkedInToday) {
-                statusBox.innerText = "Present";
-                statusBox.style.color = "#4ade80";
-                
-                const card = document.getElementById('status-card');
-                if (card) {
-                    card.innerHTML = `
-                        <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
-                        <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
-                    `;
-                    card.classList.remove('ghost-theme');
-                    card.style.border = '1px solid #e0e0e0';
-                    card.style.backgroundColor = '#ffffff';
-                }
-            } else {
-                statusBox.innerText = "Absent";
-                statusBox.style.color = "#ef4444";
+        let exceptionText = "None scheduled";
+        if (settings && settings.exceptions) {
+            let excArray = [];
+            try { excArray = JSON.parse(settings.exceptions); } catch(e){}
+            const futureExc = excArray.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
+            if (futureExc.length > 0) {
+                const next = futureExc[0]; const parts = next.date.split('-');
+                exceptionText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${next.start} - ${next.end})`;
             }
         }
+
+        // --- DIRECT DOM MAPPING ---
+        try {
+            updateElementSafe('staff-window-display', `${settings?.check_in_start || "09:00"} - ${settings?.check_in_end || "10:00"}`);
+            updateElementSafe('staff-exception-display', exceptionText);
+
+            const isGpsOn = settings && settings.require_gps;
+            updateElementSafe('staff-gps-display', isGpsOn ? "ENABLED" : "DISABLED", isGpsOn ? "#4ade80" : "#888", isGpsOn ? "#dcfce7" : "#e8e8e8");
+
+            const isPinOn = settings && settings.require_pin;
+            updateElementSafe('staff-pin-display', isPinOn ? "ENABLED" : "DISABLED", isPinOn ? "#4ade80" : "#888", isPinOn ? "#dcfce7" : "#e8e8e8");
+
+            updateElementSafe('staff-ledger-name', currentStaff.name || "Staff");
+            updateElementSafe('staff-ledger-role', currentStaff.role || "Unknown Role");
+            updateElementSafe('staff-ledger-joined', currentStaff.joined_date || "N/A");
+            
+            const checksEl = document.getElementById('staff-ledger-checkins') || document.getElementById('total-checkins-value');
+            if(checksEl) { checksEl.innerText = `${totalChecks} / ${workingDays}`; checksEl.style.color = "#4ade80"; }
+
+            const avgEl = document.getElementById('staff-ledger-avg') || document.getElementById('avg-in-time');
+            if(avgEl) avgEl.innerText = calculateAvgCheckInTime(safeLogs);
+
+            const percentBox = document.getElementById('staff-ledger-percent') || document.getElementById('attendance-percent-box');
+            if(percentBox) {
+                percentBox.innerText = `${percent}%`;
+                percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
+            }
+
+            const statusBox = document.getElementById('staff-ledger-status') || document.getElementById('employee-status-box');
+            if (statusBox) {
+                if (isHoliday) { statusBox.innerText = "Holiday/Off"; statusBox.style.color = "#a0a0a0"; }
+                else if (checkedInToday) { statusBox.innerText = "Active"; statusBox.style.color = "#4ade80"; }
+                else { statusBox.innerText = "Absent"; statusBox.style.color = "#ef4444"; }
+            }
+
+            const dashHeader = document.querySelector('.dash-header h2');
+            if (dashHeader && dashHeader.innerText.includes("Good Morning")) dashHeader.innerText = `Good Morning, ${currentStaff.name.split(' ')[0]}`;
+            
+            updateElementSafe('status-avatar', currentStaff.name ? currentStaff.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase() : '--');
+
+            const statusCard = document.getElementById('status-card');
+            const checkInBtn = document.getElementById('check-in-btn');
+            if (statusCard && checkInBtn) {
+                if (isHoliday) {
+                    checkInBtn.style.display = "none";
+                    updateElementSafe('status-text', "Holiday / Off");
+                } else if (checkedInToday) {
+                    statusCard.innerHTML = `<div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div><h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>`;
+                    statusCard.classList.remove('ghost-theme');
+                    statusCard.style.border = '1px solid #e0e0e0';
+                    statusCard.style.backgroundColor = '#ffffff';
+                } else {
+                    updateElementSafe('status-text', "Pending Check-in");
+                }
+            }
+
+            const nextHolidayBox = document.getElementById('staff-next-holiday');
+            if (nextHolidayBox) {
+                const upcoming = holidaysArray.filter(d => new Date(d) >= today).sort();
+                if (upcoming.length > 0) {
+                    const parts = upcoming[0].split('-');
+                    nextHolidayBox.innerText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])}, ${parts[0]}`;
+                } else {
+                    nextHolidayBox.innerText = "No upcoming holidays";
+                }
+            }
+        } catch (e) { console.warn("DOM mapping error"); }
 
         const calendarGrid = document.getElementById('staff-analytics-calendar') || document.getElementById('analytics-calendar');
         if (calendarGrid) {
@@ -1818,7 +1840,7 @@ async function loadStaffRecords() {
             for (let day = 1; day <= daysInMonth; day++) {
                 const currentIterationDate = new Date(year, month, day);
                 const dateStrIteration = getUniversalDate(currentIterationDate);
-                const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
+                const wasPresent = safeLogs.some(log => log.date === dateStrIteration);
                 
                 let styleClass = "cal-day";
                 if (holidaysArray.includes(dateStrIteration)) {
@@ -1830,17 +1852,6 @@ async function loadStaffRecords() {
                 }
                 
                 calendarGrid.insertAdjacentHTML('beforeend', `<div class="${styleClass}">${day}</div>`);
-            }
-        }
-
-        const nextHolidayBox = document.getElementById('staff-next-holiday');
-        if (nextHolidayBox) {
-            const upcoming = holidaysArray.filter(d => new Date(d) >= today).sort();
-            if (upcoming.length > 0) {
-                const parts = upcoming[0].split('-');
-                nextHolidayBox.innerText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])}, ${parts[0]}`;
-            } else {
-                nextHolidayBox.innerText = "No upcoming holidays";
             }
         }
 
@@ -1864,7 +1875,7 @@ function switchStaffTab(tabName) {
     document.getElementById('view-' + tabName).style.display = 'block';
     document.getElementById('nav-' + tabName).classList.add('active');
     
-    if (tabName === 'records') loadStaffRecords();
+    if (tabName === 'records' || tabName === 'settings') loadStaffRecords();
 }
 
 function openStaffModal(title, desc) {
@@ -1888,9 +1899,7 @@ async function startDailyScanner() {
                 const timeData = await timeRes.json();
                 now = new Date(timeData.datetime);
             }
-        } catch (e) {
-            console.warn("Time sync failed, using local time.");
-        }
+        } catch (e) {}
         
         const todayDateStr = getUniversalDate(now);
         const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
@@ -1904,7 +1913,7 @@ async function startDailyScanner() {
             .maybeSingle();
 
         if (existingLog) {
-            alert("Action Denied 🚫\n\nYou have already checked in today. Duplicate scans are not permitted.");
+            alert("Action Denied 🚫\n\nYou have already checked in today.");
             return;
         }
 
@@ -1915,7 +1924,7 @@ async function startDailyScanner() {
             let holidayArray = [];
             try { holidayArray = JSON.parse(rules.holidays); } catch(e){}
             if (holidayArray.includes(todayDateStr)) {
-                alert("Scanner Locked 🔒\n\nToday has been declared an official Holiday by your organization. Enjoy your day off!");
+                alert("Scanner Locked 🔒\n\nToday has been declared an official Holiday by your organization.");
                 return;
             }
         }
