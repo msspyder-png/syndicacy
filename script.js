@@ -1,8 +1,33 @@
-// --- INITIALIZE SUPABASE CLOUD CONNECTION (BULLETPROOF) ---
+// --- CLOUD CONNECTION & AUTONOMOUS DEPENDENCY INJECTOR ---
 const supabaseUrl = 'https://qimabxbtbvgayayzvnoj.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFpbWFieGJ0YnZnYXlheXp2bm9qIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNDY5NTUsImV4cCI6MjEwMDcyMjk1NX0.wE4ea1t4ORvPla8C3C0T88pNl5uQTcVPDfDoUQlJEAw';
-
 let supabaseClient = null;
+
+async function ensureSupabase() {
+    if (supabaseClient) return;
+    if (typeof window.supabase === 'undefined') {
+        await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+    supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+}
+
+async function ensureFaceApi() {
+    if (typeof faceapi === 'undefined') {
+        await new Promise((resolve) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js';
+            script.onload = resolve;
+            document.head.appendChild(script);
+        });
+    }
+}
+
 try {
     if (window.supabase && typeof window.supabase.createClient === 'function') {
         supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
@@ -23,6 +48,17 @@ function getUniversalDate(dateObj = new Date()) {
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
     const day = String(dateObj.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+}
+
+// --- SAFE DOM UPDATER ---
+function updateElementSafe(id, text, color, bgColor) {
+    try {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (text !== undefined && text !== null) el.innerText = text;
+        if (color !== undefined && color !== null) el.style.color = color;
+        if (bgColor !== undefined && bgColor !== null) el.style.backgroundColor = bgColor;
+    } catch(e) {}
 }
 
 // --- POPUP / MODAL CONTROLS ---
@@ -61,6 +97,7 @@ window.onclick = function(event) {
 
 // --- SMART AUTHENTICATION (DETECTIVE MODE) ---
 async function handleLeaderAuth() {
+    await ensureSupabase();
     try {
         const emailInput = document.getElementById('user-email').value.trim();
         const passInput = document.getElementById('user-pass').value;
@@ -139,6 +176,7 @@ async function handleLeaderAuth() {
 
 // --- VERIFY OTP & REGISTER TO CLOUD DATABASE ---
 async function verifyOTP() {
+    await ensureSupabase();
     try {
         const inputs = document.querySelectorAll('.otp-field');
         let typedOTP = "";
@@ -207,6 +245,7 @@ function filterDirectory() {
 
 // --- 3. GENERATE INVITE DATA (Helper Function) ---
 async function generateInvite() {
+    await ensureSupabase();
     const leader = getLeader();
     if (!leader) { alert("Session expired. Please log in again."); return null; }
 
@@ -303,6 +342,7 @@ async function sendInviteLink() {
 
 // --- FETCH PENDING & SCANNED INVITES ---
 async function loadPendingInvites() {
+    await ensureSupabase();
     const pendingList = document.getElementById('pending-list');
     const leader = getLeader();
     if (!pendingList || !supabaseClient || !leader) return;
@@ -365,6 +405,7 @@ async function loadPendingInvites() {
 // --- APPROVE THE EMPLOYEE ---
 async function approveInvite(inviteId, employeeName) {
     if (!confirm(`Are you sure you want to officially approve ${employeeName}'s face scan and add them to the team?`)) return;
+    await ensureSupabase();
 
     if (!supabaseClient) {
         alert("Database connection is missing!");
@@ -443,6 +484,7 @@ function showApprovalSuccessModal(name) {
 // --- REJECT / DELETE INVITE ---
 async function deleteInvite(inviteId, employeeName) {
     if (!confirm(`Are you sure you want to delete the invite for ${employeeName}?`)) return;
+    await ensureSupabase();
     if (!supabaseClient) return;
 
     try {
@@ -462,6 +504,7 @@ async function verifyInviteLink() {
     const errorState = document.getElementById('error-state');
 
     if (!loadingState) return; 
+    await ensureSupabase();
 
     try {
         const urlParams = new URLSearchParams(window.location.search);
@@ -518,6 +561,7 @@ async function verifyInviteLink() {
 
 // --- START ONBOARDING CAMERA (JOIN.HTML) ---
 async function startFaceScan() {
+    await ensureFaceApi();
     const startBtn = document.getElementById('start-btn');
     const cameraContainer = document.getElementById('camera-container');
     const video = document.getElementById('video');
@@ -572,6 +616,8 @@ async function startFaceScan() {
 
 // --- CAPTURE ONBOARDING FACE & SNAPSHOT ---
 async function captureFace() {
+    await ensureSupabase();
+    await ensureFaceApi();
     const video = document.getElementById('video');
     const captureBtn = document.getElementById('capture-btn');
     const aiStatus = document.getElementById('ai-status');
@@ -639,9 +685,10 @@ async function captureFace() {
 async function loadTodayAttendance() {
     const activeList = document.getElementById('active-today-list');
     const pendingList = document.getElementById('pending-today-list');
-    let leader = getLeader();
+    const leader = getLeader();
 
-    if (!activeList || !pendingList || !supabaseClient || !leader) return;
+    if (!activeList || !pendingList || !leader) return;
+    await ensureSupabase();
 
     const todayStr = getUniversalDate();
 
@@ -649,7 +696,8 @@ async function loadTodayAttendance() {
         const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         if (staffErr) throw staffErr;
 
-        const { data: attendanceLogs, error: attErr } = await supabaseClient.from('attendance').select('*').eq('date', todayStr).eq('company_id', leader.company_id);
+        // FIXED TABLE NAME: 'checkins'
+        const { data: attendanceLogs, error: attErr } = await supabaseClient.from('checkins').select('*').eq('date', todayStr).eq('company_id', leader.company_id);
         if (attErr) throw attErr;
 
         activeList.innerHTML = "";
@@ -722,12 +770,15 @@ function calculateAvgCheckInTime(logs) {
 // --- SPREADSHEET: COMPLETE TEAM LEDGER ---
 async function loadTeamLedger() {
     const tableBody = document.getElementById('ledger-table-body');
-    let leader = getLeader();
-    if (!tableBody || !supabaseClient || !leader) return;
+    const leader = getLeader();
+    if (!tableBody || !leader) return;
+    await ensureSupabase();
 
     try {
         const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
-        const { data: attendance } = await supabaseClient.from('attendance').select('*').eq('company_id', leader.company_id);
+        
+        // FIXED TABLE NAME: 'checkins'
+        const { data: attendance } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
         const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
         let holidaysArray = [];
@@ -782,8 +833,9 @@ let currentViewedUser = null;
 
 async function loadIndividualAnalytics() {
     const calendarGrid = document.getElementById('analytics-calendar');
-    let leader = getLeader();
-    if (!calendarGrid || !supabaseClient || !leader) return; 
+    const leader = getLeader();
+    if (!calendarGrid || !leader) return; 
+    await ensureSupabase();
 
     const urlParams = new URLSearchParams(window.location.search);
     const targetEmail = urlParams.get('email');
@@ -791,7 +843,9 @@ async function loadIndividualAnalytics() {
 
     try {
         const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).maybeSingle();
-        const { data: logs } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail);
+        
+        // FIXED TABLE NAME: 'checkins'
+        const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
         const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
         currentViewedUser = user;
@@ -801,13 +855,14 @@ async function loadIndividualAnalytics() {
 
         document.getElementById('analytics-header').style.display = 'block';
         document.getElementById('credentials-card').style.display = 'block';
-        document.getElementById('employee-name-title').innerText = user?.name || "Unknown";
-        document.getElementById('employee-role-title').innerText = user?.role || "Unknown"; 
-        document.getElementById('employee-joined-box').innerText = user?.joined_date || "N/A";
-        document.getElementById('emp-cred-email').innerText = user?.email || "No Email";
+        
+        updateElementSafe('employee-name-title', user?.name || "Unknown");
+        updateElementSafe('employee-role-title', user?.role || "Unknown");
+        updateElementSafe('employee-joined-box', user?.joined_date || "N/A");
+        updateElementSafe('emp-cred-email', user?.email || "No Email");
         
         const firstName = user?.name ? user.name.split(' ')[0] : 'Staff';
-        document.getElementById('email-staff-btn').innerText = `Email ${firstName}`;
+        updateElementSafe('email-staff-btn', `Email ${firstName}`);
 
         const today = new Date();
         let workingDays = 1;
@@ -822,14 +877,13 @@ async function loadIndividualAnalytics() {
         }
 
         const totalChecks = logs ? logs.length : 0;
-        document.getElementById('total-checkins-value').innerText = `${totalChecks} / ${workingDays}`;
-        document.getElementById('avg-in-time').innerText = calculateAvgCheckInTime(logs);
+        updateElementSafe('total-checkins-value', `${totalChecks} / ${workingDays}`);
+        updateElementSafe('avg-in-time', calculateAvgCheckInTime(logs));
         
         let percent = Math.round((totalChecks / workingDays) * 100);
         if (percent > 100) percent = 100;
-        const percentBox = document.getElementById('attendance-percent-box');
-        percentBox.innerText = `${percent}%`;
-        percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
+        
+        updateElementSafe('attendance-percent-box', `${percent}%`, percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444'));
 
         const year = analyticsDate.getFullYear();
         const month = analyticsDate.getMonth();
@@ -889,6 +943,7 @@ async function revealPassword() {
 
     const leader = getLeader();
     if (!leader) return;
+    await ensureSupabase();
 
     try {
         const { data: leaders, error } = await supabaseClient
@@ -903,9 +958,8 @@ async function revealPassword() {
             return;
         }
 
-        const passBox = document.getElementById('emp-cred-pass');
-        passBox.innerText = `Password: ${currentViewedUser.password}`;
-        passBox.style.display = 'block';
+        updateElementSafe('emp-cred-pass', `Password: ${currentViewedUser.password}`);
+        document.getElementById('emp-cred-pass').style.display = 'block';
 
     } catch (err) {
         console.error(err);
@@ -921,6 +975,7 @@ async function emailCredentials() {
     
     const leader = getLeader();
     if (!leader) return;
+    await ensureSupabase();
 
     try {
         const { data: leaders, error } = await supabaseClient
@@ -948,10 +1003,11 @@ async function emailCredentials() {
 
 // --- RENAME EMPLOYEE ---
 async function renameEmployee() {
-    if (!currentViewedUser || !supabaseClient) return;
+    if (!currentViewedUser) return;
     const newName = prompt(`Enter a new name for ${currentViewedUser.name}:`, currentViewedUser.name);
     
     if (newName && newName.trim() !== "" && newName !== currentViewedUser.name) {
+        await ensureSupabase();
         try {
             const { error } = await supabaseClient.from('users').update({ name: newName.trim() }).eq('email', currentViewedUser.email);
             if (error) throw error;
@@ -968,8 +1024,9 @@ async function renameEmployee() {
 // --- TEAM DIRECTORY ---
 async function loadTeamDirectory() {
     const directoryList = document.getElementById('directory-list');
-    let leader = getLeader();
-    if (!directoryList || !supabaseClient || !leader) return;
+    const leader = getLeader();
+    if (!directoryList || !leader) return;
+    await ensureSupabase();
 
     try {
         const { data } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
@@ -1084,17 +1141,9 @@ function markSecondSaturdays() {
 
 async function loadSettings() {
     const startInput = document.getElementById('check-in-start');
-    let leader = getLeader();
-    if (!startInput || !supabaseClient || !leader) return;
-
-    // --- BOSS AUTO HEAL ---
-    try {
-        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).maybeSingle();
-        if (fresh) { 
-            leader = fresh; 
-            sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
-        }
-    } catch(e) {}
+    const leader = getLeader();
+    if (!startInput || !leader) return;
+    await ensureSupabase();
 
     try {
         const { data, error } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
@@ -1157,17 +1206,9 @@ async function loadSettings() {
 
 // THE AUTO-SAVE ENGINE
 async function saveSettings() {
-    let leader = getLeader();
+    const leader = getLeader();
     if (!leader) return;
-
-    // --- BOSS AUTO HEAL ---
-    try {
-        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).maybeSingle();
-        if (fresh) { 
-            leader = fresh; 
-            sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
-        }
-    } catch(e) {}
+    await ensureSupabase();
 
     const subtitle = document.querySelector('.dash-header .subtitle');
     let originalText = "Organizational parameters";
@@ -1239,7 +1280,8 @@ async function saveSettings() {
 // --- CUSTOM EMPLOYEE TIME LOGIC ---
 async function openCustomTimeModal() {
     const leader = getLeader();
-    if (!leader || !supabaseClient) return;
+    if (!leader) return;
+    await ensureSupabase();
 
     const select = document.getElementById('custom-time-emp-select');
     select.innerHTML = '<option value="" disabled selected>Loading staff...</option>';
@@ -1325,7 +1367,8 @@ function renderCustomTimeList() {
 async function loadTodayPIN() {
     const pinDisplay = document.getElementById('live-pin-display');
     const leader = getLeader();
-    if (!pinDisplay || !supabaseClient || !leader) return;
+    if (!pinDisplay || !leader) return;
+    await ensureSupabase();
 
     try {
         const { data } = await supabaseClient.from('settings').select('daily_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
@@ -1334,17 +1377,9 @@ async function loadTodayPIN() {
 }
 
 async function generateNewPIN() {
-    let leader = getLeader();
-    if (!supabaseClient || !leader) return;
-    
-    // --- BOSS AUTO HEAL ---
-    try {
-        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).maybeSingle();
-        if (fresh) { 
-            leader = fresh; 
-            sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
-        }
-    } catch(e) {}
+    const leader = getLeader();
+    if (!leader) return;
+    await ensureSupabase();
 
     const newPin = Math.floor(1000 + Math.random() * 9000).toString();
     document.getElementById('live-pin-display').innerText = newPin;
@@ -1524,17 +1559,9 @@ function updateCirclePreview() {
 }
 
 async function confirmMapLocation() {
-    let leader = getLeader();
+    const leader = getLeader();
     if (!leader || !map) return;
-
-    // --- BOSS AUTO HEAL ---
-    try {
-        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).maybeSingle();
-        if (fresh) { 
-            leader = fresh; 
-            sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
-        }
-    } catch(e) {}
+    await ensureSupabase();
 
     const center = map.getCenter();
     const radius = document.getElementById('radius-slider').value;
@@ -1618,6 +1645,7 @@ let scannerInterval = null;
 let staffAnalyticsDate = new Date();
 
 async function handleStaffLogin() {
+    await ensureSupabase();
     const email = document.getElementById('staff-email').value.trim();
     const pass = document.getElementById('staff-pass').value;
     const loginBtn = document.querySelector('.form-btn');
@@ -1649,6 +1677,7 @@ async function handleStaffLogin() {
 }
 
 async function loadStaffDashboard() {
+    await ensureSupabase();
     const sessionData = sessionStorage.getItem('loggedInStaff');
     if (!sessionData) return; 
 
@@ -1694,13 +1723,15 @@ async function loadStaffDashboard() {
 }
 
 async function loadStaffRecords() {
+    await ensureSupabase();
     if (!currentStaff || !supabaseClient) return;
 
     try {
         const targetEmail = currentStaff.email;
         const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
 
-        const { data: logs, error: logsErr } = await supabaseClient.from('attendance').select('*').eq('user_email', targetEmail).eq('company_id', safeCompanyId);
+        // FIXED TABLE NAME: 'checkins'
+        const { data: logs, error: logsErr } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail).eq('company_id', safeCompanyId);
         if (logsErr) console.error("Logs error:", logsErr);
 
         const { data: settings, error: setErr } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
@@ -1779,7 +1810,10 @@ async function loadStaffRecords() {
             }
 
             const dashHeader = document.querySelector('.dash-header h2');
-            if (dashHeader && dashHeader.innerText.includes("Good Morning")) dashHeader.innerText = `Good Morning, ${currentStaff.name.split(' ')[0]}`;
+            if (dashHeader && dashHeader.innerText.includes("Good Morning")) {
+                const shortName = currentStaff.name ? currentStaff.name.split(' ')[0] : 'Staff';
+                dashHeader.innerText = `Good Morning, ${shortName}`;
+            }
             
             updateElementSafe('status-avatar', currentStaff.name ? currentStaff.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase() : '--');
 
@@ -1885,6 +1919,9 @@ function openStaffModal(title, desc) {
 }
 
 async function startDailyScanner() {
+    await ensureFaceApi();
+    await ensureSupabase();
+    
     if (!currentStaff) {
         alert("Session Expired. Please log in again.");
         window.location.href = 'staff.html';
@@ -1904,8 +1941,9 @@ async function startDailyScanner() {
         const todayDateStr = getUniversalDate(now);
         const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
 
+        // FIXED TABLE NAME: 'checkins'
         const { data: existingLog } = await supabaseClient
-            .from('attendance')
+            .from('checkins')
             .select('id')
             .eq('user_email', currentStaff.email)
             .eq('company_id', safeCompanyId)
@@ -2048,7 +2086,8 @@ async function startDailyScanner() {
 
                         scannerStatus.innerText = "MATCH FOUND! SYNCING ATTENDANCE...";
                         
-                        supabaseClient.from('attendance').insert([{
+                        // FIXED TABLE NAME: 'checkins'
+                        supabaseClient.from('checkins').insert([{
                             user_email: currentStaff.email,
                             user_name: currentStaff.name,
                             date: todayDateStr,
@@ -2092,7 +2131,9 @@ function bindTimePickerFix() {
 }
 
 // --- RUN WHEN PAGE LOADS ---
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+    await ensureSupabase();
+
     initializeSettingsCalendar();
     loadPendingInvites(); 
     verifyInviteLink(); 
