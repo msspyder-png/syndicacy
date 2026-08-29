@@ -66,7 +66,7 @@ const CAL_STYLES = {
     absent: "background-color: transparent !important; color: #ef4444 !important; border: 1px dashed #ef4444 !important; font-weight: bold;",
     holiday: "background-color: #1a1a1a !important; color: #ffffff !important; border: 1px solid #1a1a1a !important; font-weight: bold;",
     default: "background-color: #ffffff !important; color: #888 !important; border: 1px solid #eaeaea !important;",
-    disabled: "background: repeating-linear-gradient(45deg, #f9f9f9, #f9f9f9 5px, #eaeaea 5px, #eaeaea 10px) !important; color: #ccc !important; pointer-events: none !important; border: 1px solid #eaeaea !important;"
+    disabled: "background-color: #ffffff !important; color: #ccc !important; pointer-events: none !important; border: 1px solid #eaeaea !important; cursor: not-allowed;"
 };
 
 // --- POPUP / MODAL CONTROLS ---
@@ -845,7 +845,7 @@ async function loadIndividualAnalytics() {
     if (!calendarGrid || !leader) return; 
     await ensureSupabase();
 
-    const urlParams = new URLSearchParams(window.location.search);
+    const urlParams = newSearchParams(window.location.search);
     const targetEmail = urlParams.get('email');
     if (!targetEmail) return;
 
@@ -860,7 +860,6 @@ async function loadIndividualAnalytics() {
 
         let holidaysArray = [];
         try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
-        if (!Array.isArray(holidaysArray)) holidaysArray = [];
 
         document.getElementById('analytics-header').style.display = 'block';
         document.getElementById('credentials-card').style.display = 'block';
@@ -997,10 +996,10 @@ async function loadIndividualAnalytics() {
             
             if (currentIterationDate < empJoinedDate) {
                 inlineStyle = CAL_STYLES.disabled;
-            } else if (currentIterationDate > today) {
-                inlineStyle = CAL_STYLES.default;
             } else if (holidaysArray.includes(dateStrIteration)) {
                 inlineStyle = CAL_STYLES.holiday;
+            } else if (currentIterationDate > today) {
+                inlineStyle = CAL_STYLES.default;
             } else if (wasPresent) { 
                 inlineStyle = CAL_STYLES.present; 
             } else { 
@@ -2105,10 +2104,10 @@ async function loadStaffRecords() {
                 
                 if (currentIterationDate < empJoinedDate) {
                     inlineStyle = CAL_STYLES.disabled;
-                } else if (currentIterationDate > today) {
-                    inlineStyle = CAL_STYLES.default;
                 } else if (holidaysArray.includes(dateStrIteration)) {
                     inlineStyle = CAL_STYLES.holiday;
+                } else if (currentIterationDate > today) {
+                    inlineStyle = CAL_STYLES.default;
                 } else if (wasPresent) { 
                     inlineStyle = CAL_STYLES.present; 
                 } else { 
