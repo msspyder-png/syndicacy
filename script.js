@@ -1280,8 +1280,7 @@ async function saveSettings() {
 // --- CUSTOM EMPLOYEE TIME LOGIC ---
 async function openCustomTimeModal() {
     const leader = getLeader();
-    if (!leader) return;
-    await ensureSupabase();
+    if (!leader || !supabaseClient) return;
 
     const select = document.getElementById('custom-time-emp-select');
     select.innerHTML = '<option value="" disabled selected>Loading staff...</option>';
@@ -1367,8 +1366,7 @@ function renderCustomTimeList() {
 async function loadTodayPIN() {
     const pinDisplay = document.getElementById('live-pin-display');
     const leader = getLeader();
-    if (!pinDisplay || !leader) return;
-    await ensureSupabase();
+    if (!pinDisplay || !supabaseClient || !leader) return;
 
     try {
         const { data } = await supabaseClient.from('settings').select('daily_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
@@ -1402,10 +1400,7 @@ async function generateNewPIN() {
     } catch (err) { console.error(err); }
 }
 
-// ==========================================
 // --- LEAFLET MAP & GEOFENCING ENGINE ---
-// ==========================================
-
 let map = null;
 let geofenceCircle = null;
 let mapSavedLat = null;
@@ -1730,7 +1725,6 @@ async function loadStaffRecords() {
         const targetEmail = currentStaff.email;
         const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
 
-        // FIXED TABLE NAME: 'checkins'
         const { data: logs, error: logsErr } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail).eq('company_id', safeCompanyId);
         if (logsErr) console.error("Logs error:", logsErr);
 
@@ -1941,7 +1935,6 @@ async function startDailyScanner() {
         const todayDateStr = getUniversalDate(now);
         const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
 
-        // FIXED TABLE NAME: 'checkins'
         const { data: existingLog } = await supabaseClient
             .from('checkins')
             .select('id')
@@ -2056,7 +2049,9 @@ async function startDailyScanner() {
         const savedNumbers = JSON.parse(currentStaff.face_data);
         const savedFloatArray = new Float32Array(savedNumbers);
         const labeledDescriptor = new faceapi.LabeledFaceDescriptors(currentStaff.name, [savedFloatArray]);
-        const faceMatcher = new faceapi.FaceMatcher([labeledDescriptor], 0.5);
+        
+        // RELAXED MATCHER THRESHOLD: 0.6 instead of 0.5
+        const faceMatcher = new faceapi.FaceMatcher([labeledDescriptor], 0.6);
 
         video.onplay = () => {
             const canvas = faceapi.createCanvasFromMedia(video);
@@ -2086,7 +2081,6 @@ async function startDailyScanner() {
 
                         scannerStatus.innerText = "MATCH FOUND! SYNCING ATTENDANCE...";
                         
-                        // FIXED TABLE NAME: 'checkins'
                         supabaseClient.from('checkins').insert([{
                             user_email: currentStaff.email,
                             user_name: currentStaff.name,
@@ -2111,6 +2105,9 @@ async function startDailyScanner() {
                             
                             loadStaffRecords();
                         });
+                    } else {
+                        scannerStatus.innerText = "FACE NOT MATCHED. ADJUST LIGHTING OR ANGLE...";
+                        scannerStatus.style.color = "#f59e0b";
                     }
                 } else {
                     canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
@@ -2133,7 +2130,7 @@ function bindTimePickerFix() {
 // --- RUN WHEN PAGE LOADS ---
 window.addEventListener('DOMContentLoaded', async () => {
     await ensureSupabase();
-
+    
     initializeSettingsCalendar();
     loadPendingInvites(); 
     verifyInviteLink(); 
