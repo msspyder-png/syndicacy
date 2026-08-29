@@ -696,7 +696,6 @@ async function loadTodayAttendance() {
         const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         if (staffErr) throw staffErr;
 
-        // FIXED TABLE NAME: 'checkins'
         const { data: attendanceLogs, error: attErr } = await supabaseClient.from('checkins').select('*').eq('date', todayStr).eq('company_id', leader.company_id);
         if (attErr) throw attErr;
 
@@ -777,7 +776,6 @@ async function loadTeamLedger() {
     try {
         const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         
-        // FIXED TABLE NAME: 'checkins'
         const { data: attendance } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
         const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
@@ -844,9 +842,8 @@ async function loadIndividualAnalytics() {
     try {
         const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).maybeSingle();
         
-        // FIXED TABLE NAME: 'checkins'
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
-        const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
         currentViewedUser = user;
 
@@ -885,6 +882,61 @@ async function loadIndividualAnalytics() {
         
         updateElementSafe('attendance-percent-box', `${percent}%`, percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444'));
 
+        const todayStr2 = getUniversalDate(today);
+        const checkedInToday = logs && logs.some(log => log.date === todayStr2);
+
+        // --- NEW TODAY'S STATUS LOGIC (PRO UPGRADE) ---
+        try {
+            const labels = document.querySelectorAll('.stat-label');
+            let statusLabelEl = Array.from(labels).find(el => el.innerText.trim().toUpperCase() === 'SYSTEM STATUS');
+            
+            if (statusLabelEl) {
+                statusLabelEl.innerText = "TODAY'S STATUS";
+                const statusValueEl = statusLabelEl.nextElementSibling;
+                
+                if (statusValueEl) {
+                    let todayStatus = "Not Yet";
+                    let todayColor = "#f59e0b"; 
+
+                    if (holidaysArray.includes(todayStr2)) {
+                        todayStatus = "Holiday / Off";
+                        todayColor = "#a0a0a0"; 
+                    } else if (checkedInToday) {
+                        todayStatus = "Present";
+                        todayColor = "#4ade80"; 
+                    } else {
+                        let allowedEnd = settings && settings.check_in_end ? settings.check_in_end : "10:00";
+                        
+                        if (settings && settings.custom_schedules) {
+                            let customArray = []; try { customArray = JSON.parse(settings.custom_schedules); } catch(e){}
+                            const myCustom = customArray.find(c => c.email === targetEmail);
+                            if (myCustom) allowedEnd = myCustom.end;
+                        }
+
+                        if (settings && settings.exceptions) {
+                            let exceptionsArray = []; try { exceptionsArray = JSON.parse(settings.exceptions); } catch(e){}
+                            const todayException = exceptionsArray.find(ex => ex.date === todayStr2);
+                            if (todayException) allowedEnd = todayException.end;
+                        }
+
+                        const now = new Date();
+                        const currentHours = String(now.getHours()).padStart(2, '0');
+                        const currentMinutes = String(now.getMinutes()).padStart(2, '0');
+                        const currentTime = `${currentHours}:${currentMinutes}`;
+
+                        if (currentTime > allowedEnd) {
+                            todayStatus = "Absent";
+                            todayColor = "#ef4444"; 
+                        }
+                    }
+
+                    statusValueEl.innerText = todayStatus;
+                    statusValueEl.style.color = todayColor;
+                }
+            }
+        } catch(e) { console.warn("Could not update system status UI"); }
+        // ----------------------------------------------
+
         const year = analyticsDate.getFullYear();
         const month = analyticsDate.getMonth();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -907,9 +959,6 @@ async function loadIndividualAnalytics() {
         for (let i = 0; i < firstDayIndex; i++) {
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none;"></div>`);
         }
-
-        const todayStr2 = getUniversalDate(today);
-        const checkedInToday = logs && logs.some(log => log.date === todayStr2);
 
         for (let day = 1; day <= daysInMonth; day++) {
             const currentIterationDate = new Date(year, month, day);
@@ -1366,7 +1415,8 @@ function renderCustomTimeList() {
 async function loadTodayPIN() {
     const pinDisplay = document.getElementById('live-pin-display');
     const leader = getLeader();
-    if (!pinDisplay || !supabaseClient || !leader) return;
+    if (!pinDisplay || !leader) return;
+    await ensureSupabase();
 
     try {
         const { data } = await supabaseClient.from('settings').select('daily_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
@@ -1868,7 +1918,7 @@ async function loadStaffRecords() {
             for (let day = 1; day <= daysInMonth; day++) {
                 const currentIterationDate = new Date(year, month, day);
                 const dateStrIteration = getUniversalDate(currentIterationDate);
-                const wasPresent = safeLogs.some(log => log.date === dateStrIteration);
+                const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
                 
                 let styleClass = "cal-day";
                 if (holidaysArray.includes(dateStrIteration)) {
@@ -2090,7 +2140,7 @@ async function startDailyScanner() {
                             company_id: safeCompanyId 
                         }]).then(({ error }) => {
                             if (error) {
-                                alert("Failed to log attendance to cloud!");
+                                alert("Database Error: " + error.message + "\n\nPlease ensure your 'checkins' table has exactly these columns: user_email, user_name, date, time, status, company_id.");
                                 return;
                             }
                             
