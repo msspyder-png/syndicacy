@@ -860,7 +860,6 @@ async function loadIndividualAnalytics() {
 
         let holidaysArray = [];
         try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
-        if (!Array.isArray(holidaysArray)) holidaysArray = [];
 
         document.getElementById('analytics-header').style.display = 'block';
         document.getElementById('credentials-card').style.display = 'block';
@@ -997,10 +996,10 @@ async function loadIndividualAnalytics() {
             
             if (currentIterationDate < empJoinedDate) {
                 inlineStyle = CAL_STYLES.disabled;
-            } else if (currentIterationDate > today) {
-                inlineStyle = CAL_STYLES.default;
             } else if (holidaysArray.includes(dateStrIteration)) {
                 inlineStyle = CAL_STYLES.holiday;
+            } else if (currentIterationDate > today) {
+                inlineStyle = CAL_STYLES.default;
             } else if (wasPresent) { 
                 inlineStyle = CAL_STYLES.present; 
             } else { 
@@ -2105,10 +2104,10 @@ async function loadStaffRecords() {
                 
                 if (currentIterationDate < empJoinedDate) {
                     inlineStyle = CAL_STYLES.disabled;
-                } else if (currentIterationDate > today) {
-                    inlineStyle = CAL_STYLES.default;
                 } else if (holidaysArray.includes(dateStrIteration)) {
                     inlineStyle = CAL_STYLES.holiday;
+                } else if (currentIterationDate > today) {
+                    inlineStyle = CAL_STYLES.default;
                 } else if (wasPresent) { 
                     inlineStyle = CAL_STYLES.present; 
                 } else { 
