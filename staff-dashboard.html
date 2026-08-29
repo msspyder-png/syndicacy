@@ -78,19 +78,20 @@
             </div>
 
             <div class="form-card" style="text-align: left;">
-                <div class="calendar-controls">
-                    <button class="cal-btn" onclick="changeStaffMonth(-1)">&lt;</button>
+                <div class="calendar-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-weight: 600;">
+                    <button class="cal-btn" id="staff-cal-prev" onclick="changeStaffMonth(-1)">&lt;</button>
                     <span id="cal-month-display">Loading...</span>
-                    <button class="cal-btn" onclick="changeStaffMonth(1)">&gt;</button>
+                    <button class="cal-btn" id="staff-cal-next" onclick="changeStaffMonth(1)">&gt;</button>
                 </div>
                 
                 <div class="calendar-grid" id="staff-analytics-calendar">
                 </div>
                 
                 <div style="margin-top: 20px; font-size: 11px; color: #888; display: flex; justify-content: space-around;">
-                    <span><span style="color: #1a1a1a; font-size: 14px;">■</span> Present</span>
+                    <span><span style="color: #4ade80; font-size: 14px;">■</span> Present</span>
                     <span><span style="color: #ef4444; font-size: 14px;">■</span> Absent</span>
-                    <span><span style="color: #e0e0e0; font-size: 14px;">■</span> Holiday/Off</span>
+                    <span><span style="color: #1a1a1a; font-size: 14px;">■</span> Holiday/Off</span>
+                    <span><span style="color: #e0e0e0; font-size: 14px;">□</span> Future/None</span>
                 </div>
             </div>
         </div>

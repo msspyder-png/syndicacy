@@ -27,19 +27,18 @@
             </div>
             <p style="font-size: 12px; color: #888; margin-bottom: 15px;">Configure working days and holidays</p>
             
+            <div class="calendar-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-weight: 600;">
+                <button class="cal-btn" id="settings-prev-month" onclick="changeSettingsMonth(-1)">&lt;</button>
+                <span id="settings-month-display">Loading...</span>
+                <button class="cal-btn" id="settings-next-month" onclick="changeSettingsMonth(1)">&gt;</button>
+            </div>
+
             <div class="calendar-grid" id="settings-calendar" style="margin-bottom: 15px;">
-                <div class="cal-day" style="border: none; font-weight: bold;">S</div>
-                <div class="cal-day" style="border: none; font-weight: bold;">M</div>
-                <div class="cal-day" style="border: none; font-weight: bold;">T</div>
-                <div class="cal-day" style="border: none; font-weight: bold;">W</div>
-                <div class="cal-day" style="border: none; font-weight: bold;">T</div>
-                <div class="cal-day" style="border: none; font-weight: bold;">F</div>
-                <div class="cal-day" style="border: none; font-weight: bold;">S</div>
             </div>
 
             <div class="button-stack" style="flex-direction: row; gap: 10px;">
-                <button class="google-btn" style="font-size: 12px; padding: 8px;" onclick="markAllSundays()">+ All Sundays</button>
-                <button class="google-btn" style="font-size: 12px; padding: 8px;" onclick="markSecondSaturdays()">+ 2nd Saturdays</button>
+                <button class="google-btn" style="font-size: 12px; padding: 8px;" onclick="markAllSundays()">Mark Sundays Off</button>
+                <button class="google-btn" style="font-size: 12px; padding: 8px;" onclick="markSecondSaturdays()">Mark 2nd Sat Off</button>
             </div>
         </div>
 
@@ -217,6 +216,6 @@
         </a>
     </nav>
 
-    <script src="script.js?v=1018"></script>
+    <script src="script.js?v=1019"></script>
 </body>
 </html>

@@ -61,6 +61,14 @@ function updateElementSafe(id, text, color, bgColor) {
     } catch(e) {}
 }
 
+const CAL_STYLES = {
+    present: "background-color: #4ade80 !important; color: #1a1a1a !important; border: 1px solid #4ade80 !important; font-weight: bold;",
+    absent: "background-color: transparent !important; color: #ef4444 !important; border: 1px dashed #ef4444 !important; font-weight: bold;",
+    holiday: "background-color: #1a1a1a !important; color: #ffffff !important; border: 1px solid #1a1a1a !important; font-weight: bold;",
+    default: "background-color: #ffffff !important; color: #888 !important; border: 1px solid #eaeaea !important;",
+    disabled: "background: repeating-linear-gradient(45deg, #f9f9f9, #f9f9f9 5px, #eaeaea 5px, #eaeaea 10px) !important; color: #ccc !important; pointer-events: none !important; border: 1px solid #eaeaea !important;"
+};
+
 // --- POPUP / MODAL CONTROLS ---
 function openModal(id) {
     const modal = document.getElementById(id);
@@ -843,7 +851,7 @@ async function loadIndividualAnalytics() {
         const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).maybeSingle();
         
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
-        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
         currentViewedUser = user;
 
@@ -885,7 +893,6 @@ async function loadIndividualAnalytics() {
         const todayStr2 = getUniversalDate(today);
         const checkedInToday = logs && logs.some(log => log.date === todayStr2);
 
-        // --- NEW TODAY'S STATUS LOGIC (PRO UPGRADE) ---
         try {
             const labels = document.querySelectorAll('.stat-label');
             let statusLabelEl = Array.from(labels).find(el => el.innerText.trim().toUpperCase() === 'SYSTEM STATUS');
@@ -935,29 +942,44 @@ async function loadIndividualAnalytics() {
                 }
             }
         } catch(e) { console.warn("Could not update system status UI"); }
-        // ----------------------------------------------
 
         const year = analyticsDate.getFullYear();
         const month = analyticsDate.getMonth();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         
+        const empJoinedDate = user && user.joined_date ? new Date(user.joined_date) : new Date();
+        empJoinedDate.setHours(0,0,0,0);
+
         const monthTitleEl = document.getElementById('calendar-month-title');
-        monthTitleEl.innerHTML = `
-            <button class="i-btn" style="width: 24px; height: 24px; padding: 0; line-height: 1; margin-right: 10px;" onclick="changeMonth(-1)">&#8592;</button>
-            <span>${monthNames[month]} ${year}</span>
-            <button class="i-btn" style="width: 24px; height: 24px; padding: 0; line-height: 1; margin-left: 10px;" onclick="changeMonth(1)">&#8594;</button>
-        `;
-        monthTitleEl.style.display = 'flex'; monthTitleEl.style.alignItems = 'center'; monthTitleEl.style.justifyContent = 'center';
+        if (monthTitleEl) {
+            let prevDisabled = false;
+            if (year < empJoinedDate.getFullYear() || (year === empJoinedDate.getFullYear() && month <= empJoinedDate.getMonth())) {
+                prevDisabled = true;
+            }
+
+            monthTitleEl.innerHTML = `
+                <button class="i-btn" style="width: 24px; height: 24px; padding: 0; line-height: 1; margin-right: 10px; ${prevDisabled ? 'opacity: 0.3; cursor: not-allowed;' : ''}" ${prevDisabled ? '' : 'onclick="changeMonth(-1)"'}>&#8592;</button>
+                <span>${monthNames[month]} ${year}</span>
+                <button class="i-btn" style="width: 24px; height: 24px; padding: 0; line-height: 1; margin-left: 10px;" onclick="changeMonth(1)">&#8594;</button>
+            `;
+            monthTitleEl.style.display = 'flex'; monthTitleEl.style.alignItems = 'center'; monthTitleEl.style.justifyContent = 'center';
+        }
 
         calendarGrid.innerHTML = `
-            <div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">M</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">W</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">F</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">M</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">T</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">W</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">T</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">F</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
         `;
 
         const firstDayIndex = new Date(year, month, 1).getDay();
         const daysInMonth = new Date(year, month + 1, 0).getDate();
 
         for (let i = 0; i < firstDayIndex; i++) {
-            calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none;"></div>`);
+            calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
         }
 
         for (let day = 1; day <= daysInMonth; day++) {
@@ -965,16 +987,21 @@ async function loadIndividualAnalytics() {
             const dateStrIteration = getUniversalDate(currentIterationDate);
             const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
             
-            let styleClass = "cal-day";
-            if (holidaysArray.includes(dateStrIteration)) {
-                styleClass = "cal-day cal-holiday";
+            let inlineStyle = CAL_STYLES.default;
+            
+            if (currentIterationDate < empJoinedDate) {
+                inlineStyle = CAL_STYLES.disabled;
+            } else if (currentIterationDate > today) {
+                inlineStyle = CAL_STYLES.default;
+            } else if (holidaysArray.includes(dateStrIteration)) {
+                inlineStyle = CAL_STYLES.holiday;
             } else if (wasPresent) { 
-                styleClass = "cal-day cal-present"; 
-            } else if (currentIterationDate <= today) { 
-                styleClass = "cal-day cal-absent"; 
+                inlineStyle = CAL_STYLES.present; 
+            } else { 
+                inlineStyle = CAL_STYLES.absent; 
             }
             
-            calendarGrid.insertAdjacentHTML('beforeend', `<div class="${styleClass}">${day}</div>`);
+            calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle}">${day}</div>`);
         }
     } catch (err) { console.error(err); }
 }
@@ -1106,53 +1133,108 @@ async function loadTeamDirectory() {
 
 let localHolidays = [];
 let customSchedules = []; 
+let settingsDate = new Date();
 
 function initializeSettingsCalendar() {
     const calendar = document.getElementById('settings-calendar');
     if (!calendar) return; 
 
-    const headers = calendar.querySelectorAll('.cal-day');
-    calendar.innerHTML = "";
-    headers.forEach(h => calendar.appendChild(h));
+    const leader = getLeader();
+    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(2000, 0, 1);
+    joinedDate.setHours(0,0,0,0);
 
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
+    const year = settingsDate.getFullYear();
+    const month = settingsDate.getMonth();
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+    const monthTitleEl = document.getElementById('settings-month-display');
+    if (monthTitleEl) monthTitleEl.innerText = `${monthNames[month]} ${year}`;
+
+    const prevBtn = document.getElementById('settings-prev-month');
+    if (prevBtn) {
+        if (year < joinedDate.getFullYear() || (year === joinedDate.getFullYear() && month <= joinedDate.getMonth())) {
+            prevBtn.disabled = true;
+            prevBtn.style.opacity = '0.3';
+            prevBtn.style.cursor = 'not-allowed';
+        } else {
+            prevBtn.disabled = false;
+            prevBtn.style.opacity = '1';
+            prevBtn.style.cursor = 'pointer';
+        }
+    }
+
+    calendar.innerHTML = `
+        <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
+        <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">M</div>
+        <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">T</div>
+        <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">W</div>
+        <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">T</div>
+        <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">F</div>
+        <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
+    `;
+
+    const firstDayIndex = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    for (let i = 0; i < firstDayIndex; i++) {
+        calendar.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
+    }
 
     for (let i = 1; i <= daysInMonth; i++) {
         let dayDiv = document.createElement('div');
-        dayDiv.className = 'cal-day cal-present'; 
+        const currentIterationDate = new Date(year, month, i);
+        const dateStr = getUniversalDate(currentIterationDate);
+
+        dayDiv.className = 'cal-day'; 
         dayDiv.innerText = i;
-        dayDiv.style.cursor = 'pointer';
-        
-        const dateStr = getUniversalDate(new Date(year, month, i));
         dayDiv.dataset.date = dateStr;
+        
+        dayDiv.style.aspectRatio = '1';
+        dayDiv.style.display = 'flex';
+        dayDiv.style.justifyContent = 'center';
+        dayDiv.style.alignItems = 'center';
+        dayDiv.style.fontSize = '12px';
+        dayDiv.style.borderRadius = '4px';
 
-        if (localHolidays.includes(dateStr)) {
-            dayDiv.className = 'cal-day cal-holiday';
-        }
-
-        dayDiv.onclick = function() {
-            if (this.classList.contains('cal-present')) {
-                this.classList.replace('cal-present', 'cal-holiday');
-                if (!localHolidays.includes(dateStr)) localHolidays.push(dateStr);
+        if (currentIterationDate < joinedDate) {
+            dayDiv.style.cssText += CAL_STYLES.disabled;
+        } else {
+            dayDiv.style.cursor = 'pointer';
+            if (localHolidays.includes(dateStr)) {
+                dayDiv.style.cssText += CAL_STYLES.holiday;
+                dayDiv.dataset.isholiday = "true";
             } else {
-                this.classList.replace('cal-holiday', 'cal-present');
-                localHolidays = localHolidays.filter(d => d !== dateStr);
+                dayDiv.style.cssText += CAL_STYLES.default;
+                dayDiv.dataset.isholiday = "false";
             }
-            saveSettings(); 
-        };
+
+            dayDiv.onclick = function() {
+                if (this.dataset.isholiday === "true") {
+                    this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.default;
+                    this.dataset.isholiday = "false";
+                    localHolidays = localHolidays.filter(d => d !== dateStr);
+                } else {
+                    this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.holiday;
+                    this.dataset.isholiday = "true";
+                    if (!localHolidays.includes(dateStr)) localHolidays.push(dateStr);
+                }
+                saveSettings(); 
+            };
+        }
         calendar.appendChild(dayDiv);
     }
+}
+
+function changeSettingsMonth(offset) {
+    settingsDate.setMonth(settingsDate.getMonth() + offset);
+    initializeSettingsCalendar();
 }
 
 function markAllSundays() {
     const calendar = document.getElementById('settings-calendar');
     if (!calendar) return;
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
+    const year = settingsDate.getFullYear();
+    const month = settingsDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -1167,9 +1249,8 @@ function markAllSundays() {
 }
 
 function markSecondSaturdays() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
+    const year = settingsDate.getFullYear();
+    const month = settingsDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     let saturdayCount = 0;
 
@@ -1894,25 +1975,49 @@ async function loadStaffRecords() {
             const year = staffAnalyticsDate.getFullYear();
             const month = staffAnalyticsDate.getMonth();
             
+            const empJoinedDate = currentStaff && currentStaff.joined_date ? new Date(currentStaff.joined_date) : new Date();
+            empJoinedDate.setHours(0,0,0,0);
+
             const monthTitle = document.getElementById('cal-month-display') || document.getElementById('calendar-month-title');
             if (monthTitle) {
-                monthTitle.innerHTML = `
-                    <button class="i-btn" style="width: 24px; height: 24px; padding: 0; line-height: 1; margin-right: 10px;" onclick="changeStaffMonth(-1)">&#8592;</button>
-                    <span>${monthNames[month]} ${year}</span>
-                    <button class="i-btn" style="width: 24px; height: 24px; padding: 0; line-height: 1; margin-left: 10px;" onclick="changeStaffMonth(1)">&#8594;</button>
-                `;
-                monthTitle.style.display = 'flex'; monthTitle.style.alignItems = 'center'; monthTitle.style.justifyContent = 'center';
+                let prevDisabled = false;
+                if (year < empJoinedDate.getFullYear() || (year === empJoinedDate.getFullYear() && month <= empJoinedDate.getMonth())) {
+                    prevDisabled = true;
+                }
+
+                const prevBtn = document.getElementById('staff-cal-prev');
+                if (prevBtn) {
+                    if (prevDisabled) {
+                        prevBtn.disabled = true;
+                        prevBtn.style.opacity = '0.3';
+                        prevBtn.style.cursor = 'not-allowed';
+                    } else {
+                        prevBtn.disabled = false;
+                        prevBtn.style.opacity = '1';
+                        prevBtn.style.cursor = 'pointer';
+                    }
+                }
+                
+                if (document.getElementById('cal-month-display')) {
+                    document.getElementById('cal-month-display').innerText = `${monthNames[month]} ${year}`;
+                }
             }
 
             calendarGrid.innerHTML = `
-                <div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">M</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">W</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">T</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">F</div><div class="cal-day" style="border: none; font-weight: bold; color: #888;">S</div>
+                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
+                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">M</div>
+                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">T</div>
+                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">W</div>
+                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">T</div>
+                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">F</div>
+                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
             `;
 
             const firstDayIndex = new Date(year, month, 1).getDay();
             const daysInMonth = new Date(year, month + 1, 0).getDate();
 
             for (let i = 0; i < firstDayIndex; i++) {
-                calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none;"></div>`);
+                calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
             }
 
             for (let day = 1; day <= daysInMonth; day++) {
@@ -1920,16 +2025,21 @@ async function loadStaffRecords() {
                 const dateStrIteration = getUniversalDate(currentIterationDate);
                 const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
                 
-                let styleClass = "cal-day";
-                if (holidaysArray.includes(dateStrIteration)) {
-                    styleClass = "cal-day cal-holiday";
+                let inlineStyle = CAL_STYLES.default;
+                
+                if (currentIterationDate < empJoinedDate) {
+                    inlineStyle = CAL_STYLES.disabled;
+                } else if (currentIterationDate > today) {
+                    inlineStyle = CAL_STYLES.default;
+                } else if (holidaysArray.includes(dateStrIteration)) {
+                    inlineStyle = CAL_STYLES.holiday;
                 } else if (wasPresent) { 
-                    styleClass = "cal-day cal-present"; 
-                } else if (currentIterationDate <= today) { 
-                    styleClass = "cal-day cal-absent"; 
+                    inlineStyle = CAL_STYLES.present; 
+                } else { 
+                    inlineStyle = CAL_STYLES.absent; 
                 }
                 
-                calendarGrid.insertAdjacentHTML('beforeend', `<div class="${styleClass}">${day}</div>`);
+                calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle}">${day}</div>`);
             }
         }
 
@@ -2131,6 +2241,7 @@ async function startDailyScanner() {
 
                         scannerStatus.innerText = "MATCH FOUND! SYNCING ATTENDANCE...";
                         
+                        // FIXED TABLE NAME: 'checkins'
                         supabaseClient.from('checkins').insert([{
                             user_email: currentStaff.email,
                             user_name: currentStaff.name,
