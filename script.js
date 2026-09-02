@@ -873,23 +873,42 @@ async function loadIndividualAnalytics() {
         updateElementSafe('email-staff-btn', `Email ${firstName}`);
 
         const today = new Date();
-        let workingDays = 1;
+        
+        // --- PROPER TOTAL WORKING DAYS CALCULATION ---
+        let workingDays = 0; 
         if (user && user.joined_date) {
             const joinedDate = new Date(user.joined_date);
-            workingDays = 0;
+            // We loop from join date UP TO today (inclusive) to find out exactly how many days they were SUPPOSED to work
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                 const dateStr = getUniversalDate(d);
-                if (!holidaysArray.includes(dateStr)) workingDays++;
+                // If it is NOT a holiday, then it counts as a required working day
+                if (!holidaysArray.includes(dateStr)) {
+                    workingDays++;
+                }
             }
-            if (workingDays === 0) workingDays = 1; 
         }
+        
+        // Failsafe: if they joined today and today is a holiday, workingDays is 0. We make it 1 to avoid a 0 division error.
+        if (workingDays === 0) workingDays = 1; 
 
-        const totalChecks = logs ? logs.length : 0;
+        // --- FILTER LOGS TO AVOID COUNTING FUTURE OR DUPLICATE CHECK-INS ---
+        let safeLogs = Array.isArray(logs) ? logs : [];
+        let validCheckinDates = new Set();
+        
+        safeLogs.forEach(log => {
+            const logDate = new Date(log.date);
+            // Only count logs that happened on or before today
+            if (logDate <= today) {
+                validCheckinDates.add(log.date);
+            }
+        });
+        
+        const totalChecks = validCheckinDates.size;
         updateElementSafe('total-checkins-value', `${totalChecks} / ${workingDays}`);
         updateElementSafe('avg-in-time', calculateAvgCheckInTime(logs));
         
         let percent = Math.round((totalChecks / workingDays) * 100);
-        if (percent > 100) percent = 100;
+        if (percent > 100) percent = 100; // Hard cap at 100% just in case
         
         updateElementSafe('attendance-percent-box', `${percent}%`, percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444'));
 
