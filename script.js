@@ -704,6 +704,7 @@ async function loadTodayAttendance() {
         const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         if (staffErr) throw staffErr;
 
+        // FIXED TABLE NAME: 'checkins'
         const { data: attendanceLogs, error: attErr } = await supabaseClient.from('checkins').select('*').eq('date', todayStr).eq('company_id', leader.company_id);
         if (attErr) throw attErr;
 
@@ -784,6 +785,7 @@ async function loadTeamLedger() {
     try {
         const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         
+        // FIXED TABLE NAME: 'checkins'
         const { data: attendance } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
         const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
@@ -857,8 +859,9 @@ async function loadIndividualAnalytics() {
     try {
         const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).maybeSingle();
         
+        // FIXED TABLE NAME: 'checkins'
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
-        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
         currentViewedUser = user;
 
@@ -1227,6 +1230,8 @@ function initializeSettingsCalendar() {
     }
 
     const nowStrict = new Date();
+    // Normalize to start of day to avoid timezone hour shifts
+    nowStrict.setHours(0,0,0,0);
 
     for (let i = 1; i <= daysInMonth; i++) {
         let dayDiv = document.createElement('div');
@@ -1245,8 +1250,11 @@ function initializeSettingsCalendar() {
         dayDiv.style.borderRadius = '4px';
         
         const isToday = (dateStr === getUniversalDate(nowStrict));
+        
+        // Prevent editing past days relative to current date
+        const isPastDay = currentIterationDate < nowStrict;
 
-        if (currentIterationDate < joinedDate || (isToday && window.todayCheckinsCount > 0)) {
+        if (currentIterationDate < joinedDate || isPastDay || (isToday && window.todayCheckinsCount > 0)) {
             dayDiv.style.cssText += CAL_STYLES.disabled;
         } else {
             dayDiv.style.cursor = 'pointer';
@@ -2131,7 +2139,7 @@ async function loadStaffRecords() {
             for (let day = 1; day <= daysInMonth; day++) {
                 const currentIterationDate = new Date(year, month, day);
                 const dateStrIteration = getUniversalDate(currentIterationDate);
-                const wasPresent = safeLogs.some(log => log.date === dateStrIteration);
+                const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
                 
                 let inlineStyle = CAL_STYLES.default;
                 
