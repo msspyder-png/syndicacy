@@ -42,6 +42,13 @@ function getLeader() {
     return data ? JSON.parse(data) : null;
 }
 
+// --- STRICT LOCAL TIMEZONE PARSER ---
+function parseLocal(dateStr) {
+    if (!dateStr) return new Date();
+    const parts = dateStr.split('-');
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+}
+
 // --- UNIVERSAL DATE FORMATTER ---
 function getUniversalDate(dateObj = new Date()) {
     const year = dateObj.getFullYear();
@@ -119,6 +126,59 @@ function openConfirmModal(title, desc, onConfirm) {
 }
 function closeConfirmModal() {
     const modalEl = document.getElementById('confirm-modal');
+    if (modalEl) modalEl.style.display = 'none';
+}
+
+// --- NEW PROMPT MODAL CONTROLS ---
+function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
+    let modalEl = document.getElementById('prompt-modal');
+    
+    // Inject the modal HTML if it doesn't exist yet
+    if (!modalEl) {
+        const modalHtml = `
+            <div id="prompt-modal" class="modal-bg" style="z-index: 10001; display: none;">
+                <div class="modal-box animated-modal" style="width: 90%; max-width: 320px;">
+                    <span class="close" onclick="closePromptModal()">×</span>
+                    <h3 class="section-title" id="prompt-title" style="text-align: center; margin-bottom: 15px;">Prompt</h3>
+                    <p id="prompt-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 15px; text-align: center;">Description</p>
+                    <input type="text" id="prompt-input" class="input-field" style="width: 100%; margin-bottom: 20px;" placeholder="">
+                    <div style="display: flex; gap: 10px;">
+                        <button class="google-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px;" onclick="closePromptModal()">Cancel</button>
+                        <button class="main-btn form-btn" id="prompt-action-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;">Submit</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('prompt-modal');
+    }
+
+    const titleEl = document.getElementById('prompt-title');
+    const descEl = document.getElementById('prompt-desc');
+    const inputEl = document.getElementById('prompt-input');
+    const confirmBtn = document.getElementById('prompt-action-btn');
+    
+    if (titleEl && descEl && inputEl && confirmBtn) {
+        titleEl.innerText = title;
+        descEl.innerText = desc;
+        inputEl.type = inputType || 'text';
+        inputEl.value = defaultValue || '';
+        
+        const newBtn = confirmBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+        
+        newBtn.addEventListener('click', function() {
+            onConfirm(inputEl.value);
+            closePromptModal();
+        });
+        
+        modalEl.style.display = 'flex';
+        inputEl.focus();
+    }
+}
+
+function closePromptModal() {
+    const modalEl = document.getElementById('prompt-modal');
     if (modalEl) modalEl.style.display = 'none';
 }
 
@@ -825,6 +885,7 @@ async function loadTeamLedger() {
         }
 
         const today = new Date();
+        today.setHours(0,0,0,0);
         const todayStr = getUniversalDate(today);
 
         staff.forEach(user => {
@@ -836,14 +897,14 @@ async function loadTeamLedger() {
                 if (log.status === 'Holiday/Off') {
                     personalHolidaysSet.add(log.date);
                 } else if (log.status === 'Present') {
-                    const logDate = new Date(log.date);
+                    const logDate = parseLocal(log.date);
                     if (logDate <= today) validCheckinDates.add(log.date);
                 }
             });
 
             let workingDays = 0; 
             if (user.joined_date) {
-                const joinedDate = new Date(user.joined_date);
+                const joinedDate = parseLocal(user.joined_date);
                 for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                     const dateStr = getUniversalDate(d);
                     if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) workingDays++;
@@ -923,6 +984,7 @@ async function loadIndividualAnalytics() {
         updateElementSafe('email-staff-btn', `Email ${firstName}`);
 
         const today = new Date();
+        today.setHours(0,0,0,0);
         
         let safeLogs = Array.isArray(logs) ? logs : [];
         let validCheckinDates = new Set();
@@ -932,7 +994,7 @@ async function loadIndividualAnalytics() {
             if (log.status === 'Holiday/Off') {
                 personalHolidaysSet.add(log.date);
             } else if (log.status === 'Present') {
-                const logDate = new Date(log.date);
+                const logDate = parseLocal(log.date);
                 if (logDate <= today) validCheckinDates.add(log.date);
             }
         });
@@ -940,9 +1002,11 @@ async function loadIndividualAnalytics() {
         // --- PROPER TOTAL WORKING DAYS CALCULATION ---
         let workingDays = 0; 
         if (user && user.joined_date) {
-            const joinedDate = new Date(user.joined_date);
+            const joinedDate = parseLocal(user.joined_date);
+            // We loop from join date UP TO today (inclusive) to find out exactly how many days they were SUPPOSED to work
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                 const dateStr = getUniversalDate(d);
+                // If it is NOT a holiday, then it counts as a required working day
                 if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) {
                     workingDays++;
                 }
@@ -1020,8 +1084,7 @@ async function loadIndividualAnalytics() {
         const month = analyticsDate.getMonth();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         
-        const empJoinedDate = user && user.joined_date ? new Date(user.joined_date) : new Date();
-        empJoinedDate.setHours(0,0,0,0);
+        const empJoinedDate = user && user.joined_date ? parseLocal(user.joined_date) : new Date();
 
         const monthTitleEl = document.getElementById('calendar-month-title');
         if (monthTitleEl) {
@@ -1168,87 +1231,110 @@ function changeMonth(offset) {
 // --- SECURE PASSWORD REVEAL (STRICTLY ENFORCED) ---
 async function revealPassword() {
     if (!currentViewedUser) return;
-    const bossPass = prompt("SECURITY CHECK: Enter your Leader Password to reveal staff credentials.");
-    if (!bossPass) return;
+    
+    openPromptModal(
+        "SECURITY CHECK", 
+        "Enter your Leader Password to reveal staff credentials.", 
+        "password", 
+        "", 
+        async function(bossPass) {
+            if (!bossPass) return;
 
-    const leader = getLeader();
-    if (!leader) return;
-    await ensureSupabase();
+            const leader = getLeader();
+            if (!leader) return;
+            await ensureSupabase();
 
-    try {
-        const { data: leaders, error } = await supabaseClient
-            .from('users')
-            .select('*')
-            .eq('role', 'leader')
-            .eq('password', bossPass.trim())
-            .eq('company_id', leader.company_id);
+            try {
+                const { data: leaders, error } = await supabaseClient
+                    .from('users')
+                    .select('*')
+                    .eq('role', 'leader')
+                    .eq('password', bossPass.trim())
+                    .eq('company_id', leader.company_id);
 
-        if (error || !leaders || leaders.length === 0) {
-            alert("ACCESS DENIED: Incorrect leader password.");
-            return;
+                if (error || !leaders || leaders.length === 0) {
+                    openInfoModal("ACCESS DENIED", "Incorrect leader password.");
+                    return;
+                }
+
+                updateElementSafe('emp-cred-pass', `Password: ${currentViewedUser.password}`);
+                document.getElementById('emp-cred-pass').style.display = 'block';
+
+            } catch (err) {
+                console.error(err);
+                openInfoModal("Error", "Verification error occurred.");
+            }
         }
-
-        updateElementSafe('emp-cred-pass', `Password: ${currentViewedUser.password}`);
-        document.getElementById('emp-cred-pass').style.display = 'block';
-
-    } catch (err) {
-        console.error(err);
-        alert("Verification error occurred.");
-    }
+    );
 }
 
 // --- EMAIL CREDENTIALS TO STAFF ---
 async function emailCredentials() {
     if (!currentViewedUser) return;
-    const bossPass = prompt("SECURITY CHECK: Enter your Leader Password to send staff credentials.");
-    if (!bossPass) return;
     
-    const leader = getLeader();
-    if (!leader) return;
-    await ensureSupabase();
+    openPromptModal(
+        "SECURITY CHECK", 
+        "Enter your Leader Password to send staff credentials.", 
+        "password", 
+        "", 
+        async function(bossPass) {
+            if (!bossPass) return;
+            
+            const leader = getLeader();
+            if (!leader) return;
+            await ensureSupabase();
 
-    try {
-        const { data: leaders, error } = await supabaseClient
-            .from('users')
-            .select('*')
-            .eq('role', 'leader')
-            .eq('password', bossPass.trim())
-            .eq('company_id', leader.company_id);
+            try {
+                const { data: leaders, error } = await supabaseClient
+                    .from('users')
+                    .select('*')
+                    .eq('role', 'leader')
+                    .eq('password', bossPass.trim())
+                    .eq('company_id', leader.company_id);
 
-        if (error || !leaders || leaders.length === 0) {
-            alert("ACCESS DENIED: Incorrect leader password. Email not sent.");
-            return;
+                if (error || !leaders || leaders.length === 0) {
+                    openInfoModal("ACCESS DENIED", "Incorrect leader password. Email not sent.");
+                    return;
+                }
+
+                const subject = encodeURIComponent(`Your SYNDICACY Access Credentials`);
+                const body = encodeURIComponent(`Hi ${currentViewedUser.name},\n\nHere,s your secure access credentials for the SYNDICACY portal:\n\nEmail: ${currentViewedUser.email}\nPassword: ${currentViewedUser.password}\n\nIMPORTANT SECURITY NOTE: Please delete this email immediately after logging in for the first time to maintain account security.\n\nBest,\nManagement`);
+                
+                window.location.href = `mailto:${currentViewedUser.email}?subject=${subject}&body=${body}`;
+
+            } catch (err) {
+                console.error(err);
+                openInfoModal("Error", "Error sending credentials.");
+            }
         }
-
-        const subject = encodeURIComponent(`Your SYNDICACY Access Credentials`);
-        const body = encodeURIComponent(`Hi ${currentViewedUser.name},\n\nHere,s your secure access credentials for the SYNDICACY portal:\n\nEmail: ${currentViewedUser.email}\nPassword: ${currentViewedUser.password}\n\nIMPORTANT SECURITY NOTE: Please delete this email immediately after logging in for the first time to maintain account security.\n\nBest,\nManagement`);
-        
-        window.location.href = `mailto:${currentViewedUser.email}?subject=${subject}&body=${body}`;
-
-    } catch (err) {
-        console.error(err);
-        alert("Error sending credentials.");
-    }
+    );
 }
 
 // --- RENAME EMPLOYEE ---
 async function renameEmployee() {
     if (!currentViewedUser) return;
-    const newName = prompt(`Enter a new name for ${currentViewedUser.name}:`, currentViewedUser.name);
     
-    if (newName && newName.trim() !== "" && newName !== currentViewedUser.name) {
-        await ensureSupabase();
-        try {
-            const { error } = await supabaseClient.from('users').update({ name: newName.trim() }).eq('email', currentViewedUser.email);
-            if (error) throw error;
-            
-            alert(`Success! Employee renamed to ${newName.trim()}`);
-            loadIndividualAnalytics(); 
-        } catch (err) {
-            alert("Failed to update name in database.");
-            console.error(err);
+    openPromptModal(
+        "Rename Employee", 
+        `Enter a new name for ${currentViewedUser.name}:`, 
+        "text", 
+        currentViewedUser.name, 
+        async function(newName) {
+            if (newName && newName.trim() !== "" && newName !== currentViewedUser.name) {
+                await ensureSupabase();
+                try {
+                    const { error } = await supabaseClient.from('users').update({ name: newName.trim() }).eq('email', currentViewedUser.email);
+                    if (error) throw error;
+                    
+                    openInfoModal("Success!", `Employee renamed to ${newName.trim()}`);
+                    loadIndividualAnalytics(); 
+                } catch (err) {
+                    openInfoModal("Error", "Failed to update name in database.");
+                    console.error(err);
+                }
+            }
         }
-    }
+    );
 }
 
 // --- TEAM DIRECTORY ---
@@ -2026,13 +2112,13 @@ async function handleStaffLogin() {
             sessionStorage.setItem('loggedInStaff', JSON.stringify(user));
             window.location.href = 'staff-dashboard.html';
         } else {
-            alert("Incorrect email or password.");
+            openInfoModal("Login Failed", "Incorrect email or password.");
             loginBtn.innerText = "Login";
             loginBtn.disabled = false;
         }
     } catch (err) {
         console.error("Staff Login Crash:", err);
-        alert("Database Error: " + err.message);
+        openInfoModal("Database Error", err.message);
         loginBtn.innerText = "Login";
         loginBtn.disabled = false;
     }
@@ -2113,7 +2199,7 @@ async function loadStaffRecords() {
             if (log.status === 'Holiday/Off') {
                 personalHolidaysSet.add(log.date);
             } else if (log.status === 'Present') {
-                const logDate = new Date(log.date);
+                const logDate = parseLocal(log.date);
                 if (logDate <= today) validCheckinDates.add(log.date);
             }
         });
@@ -2121,7 +2207,7 @@ async function loadStaffRecords() {
         // CALCULATE LEDGER STATS SAFELY
         let workingDays = 0;
         if (currentStaff.joined_date) {
-            const joinedDate = new Date(currentStaff.joined_date);
+            const joinedDate = parseLocal(currentStaff.joined_date);
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                 const dateStr = getUniversalDate(d);
                 if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) workingDays++;
@@ -2226,8 +2312,7 @@ async function loadStaffRecords() {
             const year = staffAnalyticsDate.getFullYear();
             const month = staffAnalyticsDate.getMonth();
             
-            const empJoinedDate = currentStaff && currentStaff.joined_date ? new Date(currentStaff.joined_date) : new Date();
-            empJoinedDate.setHours(0,0,0,0);
+            const empJoinedDate = currentStaff && currentStaff.joined_date ? parseLocal(currentStaff.joined_date) : new Date();
 
             const monthTitle = document.getElementById('cal-month-display') || document.getElementById('calendar-month-title');
             if (monthTitle) {
@@ -2270,6 +2355,9 @@ async function loadStaffRecords() {
             for (let i = 0; i < firstDayIndex; i++) {
                 calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
             }
+
+            const nowStrict = new Date();
+            nowStrict.setHours(0,0,0,0);
 
             for (let day = 1; day <= daysInMonth; day++) {
                 const currentIterationDate = new Date(year, month, day);
@@ -2355,7 +2443,7 @@ async function startDailyScanner() {
             .maybeSingle();
 
         if (existingLog) {
-            alert("Action Denied 🚫\n\nYou have already checked in today.");
+            openInfoModal("Action Denied", "You have already checked in today.");
             return;
         }
 
@@ -2366,7 +2454,7 @@ async function startDailyScanner() {
             let holidayArray = [];
             try { holidayArray = JSON.parse(rules.holidays); } catch(e){}
             if (holidayArray.includes(todayDateStr)) {
-                alert("Scanner Locked 🔒\n\nToday has been declared an official Holiday by your organization.");
+                openInfoModal("Scanner Locked", "Today has been declared an official Holiday by your organization.");
                 return;
             }
         }
@@ -2399,137 +2487,151 @@ async function startDailyScanner() {
         const currentTime = `${currentHours}:${currentMinutes}`;
 
         if (currentTime < allowedStart || currentTime > allowedEnd) {
-            alert(`Scanner Locked 🔒\n\nYou can only check in between ${allowedStart} and ${allowedEnd}.`);
+            openInfoModal("Scanner Locked", `You can only check in between ${allowedStart} and ${allowedEnd}.`);
             return; 
         }
 
         if (rules && rules.require_pin) {
-            const userPin = prompt("SECURITY CHECK: Enter the 4-digit Daily Access PIN provided by your Manager:");
-            if (userPin !== rules.daily_pin) {
-                alert("Incorrect Access PIN. Check-in aborted.");
-                return;
-            }
+            openPromptModal(
+                "SECURITY CHECK",
+                "Enter the 4-digit Daily Access PIN provided by your Manager:",
+                "text",
+                "",
+                async function(userPin) {
+                    if (userPin !== rules.daily_pin) {
+                        openInfoModal("Verification Failed", "Incorrect Access PIN. Check-in aborted.");
+                        return;
+                    }
+                    continueScannerProcess(rules, safeCompanyId, todayDateStr, now);
+                }
+            );
+            return; 
         }
+        
+        continueScannerProcess(rules, safeCompanyId, todayDateStr, now);
 
-        if (rules && rules.require_gps) {
-            if (!rules.office_lat || !rules.office_lng) {
-                alert("Manager Error: Office GPS location has not been pinned in settings yet!");
-                return;
-            }
-            alert("Verifying your location within campus limits...");
+    } catch (err) {
+        openInfoModal("Error", "System verification failed.");
+        console.error(err);
+    }
+}
+
+async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
+    if (rules && rules.require_gps) {
+        if (!rules.office_lat || !rules.office_lng) {
+            openInfoModal("Manager Error", "Office GPS location has not been pinned in settings yet!");
+            return;
+        }
+        
+        try {
             const position = await new Promise((resolve, reject) => {
                 navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
-            }).catch(err => {
-                alert("GPS Error: Please enable location permissions on your device to check in.");
-                throw err;
             });
 
             const allowedRadius = rules.office_radius ? rules.office_radius : 150;
             const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, rules.office_lat, rules.office_lng);
 
             if (distanceMeters > allowedRadius) {
-                alert(`Geofence Violation 🚫\n\nYou are too far from the office (${Math.round(distanceMeters)} meters away). You must be within ${allowedRadius} meters to clock in.`);
+                openInfoModal("Geofence Violation", `You are too far from the office (${Math.round(distanceMeters)} meters away). You must be within ${allowedRadius} meters to clock in.`);
                 return;
             }
+        } catch (err) {
+            openInfoModal("GPS Error", "Please enable location permissions on your device to check in.");
+            return;
         }
-
-        const statusCard = document.getElementById('status-card');
-        statusCard.innerHTML = `
-            <div id="scanner-container" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; border: 3px solid #1a1a1a; background-color: #000; margin-bottom: 15px;">
-                <video id="staff-video" width="100%" height="auto" autoplay muted playsinline></video>
-            </div>
-            <p id="scanner-status" style="font-size: 12px; color: #f59e0b; font-weight: bold; margin: 0;">LOADING AI MODELS...</p>
-        `;
-
-        const video = document.getElementById('staff-video');
-        const scannerStatus = document.getElementById('scanner-status');
-
-        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
-        await Promise.all([
-            faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-        ]);
-
-        scannerStatus.innerText = "CAMERA ACTIVE. LOOK AT THE SCREEN.";
-        scannerStatus.style.color = "#4ade80";
-
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
-        video.srcObject = stream;
-
-        const savedNumbers = JSON.parse(currentStaff.face_data);
-        const savedFloatArray = new Float32Array(savedNumbers);
-        const labeledDescriptor = new faceapi.LabeledFaceDescriptors(currentStaff.name, [savedFloatArray]);
-        
-        // RELAXED MATCHER THRESHOLD: 0.6 instead of 0.5
-        const faceMatcher = new faceapi.FaceMatcher([labeledDescriptor], 0.6);
-
-        video.onplay = () => {
-            const canvas = faceapi.createCanvasFromMedia(video);
-            canvas.style.position = 'absolute';
-            canvas.style.top = '0';
-            canvas.style.left = '0';
-            document.getElementById('scanner-container').append(canvas);
-
-            const displaySize = { width: video.clientWidth, height: video.clientHeight };
-            faceapi.matchDimensions(canvas, displaySize);
-
-            scannerInterval = setInterval(async () => {
-                const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
-                
-                if (detection) {
-                    const resizedDetections = faceapi.resizeResults(detection, displaySize);
-                    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-                    faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
-
-                    const match = faceMatcher.findBestMatch(detection.descriptor);
-                    
-                    if (match.label === currentStaff.name) {
-                        clearInterval(scannerInterval); 
-                        video.srcObject.getTracks().forEach(track => track.stop()); 
-                        
-                        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                        scannerStatus.innerText = "MATCH FOUND! SYNCING ATTENDANCE...";
-                        
-                        // FIXED TABLE NAME: 'checkins'
-                        supabaseClient.from('checkins').insert([{
-                            user_email: currentStaff.email,
-                            user_name: currentStaff.name,
-                            date: todayDateStr,
-                            time: timeStr,
-                            status: 'Present',
-                            company_id: safeCompanyId 
-                        }]).then(({ error }) => {
-                            if (error) {
-                                alert("Database Error: " + error.message + "\n\nPlease ensure your 'checkins' table has exactly these columns: user_email, user_name, date, time, status, company_id.");
-                                return;
-                            }
-                            
-                            statusCard.innerHTML = `
-                                <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
-                                <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
-                                <p style="font-size: 12px; color: #4ade80; margin-top: 5px; font-weight: 600;">Successfully clocked in at ${timeStr}</p>
-                            `;
-                            statusCard.classList.remove('ghost-theme');
-                            statusCard.style.border = '1px solid #e0e0e0';
-                            statusCard.style.backgroundColor = '#ffffff';
-                            
-                            loadStaffRecords();
-                        });
-                    } else {
-                        scannerStatus.innerText = "FACE NOT MATCHED. ADJUST LIGHTING OR ANGLE...";
-                        scannerStatus.style.color = "#f59e0b";
-                    }
-                } else {
-                    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-                }
-            }, 500); 
-        };
-    } catch (err) {
-        alert("System verification failed.");
-        console.error(err);
     }
+
+    const statusCard = document.getElementById('status-card');
+    statusCard.innerHTML = `
+        <div id="scanner-container" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; border: 3px solid #1a1a1a; background-color: #000; margin-bottom: 15px;">
+            <video id="staff-video" width="100%" height="auto" autoplay muted playsinline></video>
+        </div>
+        <p id="scanner-status" style="font-size: 12px; color: #f59e0b; font-weight: bold; margin: 0;">LOADING AI MODELS...</p>
+    `;
+
+    const video = document.getElementById('staff-video');
+    const scannerStatus = document.getElementById('scanner-status');
+
+    const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+    await Promise.all([
+        faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+    ]);
+
+    scannerStatus.innerText = "CAMERA ACTIVE. LOOK AT THE SCREEN.";
+    scannerStatus.style.color = "#4ade80";
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+    video.srcObject = stream;
+
+    const savedNumbers = JSON.parse(currentStaff.face_data);
+    const savedFloatArray = new Float32Array(savedNumbers);
+    const labeledDescriptor = new faceapi.LabeledFaceDescriptors(currentStaff.name, [savedFloatArray]);
+    
+    const faceMatcher = new faceapi.FaceMatcher([labeledDescriptor], 0.6);
+
+    video.onplay = () => {
+        const canvas = faceapi.createCanvasFromMedia(video);
+        canvas.style.position = 'absolute';
+        canvas.style.top = '0';
+        canvas.style.left = '0';
+        document.getElementById('scanner-container').append(canvas);
+
+        const displaySize = { width: video.clientWidth, height: video.clientHeight };
+        faceapi.matchDimensions(canvas, displaySize);
+
+        scannerInterval = setInterval(async () => {
+            const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
+            
+            if (detection) {
+                const resizedDetections = faceapi.resizeResults(detection, displaySize);
+                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+                faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
+
+                const match = faceMatcher.findBestMatch(detection.descriptor);
+                
+                if (match.label === currentStaff.name) {
+                    clearInterval(scannerInterval); 
+                    video.srcObject.getTracks().forEach(track => track.stop()); 
+                    
+                    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    scannerStatus.innerText = "MATCH FOUND! SYNCING ATTENDANCE...";
+                    
+                    supabaseClient.from('checkins').insert([{
+                        user_email: currentStaff.email,
+                        user_name: currentStaff.name,
+                        date: todayDateStr,
+                        time: timeStr,
+                        status: 'Present',
+                        company_id: safeCompanyId 
+                    }]).then(({ error }) => {
+                        if (error) {
+                            openInfoModal("Database Error", error.message + "\n\nPlease ensure your 'checkins' table has exactly these columns: user_email, user_name, date, time, status, company_id.");
+                            return;
+                        }
+                        
+                        statusCard.innerHTML = `
+                            <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
+                            <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
+                            <p style="font-size: 12px; color: #4ade80; margin-top: 5px; font-weight: 600;">Successfully clocked in at ${timeStr}</p>
+                        `;
+                        statusCard.classList.remove('ghost-theme');
+                        statusCard.style.border = '1px solid #e0e0e0';
+                        statusCard.style.backgroundColor = '#ffffff';
+                        
+                        loadStaffRecords();
+                    });
+                } else {
+                    scannerStatus.innerText = "FACE NOT MATCHED. ADJUST LIGHTING OR ANGLE...";
+                    scannerStatus.style.color = "#f59e0b";
+                }
+            } else {
+                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            }
+        }, 500); 
+    };
 }
 
 function bindTimePickerFix() {
