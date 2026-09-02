@@ -1663,28 +1663,13 @@ async function saveSettings() {
     await ensureSupabase();
 
     const subtitle = document.querySelector('.dash-header .subtitle');
-    let originalText = "Organizational parameters";
+    let originalText = subtitle ? subtitle.innerText : "Organizational parameters";
     if (subtitle && !subtitle.innerText.includes("Saving")) {
-        originalText = subtitle.innerText;
         subtitle.innerText = "Saving changes to cloud...";
         subtitle.style.color = "#f59e0b"; 
     }
 
     try {
-        const exceptionRows = document.querySelectorAll('#exception-list div');
-        let exceptionsArray = [];
-        exceptionRows.forEach(row => {
-            const inputs = row.querySelectorAll('input');
-            if(inputs.length >= 3 && inputs[0].value && inputs[1].value && inputs[2].value) {
-                exceptionsArray.push({
-                    date: inputs[0].value,
-                    start: inputs[1].value,
-                    end: inputs[2].value
-                });
-            }
-        });
-
-        // Ensure company ID exists before saving
         let safeCompanyId = leader.company_id;
         if (!safeCompanyId) {
             safeCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
@@ -1693,20 +1678,45 @@ async function saveSettings() {
             sessionStorage.setItem('loggedInLeader', JSON.stringify(leader));
         }
 
-        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', safeCompanyId).limit(1).maybeSingle();
+        const { data: existingData } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
 
-        const payload = {
-            check_in_start: document.getElementById('check-in-start') ? document.getElementById('check-in-start').value : "09:00",
-            check_in_end: document.getElementById('check-in-end') ? document.getElementById('check-in-end').value : "10:00",
-            require_gps: document.getElementById('require-gps') ? document.getElementById('require-gps').checked : false,
-            require_pin: document.getElementById('require-pin') ? document.getElementById('require-pin').checked : false,
-            holidays: JSON.stringify(localHolidays),
-            exceptions: JSON.stringify(exceptionsArray),
-            custom_schedules: JSON.stringify(customSchedules),
-            locations: JSON.stringify(workspaceLocations), // NEW LINE
-            company_id: safeCompanyId
-        };
+        // Start with a blank payload containing only the company ID
+        let payload = { company_id: safeCompanyId };
 
+        // If existing data is found, copy it into our payload so we don't accidentally wipe fields we aren't viewing
+        if (existingData) {
+            payload = { ...existingData };
+        }
+
+        // 1. ONLY update Calendar & Parameter data if we are actively viewing the Settings page
+        if (document.getElementById('check-in-start')) {
+            payload.check_in_start = document.getElementById('check-in-start').value;
+            payload.check_in_end = document.getElementById('check-in-end').value;
+            payload.require_gps = document.getElementById('require-gps').checked;
+            payload.require_pin = document.getElementById('require-pin').checked;
+            
+            let exceptionsArray = [];
+            document.querySelectorAll('#exception-list div').forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                if(inputs.length >= 3 && inputs[0].value && inputs[1].value && inputs[2].value) {
+                    exceptionsArray.push({
+                        date: inputs[0].value,
+                        start: inputs[1].value,
+                        end: inputs[2].value
+                    });
+                }
+            });
+            payload.exceptions = JSON.stringify(exceptionsArray);
+            payload.holidays = JSON.stringify(localHolidays);
+            payload.custom_schedules = JSON.stringify(customSchedules);
+        }
+
+        // 2. ONLY update GPS Locations data if we are actively viewing the Locations page
+        if (document.getElementById('locations-list-container')) {
+            payload.locations = JSON.stringify(workspaceLocations);
+        }
+
+        // Push the merged payload back to Supabase
         if (existingData) {
             await supabaseClient.from('settings').update(payload).eq('id', existingData.id);
         } else {
@@ -1717,7 +1727,7 @@ async function saveSettings() {
             subtitle.innerText = "All changes saved ✓";
             subtitle.style.color = "#4ade80"; 
             setTimeout(() => {
-                subtitle.innerText = "Organizational parameters";
+                subtitle.innerText = originalText; 
                 subtitle.style.color = "#888"; 
             }, 2000);
         }
