@@ -704,7 +704,6 @@ async function loadTodayAttendance() {
         const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         if (staffErr) throw staffErr;
 
-        // FIXED TABLE NAME: 'checkins'
         const { data: attendanceLogs, error: attErr } = await supabaseClient.from('checkins').select('*').eq('date', todayStr).eq('company_id', leader.company_id);
         if (attErr) throw attErr;
 
@@ -785,7 +784,6 @@ async function loadTeamLedger() {
     try {
         const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         
-        // FIXED TABLE NAME: 'checkins'
         const { data: attendance } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
         const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
@@ -807,19 +805,26 @@ async function loadTeamLedger() {
             
             let avgTimeStr = calculateAvgCheckInTime(userLogs);
 
-            let workingDays = 1; 
+            let workingDays = 0; 
             if (user.joined_date) {
                 const joinedDate = new Date(user.joined_date);
-                workingDays = 0;
                 for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                     const dateStr = getUniversalDate(d);
                     if (!holidaysArray.includes(dateStr)) workingDays++;
                 }
-                if (workingDays === 0) workingDays = 1; 
             }
+            if (workingDays === 0) workingDays = 1; 
 
-            const attendPercent = Math.round((userLogs.length / workingDays) * 100);
+            let validCheckinDates = new Set();
+            userLogs.forEach(log => {
+                const logDate = new Date(log.date);
+                if (logDate <= today) validCheckinDates.add(log.date);
+            });
+            const validCheckinCount = validCheckinDates.size;
+
+            const attendPercent = Math.round((validCheckinCount / workingDays) * 100);
             const displayPercent = attendPercent > 100 ? 100 : attendPercent; 
+
             let percentColor = displayPercent >= 80 ? '#4ade80' : (displayPercent >= 50 ? '#f59e0b' : '#ef4444');
 
             tableBody.insertAdjacentHTML('beforeend', `
@@ -852,14 +857,14 @@ async function loadIndividualAnalytics() {
     try {
         const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).maybeSingle();
         
-        // FIXED TABLE NAME: 'checkins'
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
-        const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
         currentViewedUser = user;
 
         let holidaysArray = [];
         try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
+        if (!Array.isArray(holidaysArray)) holidaysArray = [];
 
         document.getElementById('analytics-header').style.display = 'block';
         document.getElementById('credentials-card').style.display = 'block';
@@ -1015,10 +1020,10 @@ async function loadIndividualAnalytics() {
             
             if (currentIterationDate < empJoinedDate) {
                 inlineStyle = CAL_STYLES.disabled;
-            } else if (holidaysArray.includes(dateStrIteration)) {
-                inlineStyle = CAL_STYLES.holiday;
             } else if (currentIterationDate > today) {
                 inlineStyle = CAL_STYLES.default;
+            } else if (holidaysArray.includes(dateStrIteration)) {
+                inlineStyle = CAL_STYLES.holiday;
             } else if (wasPresent) { 
                 inlineStyle = CAL_STYLES.present; 
             } else { 
@@ -1387,6 +1392,7 @@ async function loadSettings() {
 
             if (data.holidays) {
                 try { localHolidays = JSON.parse(data.holidays); } catch(e){}
+                if (!Array.isArray(localHolidays)) localHolidays = [];
                 initializeSettingsCalendar();
             }
 
@@ -1961,21 +1967,27 @@ async function loadStaffRecords() {
         
         let holidaysArray = [];
         try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
+        if (!Array.isArray(holidaysArray)) holidaysArray = [];
 
         // CALCULATE LEDGER STATS SAFELY
-        let workingDays = 1;
+        let workingDays = 0;
         if (currentStaff.joined_date) {
             const joinedDate = new Date(currentStaff.joined_date);
-            workingDays = 0;
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                 const dateStr = getUniversalDate(d);
                 if (!holidaysArray.includes(dateStr)) workingDays++;
             }
-            if (workingDays === 0) workingDays = 1; 
         }
+        if (workingDays === 0) workingDays = 1; 
 
         let safeLogs = Array.isArray(logs) ? logs : [];
-        const totalChecks = safeLogs.length;
+        let validCheckinDates = new Set();
+        safeLogs.forEach(log => {
+            const logDate = new Date(log.date);
+            if (logDate <= today) validCheckinDates.add(log.date);
+        });
+        const totalChecks = validCheckinDates.size;
+        
         let percent = Math.round((totalChecks / workingDays) * 100);
         if (percent > 100) percent = 100;
         
@@ -1987,10 +1999,12 @@ async function loadStaffRecords() {
         if (settings && settings.exceptions) {
             let excArray = [];
             try { excArray = JSON.parse(settings.exceptions); } catch(e){}
-            const futureExc = excArray.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
-            if (futureExc.length > 0) {
-                const next = futureExc[0]; const parts = next.date.split('-');
-                exceptionText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${next.start} - ${next.end})`;
+            if (Array.isArray(excArray)) {
+                const futureExc = excArray.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
+                if (futureExc.length > 0) {
+                    const next = futureExc[0]; const parts = next.date.split('-');
+                    exceptionText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${next.start} - ${next.end})`;
+                }
             }
         }
 
@@ -2117,7 +2131,7 @@ async function loadStaffRecords() {
             for (let day = 1; day <= daysInMonth; day++) {
                 const currentIterationDate = new Date(year, month, day);
                 const dateStrIteration = getUniversalDate(currentIterationDate);
-                const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
+                const wasPresent = safeLogs.some(log => log.date === dateStrIteration);
                 
                 let inlineStyle = CAL_STYLES.default;
                 
