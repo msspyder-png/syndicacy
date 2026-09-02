@@ -15,135 +15,120 @@
 <body class="dashboard-body">
 
     <div class="dashboard-content" style="padding-bottom: 90px;">
-        
-        <!-- MAIN SETTINGS VIEW -->
-        <div id="settings-main-view">
-            <div class="dash-header">
-                <h2 class="title" style="font-size: 24px; margin-top: 20px;">Settings</h2>
-                <p class="subtitle">Organizational parameters</p>
+        <div class="dash-header">
+            <h2 class="title" style="font-size: 24px; margin-top: 20px;">Settings</h2>
+            <p class="subtitle">Organizational parameters</p>
+        </div>
+
+        <div class="form-card" style="text-align: left;">
+            <div class="setting-header">
+                <h3 class="code-heading">Operational Calendar</h3>
+                <button class="i-btn" onclick="openInfoModal('Operational Calendar', 'Tap individual days on the calendar to mark them as closed holidays. Employees will not be expected to check in on these dates.')">i</button>
+            </div>
+            <p style="font-size: 12px; color: #888; margin-bottom: 15px;">Configure working days and holidays</p>
+            
+            <div class="calendar-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-weight: 600;">
+                <button class="cal-btn" id="settings-prev-month" onclick="changeSettingsMonth(-1)">&lt;</button>
+                <span id="settings-month-display">Loading...</span>
+                <button class="cal-btn" id="settings-next-month" onclick="changeSettingsMonth(1)">&gt;</button>
             </div>
 
-            <div class="form-card" style="text-align: left;">
-                <div class="setting-header">
-                    <h3 class="code-heading">Operational Calendar</h3>
-                    <button class="i-btn" onclick="openInfoModal('Operational Calendar', 'Tap individual days on the calendar to mark them as closed holidays. Employees will not be expected to check in on these dates.')">i</button>
-                </div>
-                <p style="font-size: 12px; color: #888; margin-bottom: 15px;">Configure working days and holidays</p>
-                
-                <div class="calendar-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-weight: 600;">
-                    <button class="cal-btn" id="settings-prev-month" onclick="changeSettingsMonth(-1)">&lt;</button>
-                    <span id="settings-month-display">Loading...</span>
-                    <button class="cal-btn" id="settings-next-month" onclick="changeSettingsMonth(1)">&gt;</button>
-                </div>
+            <div class="calendar-grid" id="settings-calendar" style="margin-bottom: 15px;">
+            </div>
 
-                <div class="calendar-grid" id="settings-calendar" style="margin-bottom: 15px;">
-                </div>
-
-                <div style="margin-top: 10px; margin-bottom: 20px; font-size: 11px; color: #888; display: flex; flex-direction: column; align-items: center; gap: 8px;">
-                    <span style="font-style: italic;">Click a date to mark as a day off</span>
-                    <div style="display: flex; gap: 15px; margin-top: 5px;">
-                        <span><span style="color: #1a1a1a; font-size: 14px;">■</span> Holiday/Off</span>
-                        <span><span style="color: #ffffff; border: 1px solid #eaeaea; font-size: 14px; display: inline-block; width: 10px; height: 10px;"></span> Working Day</span>
-                    </div>
-                </div>
-
-                <div class="button-stack" style="flex-direction: row; gap: 10px;">
-                    <button class="google-btn" id="btn-toggle-sundays" style="font-size: 12px; padding: 8px;" onclick="markAllSundays()">Turn all Sundays off</button>
-                    <button class="google-btn" id="btn-toggle-saturdays" style="font-size: 12px; padding: 8px;" onclick="markSecondSaturdays()">Turn all 2nd Saturdays off</button>
+            <!-- NEW INSTRUCTIONS AND LEGEND -->
+            <div style="margin-top: 10px; margin-bottom: 20px; font-size: 11px; color: #888; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+                <span style="font-style: italic;">Click a date to mark as a day off</span>
+                <div style="display: flex; gap: 15px; margin-top: 5px;">
+                    <span><span style="color: #1a1a1a; font-size: 14px;">■</span> Holiday/Off</span>
+                    <span><span style="color: #ffffff; border: 1px solid #eaeaea; font-size: 14px; display: inline-block; width: 10px; height: 10px;"></span> Working Day</span>
                 </div>
             </div>
 
-            <div class="form-card" style="text-align: left;">
-                <div class="setting-header">
-                    <h3 class="code-heading">Check-in Window</h3>
-                    <button class="i-btn" onclick="openInfoModal('Check-in Window', 'Define the exact timeframe when employees are permitted to log their daily attendance. Check-ins attempted outside this window will be flagged or rejected.')">i</button>
-                </div>
-                
-                <div style="display: flex; gap: 10px; margin-top: 15px; margin-bottom: 15px;">
-                    <input type="time" id="check-in-start" class="input-field" value="09:00" style="width: 50%;" onchange="saveSettings()">
-                    <span style="display: flex; align-items: center; color: #888;">to</span>
-                    <input type="time" id="check-in-end" class="input-field" value="10:00" style="width: 50%;" onchange="saveSettings()">
-                </div>
-
-                <div style="display: flex; gap: 20px; border-top: 1px solid #eaeaea; padding-top: 15px; flex-wrap: wrap;">
-                    <div style="flex: 1; min-width: 200px;">
-                        <div class="setting-header">
-                            <span style="font-size: 13px; font-weight: 600;">Future Exceptions <span id="exception-count">(0/5)</span></span>
-                            <button class="i-btn" onclick="openInfoModal('Future Exceptions', 'Need a different schedule for an upcoming event? You can set up to 5 custom check-in windows for specific future dates.')">i</button>
-                        </div>
-                        <div id="exception-list" style="margin-top: 10px;"></div>
-                        <button class="google-btn" style="margin-top: 10px; font-size: 12px;" onclick="addException()">+ Add Exception Date</button>
-                    </div>
-
-                    <div style="flex: 1; min-width: 200px;">
-                        <div class="setting-header">
-                            <span style="font-size: 13px; font-weight: 600;">Custom Employee Times</span>
-                            <button class="i-btn" onclick="openInfoModal('Custom Employee Times', 'Set permanent custom check-in windows for specific employees (like shift workers). This overrides the standard global time.')">i</button>
-                        </div>
-                        <div id="custom-time-list" style="margin-top: 10px;"></div>
-                        <button class="google-btn" style="margin-top: 10px; font-size: 12px;" onclick="openCustomTimeModal()">+ Add Custom Schedule</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="form-card" style="text-align: left;">
-                <div class="setting-header" style="border-bottom: 1px solid #eaeaea; padding-bottom: 10px; margin-bottom: 15px;">
-                    <h3 class="code-heading">Security Protocols</h3>
-                    <button class="i-btn" onclick="openInfoModal('Security Protocols', 'Multi-factor verification ensures attendance data cannot be faked. Geospatial checks require staff to be on-site, while Dynamic Access requires them to scan a live code. Disabling these is not recommended.')">i</button>
-                </div>
-
-                <div style="padding: 12px; background-color: #f9f9f9; border-left: 3px solid #1a1a1a; margin-bottom: 20px; font-size: 11px; color: #555; line-height: 1.4; border-radius: 0 4px 4px 0;">
-                    <strong style="color: #1a1a1a;">SECURITY ADVISORY:</strong> Maintaining both 2-Step and 3-Step authentication is highly recommended. Disabling these protocols removes anti-spoofing protections and compromises the integrity of your organization's data.
-                </div>
-
-                <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 14px; font-weight: 600;">2-Step: Geospatial Verification</span>
-                            <button class="i-btn" style="width: 16px; height: 16px; font-size: 10px;" onclick="openInfoModal('Geospatial Verification (2FA)', 'Verifies the employee is physically present within the designated campus perimeter before allowing a check-in. Without this, employees could check in from home.')">i</button>
-                        </div>
-                        <p style="font-size: 11px; color: #888; margin: 4px 0 0 0;">Require employees to be on-campus</p>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="require-gps" onchange="handleGPSToggle()">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-                
-                <!-- NEW SMART MANAGE LOCATIONS BUTTON -->
-                <button class="google-btn" id="manage-locations-btn" style="width: 100%; margin-bottom: 25px; border-style: dashed; font-size: 13px; display: none;" onclick="openLocationsView()">📍 Manage Workplace Locations</button>
-
-                <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 14px; font-weight: 600;">3-Step: Dynamic Access</span>
-                            <button class="i-btn" style="width: 16px; height: 16px; font-size: 10px;" onclick="openInfoModal('Dynamic Access (3FA)', 'The ultimate security layer. In addition to being on-campus, employees must scan the daily rotating QR badge or enter the live PIN displayed on your leader dashboard.')">i</button>
-                        </div>
-                        <p style="font-size: 11px; color: #888; margin: 4px 0 0 0;">Require Live QR / PIN entry</p>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="require-pin" onchange="saveSettings()">
-                        <span class="slider"></span>
-                    </label>
-                </div>
+            <div class="button-stack" style="flex-direction: row; gap: 10px;">
+                <button class="google-btn" id="btn-toggle-sundays" style="font-size: 12px; padding: 8px;" onclick="markAllSundays()">Turn all Sundays off</button>
+                <button class="google-btn" id="btn-toggle-saturdays" style="font-size: 12px; padding: 8px;" onclick="markSecondSaturdays()">Turn all 2nd Saturdays off</button>
             </div>
         </div>
 
-        <!-- NEW LOCATIONS VIEW (Hidden by default) -->
-        <div id="settings-locations-view" style="display: none;">
-            <div style="text-align: left; margin-bottom: 20px;">
-                <a href="javascript:void(0)" onclick="closeLocationsView()" style="color: #888; text-decoration: none; font-size: 14px;">← Back to Settings</a>
+        <div class="form-card" style="text-align: left;">
+            <div class="setting-header">
+                <h3 class="code-heading">Check-in Window</h3>
+                <button class="i-btn" onclick="openInfoModal('Check-in Window', 'Define the exact timeframe when employees are permitted to log their daily attendance. Check-ins attempted outside this window will be flagged or rejected.')">i</button>
             </div>
             
-            <div class="dash-header" style="margin-bottom: 20px;">
-                <h2 class="title" style="font-size: 24px;">GPS Workplaces</h2>
-                <p class="subtitle" style="margin-bottom: 20px;">Manage authorized check-in zones</p>
+            <div style="display: flex; gap: 10px; margin-top: 15px; margin-bottom: 15px;">
+                <input type="time" id="check-in-start" class="input-field" value="09:00" style="width: 50%;" onchange="saveSettings()">
+                <span style="display: flex; align-items: center; color: #888;">to</span>
+                <input type="time" id="check-in-end" class="input-field" value="10:00" style="width: 50%;" onchange="saveSettings()">
             </div>
 
-            <!-- List of all locations injected here via JS -->
-            <div id="locations-list-container"></div>
+            <!-- TWO-COLUMN LAYOUT: EXCEPTIONS & CUSTOM TIMES -->
+            <div style="display: flex; gap: 20px; border-top: 1px solid #eaeaea; padding-top: 15px; flex-wrap: wrap;">
+                
+                <div style="flex: 1; min-width: 200px;">
+                    <div class="setting-header">
+                        <span style="font-size: 13px; font-weight: 600;">Future Exceptions <span id="exception-count">(0/5)</span></span>
+                        <button class="i-btn" onclick="openInfoModal('Future Exceptions', 'Need a different schedule for an upcoming event? You can set up to 5 custom check-in windows for specific future dates.')">i</button>
+                    </div>
+                    <div id="exception-list" style="margin-top: 10px;"></div>
+                    <button class="google-btn" style="margin-top: 10px; font-size: 12px;" onclick="addException()">+ Add Exception Date</button>
+                </div>
 
-            <button class="google-btn" style="width: 100%; border-style: dashed; margin-top: 15px;" onclick="addNewLocation()">+ Add New Custom Location</button>
+                <div style="flex: 1; min-width: 200px;">
+                    <div class="setting-header">
+                        <span style="font-size: 13px; font-weight: 600;">Custom Employee Times</span>
+                        <button class="i-btn" onclick="openInfoModal('Custom Employee Times', 'Set permanent custom check-in windows for specific employees (like shift workers). This overrides the standard global time.')">i</button>
+                    </div>
+                    <div id="custom-time-list" style="margin-top: 10px;"></div>
+                    <button class="google-btn" style="margin-top: 10px; font-size: 12px;" onclick="openCustomTimeModal()">+ Add Custom Schedule</button>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="form-card" style="text-align: left;">
+            <div class="setting-header" style="border-bottom: 1px solid #eaeaea; padding-bottom: 10px; margin-bottom: 15px;">
+                <h3 class="code-heading">Security Protocols</h3>
+                <button class="i-btn" onclick="openInfoModal('Security Protocols', 'Multi-factor verification ensures attendance data cannot be faked. Geospatial checks require staff to be on-site, while Dynamic Access requires them to scan a live code. Disabling these is not recommended.')">i</button>
+            </div>
+
+            <div style="padding: 12px; background-color: #f9f9f9; border-left: 3px solid #1a1a1a; margin-bottom: 20px; font-size: 11px; color: #555; line-height: 1.4; border-radius: 0 4px 4px 0;">
+                <strong style="color: #1a1a1a;">SECURITY ADVISORY:</strong> Maintaining both 2-Step and 3-Step authentication is highly recommended. Disabling these protocols removes anti-spoofing protections and compromises the integrity of your organization's data.
+            </div>
+
+            <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 14px; font-weight: 600;">2-Step: Geospatial Verification</span>
+                        <button class="i-btn" style="width: 16px; height: 16px; font-size: 10px;" onclick="openInfoModal('Geospatial Verification (2FA)', 'Verifies the employee is physically present within the designated campus perimeter before allowing a check-in. Without this, employees could check in from home.')">i</button>
+                    </div>
+                    <p style="font-size: 11px; color: #888; margin: 4px 0 0 0;">Require employees to be on-campus</p>
+                </div>
+                
+                <label class="switch">
+                    <!-- Updated to trigger the map if turned ON -->
+                    <input type="checkbox" id="require-gps" onchange="handleGPSToggle()">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            
+            <button class="google-btn" style="width: 100%; margin-bottom: 25px; border-style: dashed; font-size: 13px;" onclick="openMapModal()">📍 Edit Workplace Location & Radius</button>
+
+            <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 14px; font-weight: 600;">3-Step: Dynamic Access</span>
+                        <button class="i-btn" style="width: 16px; height: 16px; font-size: 10px;" onclick="openInfoModal('Dynamic Access (3FA)', 'The ultimate security layer. In addition to being on-campus, employees must scan the daily rotating QR badge or enter the live PIN displayed on your leader dashboard.')">i</button>
+                    </div>
+                    <p style="font-size: 11px; color: #888; margin: 4px 0 0 0;">Require Live QR / PIN entry</p>
+                </div>
+                
+                <label class="switch">
+                    <input type="checkbox" id="require-pin" onchange="saveSettings()">
+                    <span class="slider"></span>
+                </label>
+            </div>
         </div>
 
     </div>
@@ -155,19 +140,6 @@
             <h3 class="section-title" id="info-title" style="text-align: center; margin-bottom: 15px;">Information</h3>
             <p id="info-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px;">Description goes here.</p>
             <button class="main-btn form-btn" style="width: 100%;" onclick="closeInfoModal()">Understood</button>
-        </div>
-    </div>
-
-    <!-- CONFIRM MODAL -->
-    <div id="confirm-modal" class="modal-bg" style="z-index: 10000;">
-        <div class="modal-box animated-modal" style="width: 90%; max-width: 320px;">
-            <span class="close" onclick="closeConfirmModal()">×</span>
-            <h3 class="section-title" id="confirm-title" style="text-align: center; margin-bottom: 15px;">Confirm</h3>
-            <p id="confirm-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; text-align: center;">Are you sure?</p>
-            <div style="display: flex; gap: 10px;">
-                <button class="google-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px;" onclick="closeConfirmModal()">Cancel</button>
-                <button class="main-btn form-btn" id="confirm-action-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;">Yes</button>
-            </div>
         </div>
     </div>
 
@@ -198,7 +170,7 @@
         </div>
     </div>
 
-    <!-- GPS MAP MODAL -->
+    <!-- GPS MAP MODAL (NEW) -->
     <div id="gps-map-modal" class="modal-bg" style="z-index: 10000;">
         <div class="modal-box animated-modal" style="width: 90%; max-width: 500px; padding: 15px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
@@ -208,7 +180,8 @@
             <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Drag the map to center the pin on your physical workplace.</p>
             
             <div id="map" style="height: 300px; border-radius: 8px; border: 2px solid #1a1a1a; margin-bottom: 15px; position: relative;">
-                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000; pointer-events: none; text-shadow: 0 0 5px white; font-size: 24px;">
+                <!-- A simple crosshair in the absolute center to show the boss where the pin drops -->
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000; pointer-events: none; text-shadow: 0 0 5px white;">
                     📍
                 </div>
             </div>
@@ -247,11 +220,11 @@
             <span style="display: block; font-size: 10px; margin-top: 4px;">Records</span>
         </a>
         <a href="leader-settings.html" class="nav-item active">
-            <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0l2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0l2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             <span>Settings</span>
         </a>
     </nav>
 
-    <script src="script.js?v=1020"></script>
+    <script src="script.js?v=1018"></script>
 </body>
 </html>
