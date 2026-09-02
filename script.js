@@ -1740,6 +1740,40 @@ async function saveSettings() {
     }
 }
 
+// --- EXCEPTION DATES LOGIC ---
+function addException() {
+    const list = document.getElementById('exception-list');
+    if (!list) return;
+
+    if (list.children.length >= 5) {
+        openInfoModal("Limit Reached", "You can only set up to 5 future exception dates.");
+        return;
+    }
+
+    const div = document.createElement('div');
+    div.style.display = 'flex';
+    div.style.gap = '5px';
+    div.style.marginBottom = '10px';
+    div.style.alignItems = 'center';
+
+    div.innerHTML = `
+        <input type="date" class="input-field" style="flex: 2; padding: 8px; font-size: 11px; height: 32px;" onchange="saveSettings()">
+        <input type="time" class="input-field" style="flex: 1; padding: 8px; font-size: 11px; height: 32px;" onchange="saveSettings()">
+        <input type="time" class="input-field" style="flex: 1; padding: 8px; font-size: 11px; height: 32px;" onchange="saveSettings()">
+        <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 24px; height: 24px; flex-shrink: 0;" onclick="this.parentElement.remove(); updateExceptionCount(); saveSettings();">×</button>
+    `;
+    list.appendChild(div);
+    updateExceptionCount();
+}
+
+function updateExceptionCount() {
+    const list = document.getElementById('exception-list');
+    const countSpan = document.getElementById('exception-count');
+    if (list && countSpan) {
+        countSpan.innerText = `(${list.children.length}/5)`;
+    }
+}
+
 // --- CUSTOM EMPLOYEE TIME LOGIC ---
 async function openCustomTimeModal() {
     const leader = getLeader();
