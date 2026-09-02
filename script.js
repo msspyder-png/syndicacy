@@ -1977,6 +1977,13 @@ function handleGPSToggle() {
         locBtn.style.display = isChecked ? 'block' : 'none';
     }
     saveSettings(); 
+    
+    // Auto-redirect ONLY if toggled ON and no Main Location map data is found
+    if (isChecked) {
+        if (typeof mapSavedLat !== 'undefined' && !mapSavedLat) {
+            window.location.href = 'leader-locations.html';
+        }
+    }
 }
 
 function openMapModal() {
@@ -2504,7 +2511,7 @@ async function startDailyScanner() {
 
 async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
     if (rules && rules.require_gps) {
-        let targetLat, targetLng, targetRadius;
+        let targetLat, targetLng, targetRadius, isExempt = false;
         
         let locations = [];
         try { if (rules.locations) locations = JSON.parse(rules.locations); } catch(e){}
@@ -2516,9 +2523,13 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
             // If not found, default to Main Campus
             if (!userLocation) userLocation = locations.find(loc => loc.id === 'main') || locations[0];
             
-            targetLat = userLocation.lat;
-            targetLng = userLocation.lng;
-            targetRadius = userLocation.radius || 150;
+            if (userLocation.id === 'exempt' || userLocation.isExempt) {
+                isExempt = true;
+            } else {
+                targetLat = userLocation.lat;
+                targetLng = userLocation.lng;
+                targetRadius = userLocation.radius || 150;
+            }
         } else {
             // Legacy Fallback for backwards compatibility
             targetLat = rules.office_lat;
@@ -2526,25 +2537,27 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
             targetRadius = rules.office_radius || 150;
         }
 
-        if (!targetLat || !targetLng) {
-            openInfoModal("Manager Error", "Office GPS location has not been pinned in settings yet!");
-            return;
-        }
-        
-        try {
-            const position = await new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
-            });
-
-            const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, targetLat, targetLng);
-
-            if (distanceMeters > targetRadius) {
-                openInfoModal("Geofence Violation", `You are too far from your assigned workplace (${Math.round(distanceMeters)} meters away). You must be within ${targetRadius} meters to clock in.`);
+        if (!isExempt) {
+            if (!targetLat || !targetLng) {
+                openInfoModal("Manager Error", "Office GPS location has not been pinned in settings yet!");
                 return;
             }
-        } catch (err) {
-            openInfoModal("GPS Error", "Please enable location permissions on your device to check in.");
-            return;
+            
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+                });
+
+                const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, targetLat, targetLng);
+
+                if (distanceMeters > targetRadius) {
+                    openInfoModal("Geofence Violation", `You are too far from your assigned workplace (${Math.round(distanceMeters)} meters away). You must be within ${targetRadius} meters to clock in.`);
+                    return;
+                }
+            } catch (err) {
+                openInfoModal("GPS Error", "Please enable location permissions on your device to check in.");
+                return;
+            }
         }
     }
 
@@ -2707,6 +2720,18 @@ async function loadLocationsPage() {
                 staff: []
             });
         }
+
+        // Ensure GPS Exempt always exists
+        if (!workspaceLocations.find(l => l.id === 'exempt')) {
+            workspaceLocations.push({
+                id: 'exempt',
+                name: 'GPS EXEMPT (WORK FROM ANYWHERE)',
+                lat: null, lng: null, radius: null,
+                staff: [],
+                isExempt: true
+            });
+        }
+
         renderLocations();
     } catch (err) { console.error(err); }
 }
@@ -2718,24 +2743,32 @@ function renderLocations() {
 
     workspaceLocations.forEach(loc => {
         const isMain = loc.id === 'main';
-        const geoText = loc.lat ? `Pinned: ${loc.radius}m radius` : 'Location not pinned';
-        const staffCount = loc.staff ? loc.staff.length : 0;
+        const isExempt = loc.id === 'exempt';
         
-        const deleteBtn = isMain ? '' : `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 24px; height: 24px;" onclick="deleteLocation('${loc.id}')">×</button>`;
+        let geoText = loc.lat ? `Pinned: ${loc.radius}m radius` : 'Location not pinned';
+        if (isExempt) geoText = 'Bypasses GPS Verification';
+
+        let staffBtnLabel = "Manage Staff";
+        if (!isMain && !isExempt) staffBtnLabel = `Staff (${loc.staff ? loc.staff.length : 0})`;
+        if (isExempt) staffBtnLabel = `Exempt Staff (${loc.staff ? loc.staff.length : 0})`;
+        
+        const deleteBtn = (isMain || isExempt) ? '' : `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 24px; height: 24px;" onclick="deleteLocation('${loc.id}')">×</button>`;
+
+        const mapBtn = isExempt ? '' : `<button class="google-btn" style="flex: 1; padding: 10px; font-size: 12px; margin: 0;" onclick="openLocationMap('${loc.id}')">Edit Area</button>`;
 
         const html = `
-            <div class="form-card" style="text-align: left; padding: 20px; margin-bottom: 15px; border-left: 4px solid ${isMain ? '#1a1a1a' : '#eaeaea'};">
+            <div class="form-card" style="text-align: left; padding: 20px; margin-bottom: 15px; border-left: 4px solid ${(isMain || isExempt) ? '#1a1a1a' : '#eaeaea'};">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
                     <div>
                         <h3 style="margin: 0 0 4px 0; font-size: 15px; text-transform: uppercase; letter-spacing: 1px;">${loc.name}</h3>
-                        <p style="margin: 0; font-size: 11px; color: ${loc.lat ? '#4ade80' : '#f59e0b'}; font-weight: bold;">📍 ${geoText}</p>
+                        <p style="margin: 0; font-size: 11px; color: ${loc.lat || isExempt ? '#4ade80' : '#f59e0b'}; font-weight: bold;">${isExempt ? '⚡' : '📍'} ${geoText}</p>
                     </div>
                     ${deleteBtn}
                 </div>
                 
                 <div style="display: flex; gap: 10px;">
-                    <button class="google-btn" style="flex: 1; padding: 10px; font-size: 12px; margin: 0;" onclick="openLocationMap('${loc.id}')">Edit Area</button>
-                    ${!isMain ? `<button class="google-btn" style="flex: 1; padding: 10px; font-size: 12px; margin: 0;" onclick="openStaffAssignModal('${loc.id}')">Staff (${staffCount})</button>` : ''}
+                    ${mapBtn}
+                    <button class="google-btn" style="flex: 1; padding: 10px; font-size: 12px; margin: 0;" onclick="openStaffAssignModal('${loc.id}')">${staffBtnLabel}</button>
                 </div>
             </div>
         `;
@@ -2822,6 +2855,13 @@ async function openStaffAssignModal(locId) {
     await ensureSupabase();
     
     const loc = workspaceLocations.find(l => l.id === locId);
+
+    // GUARD CLAUSE: Prevent assigning if not pinned
+    if (locId !== 'exempt' && (!loc.lat || !loc.lng)) {
+        alert("You must map and pin this location first before adding staff to it.");
+        return;
+    }
+
     const listContainer = document.getElementById('staff-checkbox-list');
     listContainer.innerHTML = "<p style='font-size:12px; color:#888;'>Loading team...</p>";
     
@@ -2835,8 +2875,21 @@ async function openStaffAssignModal(locId) {
         return;
     }
 
+    // Gather all explicitly assigned emails in OTHER locations (not main)
+    let explicitlyAssignedElsewhere = [];
+    workspaceLocations.forEach(l => {
+        if (l.id !== 'main' && l.staff) explicitlyAssignedElsewhere = explicitlyAssignedElsewhere.concat(l.staff);
+    });
+
     staff.forEach(user => {
-        const isAssigned = loc.staff && loc.staff.includes(user.email);
+        let isAssigned = false;
+        if (locId === 'main') {
+            // For main, they are assigned if they are explicitly in main.staff, OR if they aren't explicitly assigned anywhere else
+            isAssigned = (loc.staff && loc.staff.includes(user.email)) || (!explicitlyAssignedElsewhere.includes(user.email));
+        } else {
+            isAssigned = loc.staff && loc.staff.includes(user.email);
+        }
+
         listContainer.innerHTML += `
             <label style="display: flex; align-items: center; gap: 10px; padding: 8px; border-bottom: 1px solid #f0f0f0; cursor: pointer;">
                 <input type="checkbox" class="staff-assign-cb" value="${user.email}" ${isAssigned ? 'checked' : ''}>
@@ -2855,7 +2908,7 @@ function saveStaffAssignments() {
     if (locIndex !== -1) {
         // Remove these emails from all OTHER custom locations to prevent conflicts
         workspaceLocations.forEach((l, idx) => {
-            if (idx !== locIndex && l.id !== 'main') {
+            if (idx !== locIndex) {
                 l.staff = (l.staff || []).filter(email => !selectedEmails.includes(email));
             }
         });
