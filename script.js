@@ -1253,12 +1253,12 @@ function initializeSettingsCalendar() {
         
         // Prevent editing past days relative to current date
         const isPastDay = currentIterationDate < nowStrict;
+        const isHoliday = localHolidays.includes(dateStr);
 
-        if (currentIterationDate < joinedDate || isPastDay || (isToday && window.todayCheckinsCount > 0)) {
+        if (currentIterationDate < joinedDate) {
             dayDiv.style.cssText += CAL_STYLES.disabled;
         } else {
-            dayDiv.style.cursor = 'pointer';
-            if (localHolidays.includes(dateStr)) {
+            if (isHoliday) {
                 dayDiv.style.cssText += CAL_STYLES.holiday;
                 dayDiv.dataset.isholiday = "true";
             } else {
@@ -1266,18 +1266,24 @@ function initializeSettingsCalendar() {
                 dayDiv.dataset.isholiday = "false";
             }
 
-            dayDiv.onclick = function() {
-                if (this.dataset.isholiday === "true") {
-                    this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.default;
-                    this.dataset.isholiday = "false";
-                    localHolidays = localHolidays.filter(d => d !== dateStr);
-                } else {
-                    this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.holiday;
-                    this.dataset.isholiday = "true";
-                    if (!localHolidays.includes(dateStr)) localHolidays.push(dateStr);
-                }
-                saveSettings(); 
-            };
+            if (isPastDay || (isToday && window.todayCheckinsCount > 0)) {
+                dayDiv.style.cursor = 'default';
+                dayDiv.style.pointerEvents = 'none';
+            } else {
+                dayDiv.style.cursor = 'pointer';
+                dayDiv.onclick = function() {
+                    if (this.dataset.isholiday === "true") {
+                        this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.default;
+                        this.dataset.isholiday = "false";
+                        localHolidays = localHolidays.filter(d => d !== dateStr);
+                    } else {
+                        this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.holiday;
+                        this.dataset.isholiday = "true";
+                        if (!localHolidays.includes(dateStr)) localHolidays.push(dateStr);
+                    }
+                    saveSettings(); 
+                };
+            }
         }
         calendar.appendChild(dayDiv);
     }
