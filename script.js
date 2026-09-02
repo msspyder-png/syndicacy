@@ -982,6 +982,7 @@ async function loadIndividualAnalytics() {
         updateElementSafe('email-staff-btn', `Email ${firstName}`);
 
         const today = new Date();
+        today.setHours(0,0,0,0);
         
         let safeLogs = Array.isArray(logs) ? logs : [];
         let validCheckinDates = new Set();
@@ -1814,44 +1815,52 @@ function renderCustomTimeList() {
 // --- DAILY PIN GENERATOR ---
 async function loadTodayPIN() {
     const pinDisplay = document.getElementById('live-pin-display');
+    const activeState = document.getElementById('pin-active-state');
+    const disabledState = document.getElementById('pin-disabled-state');
     const leader = getLeader();
-    if (!pinDisplay || !leader) return;
+    
+    if (!leader) return;
     await ensureSupabase();
 
     try {
         const { data } = await supabaseClient.from('settings').select('daily_pin, require_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
-        const subtext = document.getElementById('pin-subtext');
-        const genBtn = pinDisplay.closest('.code-card').querySelector('button');
+        // Ensure we are on the page that actually has these elements before trying to modify them
+        if (activeState && disabledState && pinDisplay) {
+            if (data && data.require_pin) {
+                activeState.style.display = "block";
+                disabledState.style.display = "none";
 
-        if (data && data.require_pin) {
-            pinDisplay.style.fontSize = "48px";
-            pinDisplay.style.letterSpacing = "8px";
-            pinDisplay.style.color = "white";
-            if(subtext) subtext.innerText = "Employees must enter this to unlock the scanner.";
-            if(genBtn) genBtn.style.display = "inline-block";
+                const todayStr = getUniversalDate();
+                let savedDate = "";
+                let pinValue = "";
 
-            const todayStr = getUniversalDate();
-            const lastPinDate = localStorage.getItem('last_pin_date_' + leader.company_id);
-            
-            if (lastPinDate !== todayStr || !data.daily_pin) {
-                await generateNewPIN(true);
+                if (data.daily_pin) {
+                    if (data.daily_pin.includes(':')) {
+                        const parts = data.daily_pin.split(':');
+                        savedDate = parts[0];
+                        pinValue = parts[1];
+                    } else {
+                        // Fallback logic for any PINs saved before this strict update
+                        pinValue = data.daily_pin;
+                        savedDate = localStorage.getItem('last_pin_date_' + leader.company_id) || "";
+                    }
+                }
+
+                if (savedDate !== todayStr || !pinValue) {
+                    await generateNewPIN(); 
+                } else {
+                    pinDisplay.innerText = pinValue;
+                }
             } else {
-                pinDisplay.innerText = data.daily_pin;
+                activeState.style.display = "none";
+                disabledState.style.display = "block";
             }
-        } else {
-            pinDisplay.innerText = "OFF";
-            pinDisplay.style.fontSize = "32px";
-            pinDisplay.style.letterSpacing = "4px";
-            pinDisplay.style.color = "#ef4444"; 
-            
-            if(subtext) subtext.innerText = "3-Step Dynamic Access is currently turned off. Go to Settings to enable it.";
-            if(genBtn) genBtn.style.display = "none";
         }
     } catch (err) { console.error(err); }
 }
 
-async function generateNewPIN(isAuto = false) {
+async function generateNewPIN() {
     const leader = getLeader();
     if (!leader) return;
     await ensureSupabase();
@@ -1869,14 +1878,16 @@ async function generateNewPIN(isAuto = false) {
             sessionStorage.setItem('loggedInLeader', JSON.stringify(leader));
         }
 
+        const todayStr = getUniversalDate();
+        const cloudPayload = todayStr + ':' + newPin;
+
         const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', safeCompanyId).limit(1).maybeSingle();
         if (existingData) {
-            await supabaseClient.from('settings').update({ daily_pin: newPin }).eq('id', existingData.id);
+            await supabaseClient.from('settings').update({ daily_pin: cloudPayload }).eq('id', existingData.id);
         } else {
-            await supabaseClient.from('settings').insert([{ daily_pin: newPin, company_id: safeCompanyId }]);
+            await supabaseClient.from('settings').insert([{ daily_pin: cloudPayload, company_id: safeCompanyId }]);
         }
 
-        const todayStr = getUniversalDate();
         localStorage.setItem('last_pin_date_' + safeCompanyId, todayStr);
 
     } catch (err) { console.error(err); }
@@ -2527,7 +2538,12 @@ async function startDailyScanner() {
                 "text",
                 "",
                 async function(userPin) {
-                    if (userPin !== rules.daily_pin) {
+                    let actualDbPin = rules.daily_pin;
+                    if (actualDbPin && actualDbPin.includes(':')) {
+                        actualDbPin = actualDbPin.split(':')[1];
+                    }
+
+                    if (userPin !== actualDbPin) {
                         openInfoModal("Verification Failed", "Incorrect Access PIN. Check-in aborted.");
                         return;
                     }
