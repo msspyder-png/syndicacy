@@ -150,7 +150,7 @@
             <h3 class="section-title" style="text-align: center; margin-bottom: 15px;">Custom Schedule</h3>
             
             <div class="input-group">
-                <select id="custom-time-emp-select" class="input-field select-field">
+                <select id="custom-time-emp-select" class="input-field select-field" style="width: 100%;">
                     <option value="" disabled selected>Loading staff...</option>
                 </select>
             </div>
@@ -158,46 +158,15 @@
             <div style="display: flex; gap: 10px; margin-top: 15px; margin-bottom: 15px;">
                 <div style="width: 50%;">
                     <label style="font-size: 10px; color: #888; display: block; margin-bottom: 4px;">Start Time</label>
-                    <input type="time" id="custom-time-start" class="input-field" value="09:00">
+                    <input type="time" id="custom-time-start" class="input-field" value="09:00" style="width: 100%;">
                 </div>
                 <div style="width: 50%;">
                     <label style="font-size: 10px; color: #888; display: block; margin-bottom: 4px;">End Time</label>
-                    <input type="time" id="custom-time-end" class="input-field" value="10:00">
+                    <input type="time" id="custom-time-end" class="input-field" value="10:00" style="width: 100%;">
                 </div>
             </div>
 
             <button class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="saveCustomTime()">Save Custom Schedule</button>
-        </div>
-    </div>
-
-    <!-- GPS MAP MODAL (NEW) -->
-    <div id="gps-map-modal" class="modal-bg" style="z-index: 10000;">
-        <div class="modal-box animated-modal" style="width: 90%; max-width: 500px; padding: 15px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3 class="section-title" style="margin: 0;">Set Geofence Boundary</h3>
-                <span class="close" onclick="closeMapModal()">×</span>
-            </div>
-            <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Drag the map to center the pin on your physical workplace.</p>
-            
-            <div id="map" style="height: 300px; border-radius: 8px; border: 2px solid #1a1a1a; margin-bottom: 15px; position: relative;">
-                <!-- A simple crosshair in the absolute center to show the boss where the pin drops -->
-                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000; pointer-events: none; text-shadow: 0 0 5px white;">
-                    📍
-                </div>
-            </div>
-            
-            <div style="margin-bottom: 20px;">
-                <label style="font-size: 12px; font-weight: bold; color: #1a1a1a; display: flex; justify-content: space-between;">
-                    Allowed Radius: <span id="radius-display" style="color: #4ade80;">150 meters</span>
-                </label>
-                <input type="range" id="radius-slider" min="50" max="1000" step="10" value="150" style="width: 100%; margin-top: 10px; cursor: pointer;" oninput="updateCirclePreview()">
-                <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa; margin-top: 5px;">
-                    <span>Tight (50m)</span>
-                    <span>Wide (1000m)</span>
-                </div>
-            </div>
-
-            <button id="save-map-btn" class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="confirmMapLocation()">Save Boundary & Close</button>
         </div>
     </div>
     
