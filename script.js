@@ -76,7 +76,7 @@ const CAL_STYLES = {
     disabled: "background: repeating-linear-gradient(45deg, #f9f9f9, #f9f9f9 5px, #eaeaea 5px, #eaeaea 10px) !important; color: #ccc !important; pointer-events: none !important; border: 1px solid #eaeaea !important;"
 };
 
-// --- POPUP / MODAL CONTROLS ---
+// --- POPUP / MODAL CONTROLS (AUTONOMOUS INJECTION) ---
 function openModal(id) {
     const modal = document.getElementById(id);
     if (modal) {
@@ -89,24 +89,59 @@ function closeModal(id) {
 }
 
 function openInfoModal(title, desc) {
+    let modalEl = document.getElementById('info-modal');
+    if (!modalEl) {
+        const modalHtml = `
+            <div id="info-modal" class="modal-bg" style="z-index: 10002; display: none;">
+                <div class="modal-box animated-modal" style="width: 90%; max-width: 320px;">
+                    <span class="close" onclick="closeInfoModal()">×</span>
+                    <h3 class="section-title" id="info-title" style="text-align: center; margin-bottom: 15px;">Information</h3>
+                    <p id="info-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; text-align: center;">Description</p>
+                    <button class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="closeInfoModal()">Understood</button>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('info-modal');
+    }
+
     const titleEl = document.getElementById('info-title');
     const descEl = document.getElementById('info-desc');
-    const modalEl = document.getElementById('info-modal');
+    
     if (titleEl && descEl && modalEl) {
         titleEl.innerText = title;
         descEl.innerText = desc;
         modalEl.style.display = 'flex';
     }
 }
+
 function closeInfoModal() {
     const modalEl = document.getElementById('info-modal');
     if (modalEl) modalEl.style.display = 'none';
 }
 
 function openConfirmModal(title, desc, onConfirm) {
+    let modalEl = document.getElementById('confirm-modal');
+    if (!modalEl) {
+        const modalHtml = `
+            <div id="confirm-modal" class="modal-bg" style="z-index: 10002; display: none;">
+                <div class="modal-box animated-modal" style="width: 90%; max-width: 320px;">
+                    <span class="close" onclick="closeConfirmModal()">×</span>
+                    <h3 class="section-title" id="confirm-title" style="text-align: center; margin-bottom: 15px;">Confirm</h3>
+                    <p id="confirm-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; text-align: center;">Are you sure?</p>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="google-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px;" onclick="closeConfirmModal()">Cancel</button>
+                        <button class="main-btn form-btn" id="confirm-action-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;">Yes</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('confirm-modal');
+    }
+
     const titleEl = document.getElementById('confirm-title');
     const descEl = document.getElementById('confirm-desc');
-    const modalEl = document.getElementById('confirm-modal');
     const confirmBtn = document.getElementById('confirm-action-btn');
     
     if (titleEl && descEl && modalEl && confirmBtn) {
@@ -124,12 +159,12 @@ function openConfirmModal(title, desc, onConfirm) {
         modalEl.style.display = 'flex';
     }
 }
+
 function closeConfirmModal() {
     const modalEl = document.getElementById('confirm-modal');
     if (modalEl) modalEl.style.display = 'none';
 }
 
-// --- NEW SMART PROMPT MODAL (NOW SUPPORTS DROPDOWNS) ---
 function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
     let modalEl = document.getElementById('prompt-modal');
     
@@ -161,7 +196,6 @@ function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
         titleEl.innerText = title;
         descEl.innerText = desc;
         
-        // Dynamically build input or select dropdown
         if (inputType === 'select' && Array.isArray(defaultValue)) {
             let selectHtml = `<select id="prompt-input" class="input-field" style="width: 100%; cursor: pointer;">`;
             selectHtml += `<option value="" disabled selected>Select an option...</option>`;
@@ -210,12 +244,12 @@ async function handleLeaderAuth() {
         const enterButton = document.querySelector('.form-btn'); 
 
         if (emailInput === "" || passInput === "") {
-            alert("Please enter both an email and a password!");
+            openInfoModal("Access Denied", "Please enter both an email and a password!");
             return;
         }
 
         if (!supabaseClient) {
-            alert("CRITICAL ERROR: Supabase cloud connection failed to load.");
+            openInfoModal("System Error", "CRITICAL ERROR: Supabase cloud connection failed to load.");
             return;
         }
 
@@ -246,7 +280,7 @@ async function handleLeaderAuth() {
                 sessionStorage.setItem('loggedInLeader', JSON.stringify(user));
                 window.location.href = 'leader-dashboard.html';
             } else {
-                alert("Incorrect password for this email account.");
+                openInfoModal("Access Denied", "Incorrect password for this email account.");
                 enterButton.disabled = false;
                 enterButton.innerText = "Enter";
                 enterButton.style.backgroundColor = "#1a1a1a"; 
@@ -266,14 +300,14 @@ async function handleLeaderAuth() {
             .then(function() {
                 window.location.href = 'leader-otp.html';
             }, function(err) {
-                alert("Failed to send OTP email.");
+                openInfoModal("Email Error", "Failed to send OTP email.");
                 enterButton.disabled = false;
                 enterButton.innerText = "Enter";
                 enterButton.style.backgroundColor = "#1a1a1a"; 
             });
         }
     } catch (criticalError) {
-        alert("APP CRASHED! Error: " + criticalError.message);
+        openInfoModal("App Crashed", "Error: " + criticalError.message);
         document.querySelector('.form-btn').disabled = false;
         document.querySelector('.form-btn').innerText = "Enter";
         document.querySelector('.form-btn').style.backgroundColor = "#1a1a1a"; 
@@ -313,10 +347,10 @@ async function verifyOTP() {
             sessionStorage.setItem('loggedInLeader', JSON.stringify(data[0]));
             window.location.href = 'leader-dashboard.html'; 
         } else {
-            alert("Incorrect OTP. Please try again.");
+            openInfoModal("Verification Failed", "Incorrect OTP. Please try again.");
         }
     } catch (criticalError) {
-        alert("APP CRASHED during OTP! Error: " + criticalError.message);
+        openInfoModal("App Crashed", "Error during OTP: " + criticalError.message);
     }
 }
 
@@ -353,7 +387,7 @@ function filterDirectory() {
 async function generateInvite() {
     await ensureSupabase();
     const leader = getLeader();
-    if (!leader) { alert("Session expired. Please log in again."); return null; }
+    if (!leader) { openInfoModal("Session Expired", "Please log in again."); return null; }
 
     const nameEl = document.getElementById('staff-name');
     const emailEl = document.getElementById('staff-email');
@@ -366,12 +400,12 @@ async function generateInvite() {
     let role = roleSelectEl.value === 'other' ? document.getElementById('custom-role').value.trim() : roleSelectEl.value;
     
     if (!name || !email || !role || roleSelectEl.value === "") {
-        alert("Please complete all fields."); 
+        openInfoModal("Incomplete Data", "Please complete all fields."); 
         return null;
     }
     
     if (!supabaseClient) { 
-        alert("Database connection is not ready."); 
+        openInfoModal("System Error", "Database connection is not ready."); 
         return null; 
     }
 
@@ -397,7 +431,7 @@ async function generateInvite() {
         return { link: generatedLink, name: name, email: email, role: role };
         
     } catch (error) {
-        alert("Error creating invite: " + error.message);
+        openInfoModal("Invite Error", error.message);
         return null;
     }
 }
@@ -414,9 +448,9 @@ async function copyInviteLink() {
     if (inviteData) {
         try {
             await navigator.clipboard.writeText(inviteData.link);
-            alert(`Success! 📋\n\nThe secure link for ${inviteData.name} has been copied to your clipboard.\n\nYou can now paste it into WhatsApp, Slack, or iMessage.`);
+            openInfoModal("Success!", `The secure link for ${inviteData.name} has been copied to your clipboard.\n\nYou can now paste it into WhatsApp, Slack, or iMessage.`);
         } catch (err) {
-            prompt("Copy this link manually:", inviteData.link);
+            openPromptModal("Manual Copy", "Copy this link manually:", "text", inviteData.link, function(){});
         }
     }
     
@@ -439,7 +473,7 @@ async function sendInviteLink() {
         
         window.location.href = `mailto:${inviteData.email}?subject=${subject}&body=${body}`;
         
-        alert(`Success! ✉️\n\nThe system has prepared an email draft for ${inviteData.name}.`);
+        openInfoModal("Success!", `The system has prepared an email draft for ${inviteData.name}.`);
     }
     
     inviteBtn.innerText = originalText;
@@ -509,98 +543,82 @@ async function loadPendingInvites() {
 }
 
 // --- APPROVE THE EMPLOYEE ---
-async function approveInvite(inviteId, employeeName) {
-    if (!confirm(`Are you sure you want to officially approve ${employeeName}'s face scan and add them to the team?`)) return;
-    await ensureSupabase();
+function approveInvite(inviteId, employeeName) {
+    openConfirmModal(
+        "Approve Employee", 
+        `Are you sure you want to officially approve ${employeeName}'s face scan and add them to the team?`, 
+        async function() {
+            await ensureSupabase();
 
-    if (!supabaseClient) {
-        alert("Database connection is missing!");
-        return;
-    }
+            if (!supabaseClient) {
+                openInfoModal("System Error", "Database connection is missing!");
+                return;
+            }
 
-    try {
-        const { data: inviteData, error: fetchError } = await supabaseClient
-            .from('staff_invites')
-            .select('*')
-            .eq('id', inviteId)
-            .single();
-        
-        if (fetchError) throw fetchError;
+            try {
+                const { data: inviteData, error: fetchError } = await supabaseClient
+                    .from('staff_invites')
+                    .select('*')
+                    .eq('id', inviteId)
+                    .single();
+                
+                if (fetchError) throw fetchError;
 
-        const tempPassword = "Staff" + Math.floor(1000 + Math.random() * 9000);
-        const today = getUniversalDate();
+                const tempPassword = "Staff" + Math.floor(1000 + Math.random() * 9000);
+                const today = getUniversalDate();
 
-        const { error: insertError } = await supabaseClient
-            .from('users')
-            .insert([{
-                email: inviteData.email,
-                password: tempPassword,
-                role: inviteData.role,
-                joined_date: today,
-                name: inviteData.name,
-                face_data: inviteData.face_data,
-                face_image: inviteData.face_image,
-                company_id: inviteData.company_id // Attach to boss's workspace
-            }]);
+                const { error: insertError } = await supabaseClient
+                    .from('users')
+                    .insert([{
+                        email: inviteData.email,
+                        password: tempPassword,
+                        role: inviteData.role,
+                        joined_date: today,
+                        name: inviteData.name,
+                        face_data: inviteData.face_data,
+                        face_image: inviteData.face_image,
+                        company_id: inviteData.company_id // Attach to boss's workspace
+                    }]);
 
-        if (insertError) throw insertError;
+                if (insertError) throw insertError;
 
-        await supabaseClient
-            .from('staff_invites')
-            .update({ status: 'approved' })
-            .eq('id', inviteId);
+                await supabaseClient
+                    .from('staff_invites')
+                    .update({ status: 'approved' })
+                    .eq('id', inviteId);
 
-        showApprovalSuccessModal(employeeName);
+                openInfoModal("Success!", `${employeeName} has been officially approved. Go to the Records section to view their report and email them their login details.`);
 
-        loadPendingInvites();
-        loadTeamDirectory(); 
+                loadPendingInvites();
+                loadTeamDirectory(); 
 
-    } catch (err) {
-        console.error(err);
-        alert("Error approving employee: " + err.message);
-    }
-}
-
-// --- CUSTOM SUCCESS POPUP FOR ADD SECTION ---
-function showApprovalSuccessModal(name) {
-    const modalDiv = document.createElement('div');
-    modalDiv.className = 'modal-bg';
-    modalDiv.id = 'approval-success-modal';
-    modalDiv.style.display = 'flex';
-    
-    modalDiv.innerHTML = `
-        <div class="modal-box animated-modal" style="text-align: center; max-width: 320px;">
-            <h3 class="section-title" style="color: #4ade80; margin-bottom: 10px; font-size: 20px;">Success!</h3>
-            <p style="font-size: 14px; color: #1a1a1a; margin-bottom: 20px;"><strong>${name}</strong> has been officially approved.</p>
-            
-            <div style="background-color: #f9f9f9; border: 1px solid #eaeaea; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: left;">
-                <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: bold; letter-spacing: 1px;">Next Step</span>
-                <p style="font-size: 13px; color: #555; margin: 8px 0 0 0; line-height: 1.5;">
-                    Their access credentials have been securely generated. Go to the <strong>Records</strong> section to view their individual report and email them their login details so they can access the portal.
-                </p>
-            </div>
-            
-            <button class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white; border: none;" onclick="document.getElementById('approval-success-modal').remove()">Understood</button>
-        </div>
-    `;
-    
-    document.body.appendChild(modalDiv);
+            } catch (err) {
+                console.error(err);
+                openInfoModal("Error", "Error approving employee: " + err.message);
+            }
+        }
+    );
 }
 
 // --- REJECT / DELETE INVITE ---
-async function deleteInvite(inviteId, employeeName) {
-    if (!confirm(`Are you sure you want to delete the invite for ${employeeName}?`)) return;
-    await ensureSupabase();
-    if (!supabaseClient) return;
+function deleteInvite(inviteId, employeeName) {
+    openConfirmModal(
+        "Delete Invite", 
+        `Are you sure you want to delete the invite for ${employeeName}?`, 
+        async function() {
+            await ensureSupabase();
+            if (!supabaseClient) return;
 
-    try {
-        const { error } = await supabaseClient.from('staff_invites').delete().eq('id', inviteId);
-        if (error) throw error;
-        loadPendingInvites();
-    } catch (err) {
-        console.error(err);
-        alert("Error deleting invite: " + err.message);
-    }
+            try {
+                const { error } = await supabaseClient.from('staff_invites').delete().eq('id', inviteId);
+                if (error) throw error;
+                loadPendingInvites();
+            } catch (err) {
+                console.error(err);
+                openInfoModal("Error", "Error deleting invite: " + err.message);
+            }
+        }
+    );
 }
 
 // --- EMPLOYEE JOIN PAGE (READING & ENFORCING LINK SECURITY) ---
@@ -714,7 +732,7 @@ async function startFaceScan() {
             }, 100);
         };
     } catch (err) {
-        alert("Camera Error: Check permissions.");
+        openInfoModal("Camera Error", "Check permissions.");
         aiStatus.innerText = "ERROR: Could not access camera.";
         aiStatus.style.color = "red";
     }
@@ -739,7 +757,7 @@ async function captureFace() {
         const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
 
         if (!detection) {
-            alert("No face detected clearly! Please look straight at the camera.");
+            openInfoModal("Scan Failed", "No face detected clearly! Please look straight at the camera.");
             if (captureBtn) { captureBtn.disabled = false; captureBtn.innerText = "Scan My Face"; }
             aiStatus.innerText = "WAITING FOR FACE...";
             return;
@@ -782,7 +800,7 @@ async function captureFace() {
         `;
     } catch (err) {
         console.error(err);
-        alert("Error saving biometric data.");
+        openInfoModal("Error", "Error saving biometric data.");
         if (captureBtn) { captureBtn.disabled = false; captureBtn.innerText = "Scan My Face"; }
     }
 }
@@ -996,6 +1014,7 @@ async function loadIndividualAnalytics() {
         updateElementSafe('email-staff-btn', `Email ${firstName}`);
 
         const today = new Date();
+        today.setHours(0,0,0,0);
         
         let safeLogs = Array.isArray(logs) ? logs : [];
         let validCheckinDates = new Set();
@@ -1230,7 +1249,7 @@ async function togglePersonalHoliday(dateStr, action) {
         loadIndividualAnalytics();
     } catch (err) {
         console.error(err);
-        alert("Failed to update holiday: " + err.message);
+        openInfoModal("Error", "Failed to update holiday: " + err.message);
     }
 }
 
@@ -1240,7 +1259,7 @@ function changeMonth(offset) {
 }
 
 // --- SECURE PASSWORD REVEAL (STRICTLY ENFORCED) ---
-async function revealPassword() {
+function revealPassword() {
     if (!currentViewedUser) return;
     
     openPromptModal(
@@ -1280,7 +1299,7 @@ async function revealPassword() {
 }
 
 // --- EMAIL CREDENTIALS TO STAFF ---
-async function emailCredentials() {
+function emailCredentials() {
     if (!currentViewedUser) return;
     
     openPromptModal(
@@ -1322,7 +1341,7 @@ async function emailCredentials() {
 }
 
 // --- RENAME EMPLOYEE ---
-async function renameEmployee() {
+function renameEmployee() {
     if (!currentViewedUser) return;
     
     openPromptModal(
@@ -1385,7 +1404,7 @@ async function loadTeamDirectory() {
 let localHolidays = [];
 let customSchedules = []; 
 let customLocations = [];
-let currentEditingLocationId = null;
+let currentEditingLocationId = 'main'; 
 let settingsDate = new Date();
 let sundaysToggled = false;
 let saturdaysToggled = false;
@@ -1470,7 +1489,6 @@ function initializeSettingsCalendar() {
         dayDiv.style.borderRadius = '4px';
         
         const isToday = (dateStr === getUniversalDate(nowStrict));
-        
         const isPastDay = currentIterationDate < nowStrict;
         const isHoliday = localHolidays.includes(dateStr);
 
@@ -1949,8 +1967,6 @@ function unassignEmployee(email, locId) {
     }
 }
 
-let currentEditingLocationId = 'main';
-
 function openMapModal(locId = 'main') {
     if (!leafletLoaded || typeof L === 'undefined') {
         alert("Loading map engine... Please try again in 2 seconds.");
@@ -2097,168 +2113,19 @@ async function confirmMapLocation() {
     }, 1500);
 }
 
-// --- CUSTOM EMPLOYEE TIME LOGIC ---
-async function openCustomTimeModal() {
-    const leader = getLeader();
-    if (!leader || !supabaseClient) return;
+function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371e3; 
+    const φ1 = lat1 * Math.PI/180;
+    const φ2 = lat2 * Math.PI/180;
+    const Δφ = (lat2-lat1) * Math.PI/180;
+    const Δλ = (lon2-lon1) * Math.PI/180;
 
-    const select = document.getElementById('custom-time-emp-select');
-    select.innerHTML = '<option value="" disabled selected>Loading staff...</option>';
-    openModal('custom-time-modal');
+    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ/2) * Math.sin(Δλ/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 
-    try {
-        const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
-        if (staff && staff.length > 0) {
-            select.innerHTML = '<option value="" disabled selected>Select an employee</option>';
-            staff.forEach(s => {
-                select.innerHTML += `<option value="${s.email}">${s.name} (${s.role})</option>`;
-            });
-        } else {
-            select.innerHTML = '<option value="" disabled selected>No staff found</option>';
-        }
-    } catch (err) {
-        console.error(err);
-        select.innerHTML = '<option value="" disabled selected>Error loading staff</option>';
-    }
-}
-
-function saveCustomTime() {
-    const select = document.getElementById('custom-time-emp-select');
-    const start = document.getElementById('custom-time-start').value;
-    const end = document.getElementById('custom-time-end').value;
-
-    if (!select.value || !start || !end) {
-        alert("Please select an employee and set both times.");
-        return;
-    }
-
-    const email = select.value;
-    const name = select.options[select.selectedIndex].text.split(' (')[0];
-
-    customSchedules = customSchedules.filter(c => c.email !== email);
-    
-    customSchedules.push({ email, name, start, end });
-    
-    renderCustomTimeList();
-    closeModal('custom-time-modal');
-    saveSettings(); 
-}
-
-function removeCustomTime(email) {
-    customSchedules = customSchedules.filter(c => c.email !== email);
-    renderCustomTimeList();
-    saveSettings(); 
-}
-
-function renderCustomTimeList() {
-    const list = document.getElementById('custom-time-list');
-    if (!list) return;
-    
-    list.innerHTML = "";
-    if (customSchedules.length === 0) {
-        list.innerHTML = `<p style="font-size: 11px; color: #888;">No custom schedules set.</p>`;
-        return;
-    }
-
-    customSchedules.forEach(c => {
-        const div = document.createElement('div');
-        div.style.display = 'flex';
-        div.style.justifyContent = 'space-between';
-        div.style.alignItems = 'center';
-        div.style.marginBottom = '8px';
-        div.style.padding = '8px';
-        div.style.backgroundColor = '#f9f9f9';
-        div.style.border = '1px solid #eaeaea';
-        div.style.borderRadius = '4px';
-
-        div.innerHTML = `
-            <div style="display: flex; flex-direction: column;">
-                <span style="font-size: 12px; font-weight: 600; color: #1a1a1a;">${c.name}</span>
-                <span style="font-size: 10px; color: #888;">${c.start} - ${c.end}</span>
-            </div>
-            <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 24px; height: 24px;" onclick="removeCustomTime('${c.email}')">X</button>
-        `;
-        list.appendChild(div);
-    });
-}
-
-// --- DAILY PIN GENERATOR ---
-async function loadTodayPIN() {
-    const pinDisplay = document.getElementById('live-pin-display');
-    const activeState = document.getElementById('pin-active-state');
-    const disabledState = document.getElementById('pin-disabled-state');
-    const leader = getLeader();
-    
-    if (!leader) return;
-    await ensureSupabase();
-
-    try {
-        const { data } = await supabaseClient.from('settings').select('daily_pin, require_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
-        
-        if (activeState && disabledState && pinDisplay) {
-            if (data && data.require_pin) {
-                activeState.style.display = "block";
-                disabledState.style.display = "none";
-
-                const todayStr = getUniversalDate();
-                let savedDate = "";
-                let pinValue = "";
-
-                if (data.daily_pin) {
-                    if (data.daily_pin.includes(':')) {
-                        const parts = data.daily_pin.split(':');
-                        savedDate = parts[0];
-                        pinValue = parts[1];
-                    } else {
-                        pinValue = data.daily_pin;
-                        savedDate = localStorage.getItem('last_pin_date_' + leader.company_id) || "";
-                    }
-                }
-
-                if (savedDate !== todayStr || !pinValue) {
-                    await generateNewPIN(); 
-                } else {
-                    pinDisplay.innerText = pinValue;
-                }
-            } else {
-                activeState.style.display = "none";
-                disabledState.style.display = "block";
-            }
-        }
-    } catch (err) { console.error(err); }
-}
-
-async function generateNewPIN() {
-    const leader = getLeader();
-    if (!leader) return;
-    await ensureSupabase();
-
-    const newPin = Math.floor(1000 + Math.random() * 9000).toString();
-    const pinDisplay = document.getElementById('live-pin-display');
-    if (pinDisplay) pinDisplay.innerText = newPin;
-
-    try {
-        let safeCompanyId = leader.company_id;
-        if (!safeCompanyId) {
-            safeCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
-            await supabaseClient.from('users').update({ company_id: safeCompanyId }).eq('id', leader.id);
-            leader.company_id = safeCompanyId;
-            sessionStorage.setItem('loggedInLeader', JSON.stringify(leader));
-        }
-
-        const todayStr = getUniversalDate();
-        const cloudPayload = todayStr + ':' + newPin;
-
-        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', safeCompanyId).limit(1).maybeSingle();
-        if (existingData) {
-            await supabaseClient.from('settings').update({ daily_pin: cloudPayload }).eq('id', existingData.id);
-        } else {
-            await supabaseClient.from('settings').insert([{ daily_pin: cloudPayload, company_id: safeCompanyId }]);
-        }
-
-        localStorage.setItem('last_pin_date_' + safeCompanyId, todayStr);
-
-    } catch (err) { console.error(err); }
+    return R * c; 
 }
 
 // ==========================================
@@ -2582,12 +2449,6 @@ function switchStaffTab(tabName) {
     if (tabName === 'records' || tabName === 'settings') loadStaffRecords();
 }
 
-function openStaffModal(title, desc) {
-    document.getElementById('staff-modal-title').innerText = title;
-    document.getElementById('staff-modal-desc').innerText = desc;
-    document.getElementById('staff-modal').style.display = 'flex';
-}
-
 async function startDailyScanner() {
     await ensureFaceApi();
     await ensureSupabase();
@@ -2701,7 +2562,6 @@ async function startDailyScanner() {
 async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
     if (rules && rules.require_gps) {
         
-        // DETERMINE WHICH GPS TARGET TO USE (MAIN OR CUSTOM)
         let targetLat = rules.office_lat;
         let targetLng = rules.office_lng;
         let targetRadius = rules.office_radius ? rules.office_radius : 150;
