@@ -140,7 +140,7 @@ function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
                     <span class="close" onclick="closePromptModal()">×</span>
                     <h3 class="section-title" id="prompt-title" style="text-align: center; margin-bottom: 15px;">Prompt</h3>
                     <p id="prompt-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 15px; text-align: center;">Description</p>
-                    <div id="prompt-input-container" style="width: 100%; margin-bottom: 20px;"></div>
+                    <input type="text" id="prompt-input" class="input-field" style="width: 100%; margin-bottom: 20px;" placeholder="">
                     <div style="display: flex; gap: 10px;">
                         <button class="google-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px;" onclick="closePromptModal()">Cancel</button>
                         <button class="main-btn form-btn" id="prompt-action-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;">Submit</button>
@@ -154,38 +154,25 @@ function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
 
     const titleEl = document.getElementById('prompt-title');
     const descEl = document.getElementById('prompt-desc');
-    const inputContainer = document.getElementById('prompt-input-container');
+    const inputEl = document.getElementById('prompt-input');
     const confirmBtn = document.getElementById('prompt-action-btn');
     
-    if (titleEl && descEl && inputContainer && confirmBtn) {
+    if (titleEl && descEl && inputEl && confirmBtn) {
         titleEl.innerText = title;
         descEl.innerText = desc;
-        
-        if (inputType === 'select' && Array.isArray(defaultValue)) {
-            let selectHtml = `<select id="prompt-input" class="input-field" style="width: 100%; cursor: pointer;">`;
-            selectHtml += `<option value="" disabled selected>Select an option...</option>`;
-            defaultValue.forEach(opt => {
-                selectHtml += `<option value="${opt.value}">${opt.label}</option>`;
-            });
-            selectHtml += `</select>`;
-            inputContainer.innerHTML = selectHtml;
-        } else {
-            inputContainer.innerHTML = `<input type="${inputType}" id="prompt-input" class="input-field" style="width: 100%;" placeholder="">`;
-            document.getElementById('prompt-input').value = defaultValue || '';
-        }
+        inputEl.type = inputType || 'text';
+        inputEl.value = defaultValue || '';
         
         const newBtn = confirmBtn.cloneNode(true);
         confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
         
         newBtn.addEventListener('click', function() {
-            const finalInput = document.getElementById('prompt-input');
-            onConfirm(finalInput ? finalInput.value : '');
+            onConfirm(inputEl.value);
             closePromptModal();
         });
         
         modalEl.style.display = 'flex';
-        const finalInput = document.getElementById('prompt-input');
-        if (finalInput) finalInput.focus();
+        inputEl.focus();
     }
 }
 
@@ -995,6 +982,7 @@ async function loadIndividualAnalytics() {
         updateElementSafe('email-staff-btn', `Email ${firstName}`);
 
         const today = new Date();
+        today.setHours(0,0,0,0);
         
         let safeLogs = Array.isArray(logs) ? logs : [];
         let validCheckinDates = new Set();
@@ -1239,7 +1227,7 @@ function changeMonth(offset) {
 }
 
 // --- SECURE PASSWORD REVEAL (STRICTLY ENFORCED) ---
-function revealPassword() {
+async function revealPassword() {
     if (!currentViewedUser) return;
     
     openPromptModal(
@@ -1279,7 +1267,7 @@ function revealPassword() {
 }
 
 // --- EMAIL CREDENTIALS TO STAFF ---
-function emailCredentials() {
+async function emailCredentials() {
     if (!currentViewedUser) return;
     
     openPromptModal(
@@ -1321,7 +1309,7 @@ function emailCredentials() {
 }
 
 // --- RENAME EMPLOYEE ---
-function renameEmployee() {
+async function renameEmployee() {
     if (!currentViewedUser) return;
     
     openPromptModal(
@@ -1383,8 +1371,6 @@ async function loadTeamDirectory() {
 
 let localHolidays = [];
 let customSchedules = []; 
-let customLocations = [];
-let currentEditingLocationId = 'main';
 let settingsDate = new Date();
 let sundaysToggled = false;
 let saturdaysToggled = false;
@@ -1394,7 +1380,7 @@ function initializeSettingsCalendar() {
     if (!calendar) return; 
 
     const leader = getLeader();
-    let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(2000, 0, 1);
+    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(2000, 0, 1);
     joinedDate.setHours(0,0,0,0);
 
     const year = settingsDate.getFullYear();
@@ -1450,6 +1436,7 @@ function initializeSettingsCalendar() {
     }
 
     const nowStrict = new Date();
+    // Normalize to start of day to avoid timezone hour shifts
     nowStrict.setHours(0,0,0,0);
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -1470,6 +1457,7 @@ function initializeSettingsCalendar() {
         
         const isToday = (dateStr === getUniversalDate(nowStrict));
         
+        // Prevent editing past days relative to current date
         const isPastDay = currentIterationDate < nowStrict;
         const isHoliday = localHolidays.includes(dateStr);
 
@@ -1516,7 +1504,7 @@ function markAllSundays() {
     const btn = document.getElementById('btn-toggle-sundays');
     const now = new Date();
     const leader = getLeader();
-    let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
+    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
     joinedDate.setHours(0,0,0,0);
     
     const maxYear = (now.getMonth() === 11 && now.getDate() >= 25) ? now.getFullYear() + 1 : now.getFullYear();
@@ -1546,7 +1534,7 @@ function markSecondSaturdays() {
     const btn = document.getElementById('btn-toggle-saturdays');
     const now = new Date();
     const leader = getLeader();
-    let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
+    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
     joinedDate.setHours(0,0,0,0);
     
     const maxYear = (now.getMonth() === 11 && now.getDate() >= 25) ? now.getFullYear() + 1 : now.getFullYear();
@@ -1613,13 +1601,7 @@ async function loadSettings() {
         if (data) {
             startInput.value = data.check_in_start || "09:00";
             document.getElementById('check-in-end').value = data.check_in_end || "10:00";
-            
-            const gpsCheckbox = document.getElementById('require-gps');
-            if (gpsCheckbox) {
-                gpsCheckbox.checked = data.require_gps;
-                handleGPSToggle(); 
-            }
-
+            document.getElementById('require-gps').checked = data.require_gps;
             document.getElementById('require-pin').checked = data.require_pin;
             
             if (data.office_lat && data.office_lng) {
@@ -1661,19 +1643,10 @@ async function loadSettings() {
             }
             renderCustomTimeList();
 
-            if (data.custom_locations) {
-                try { customLocations = JSON.parse(data.custom_locations); } catch(e){}
-            } else {
-                customLocations = [];
-            }
-
         } else {
             if(startInput) startInput.value = "09:00";
             if(document.getElementById('check-in-end')) document.getElementById('check-in-end').value = "10:00";
-            if(document.getElementById('require-gps')) {
-                document.getElementById('require-gps').checked = false;
-                handleGPSToggle();
-            }
+            if(document.getElementById('require-gps')) document.getElementById('require-gps').checked = false;
             if(document.getElementById('require-pin')) document.getElementById('require-pin').checked = false;
         }
     } catch (err) {
@@ -1728,7 +1701,6 @@ async function saveSettings() {
             holidays: JSON.stringify(localHolidays),
             exceptions: JSON.stringify(exceptionsArray),
             custom_schedules: JSON.stringify(customSchedules),
-            custom_locations: JSON.stringify(customLocations),
             company_id: safeCompanyId
         };
 
@@ -1753,345 +1725,6 @@ async function saveSettings() {
             subtitle.style.color = "red";
         }
     }
-}
-
-// --- GPS MULTI-LOCATION LOGIC ---
-function handleGPSToggle() {
-    const isChecked = document.getElementById('require-gps').checked;
-    const manageBtn = document.getElementById('manage-locations-btn');
-    if (manageBtn) {
-        manageBtn.style.display = isChecked ? 'block' : 'none';
-    }
-    saveSettings();
-}
-
-function openLocationsView() {
-    document.getElementById('settings-main-view').style.display = 'none';
-    const locView = document.getElementById('settings-locations-view');
-    if(locView) {
-        locView.style.display = 'block';
-        window.scrollTo(0,0);
-    }
-    renderLocations();
-}
-
-function closeLocationsView() {
-    document.getElementById('settings-locations-view').style.display = 'none';
-    document.getElementById('settings-main-view').style.display = 'block';
-    window.scrollTo(0,0);
-}
-
-async function renderLocations() {
-    const container = document.getElementById('locations-list-container');
-    if (!container) return;
-    
-    container.innerHTML = '<p style="font-size: 12px; color: #888; text-align: center; padding: 20px;">Loading staff data...</p>';
-    
-    await ensureSupabase();
-    const leader = getLeader();
-    if(!leader) return;
-    
-    const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
-    const safeStaff = staff || [];
-    
-    let html = '';
-    
-    // Main Campus
-    let mainStaff = safeStaff.filter(s => {
-        let inCustom = customLocations.find(loc => loc.employees && loc.employees.includes(s.email));
-        return !inCustom;
-    });
-    
-    html += `
-        <div class="form-card" style="text-align: left; padding: 20px; border: 2px solid #1a1a1a;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3 class="section-title" style="margin: 0; border: none; padding: 0;">Main Campus</h3>
-                <button class="i-btn" style="width: auto; padding: 4px 10px; border-radius: 4px; font-style: normal; font-family: inherit;" onclick="openMapModal('main')">📍 Edit GPS</button>
-            </div>
-            <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Default location for all employees.</p>
-            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-    `;
-    
-    if (mainStaff.length === 0) {
-        html += `<span style="font-size: 11px; color: #aaa;">No employees currently assigned here.</span>`;
-    } else {
-        mainStaff.forEach(s => {
-            html += `<span style="background: #f0f0f0; padding: 4px 10px; border-radius: 20px; font-size: 11px; color: #333;">${s.name}</span>`;
-        });
-    }
-    html += `</div></div>`;
-    
-    // Custom Locations
-    customLocations.forEach(loc => {
-        let locStaff = safeStaff.filter(s => loc.employees && loc.employees.includes(s.email));
-        
-        html += `
-            <div class="form-card" style="text-align: left; padding: 20px; margin-top: 15px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h3 class="section-title" style="margin: 0; border: none; padding: 0;">${loc.name}</h3>
-                    <div style="display: flex; gap: 5px;">
-                        <button class="i-btn" style="width: auto; padding: 4px 10px; border-radius: 4px; font-style: normal; font-family: inherit;" onclick="openMapModal('${loc.id}')">📍 Edit</button>
-                        <button class="i-btn" style="width: auto; padding: 4px 10px; border-radius: 4px; font-style: normal; font-family: inherit; color: #ef4444; border-color: #fca5a5; background: #fef2f2;" onclick="removeLocation('${loc.id}')">Remove</button>
-                    </div>
-                </div>
-                <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Custom remote or branch location.</p>
-                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;">
-        `;
-        
-        if (locStaff.length === 0) {
-            html += `<span style="font-size: 11px; color: #aaa;">No employees currently assigned here.</span>`;
-        } else {
-            locStaff.forEach(s => {
-                html += `
-                    <span style="background: #1a1a1a; color: #ffffff; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: flex; align-items: center; gap: 5px;">
-                        ${s.name} 
-                        <span style="cursor: pointer; font-weight: bold; color: #ef4444; margin-left: 3px;" onclick="unassignEmployee('${s.email}', '${loc.id}')">×</span>
-                    </span>
-                `;
-            });
-        }
-        
-        html += `
-                </div>
-                <button class="google-btn" style="width: 100%; font-size: 11px; padding: 8px; border-style: dashed;" onclick="assignStaffToLocation('${loc.id}')">+ Assign Employee Here</button>
-            </div>
-        `;
-    });
-    
-    container.innerHTML = html;
-}
-
-function addNewLocation() {
-    openPromptModal(
-        "New Location", 
-        "Enter a name for the new location (e.g., Downtown Branch):", 
-        "text", 
-        "", 
-        function(name) {
-            if (!name || name.trim() === "") return;
-            const newId = 'loc_' + Math.random().toString(36).substr(2, 9);
-            customLocations.push({
-                id: newId,
-                name: name.trim(),
-                lat: mapSavedLat || 40.7128, 
-                lng: mapSavedLng || -74.0060,
-                radius: 150,
-                employees: []
-            });
-            saveSettings().then(() => {
-                renderLocations();
-                openMapModal(newId);
-            });
-        }
-    );
-}
-
-function removeLocation(id) {
-    openConfirmModal(
-        "Remove Location", 
-        "Are you sure you want to delete this location? Employees assigned here will revert to the Main Campus.", 
-        function() {
-            customLocations = customLocations.filter(l => l.id !== id);
-            saveSettings().then(() => renderLocations());
-        }
-    );
-}
-
-async function assignStaffToLocation(locId) {
-    await ensureSupabase();
-    const leader = getLeader();
-    const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
-    
-    if (!staff || staff.length === 0) {
-        openInfoModal("No Staff", "You have no staff to assign.");
-        return;
-    }
-
-    const loc = customLocations.find(l => l.id === locId);
-    const unassignedStaff = staff.filter(s => !(loc.employees && loc.employees.includes(s.email)));
-    
-    if (unassignedStaff.length === 0) {
-        openInfoModal("All Staff Assigned", "All available staff are already assigned to this location.");
-        return;
-    }
-
-    const options = unassignedStaff.map(s => ({ label: s.name, value: s.email }));
-    
-    openPromptModal(
-        `Assign to ${loc.name}`, 
-        "Select an employee to assign to this location:", 
-        "select", 
-        options, 
-        function(selectedEmail) {
-            if (!selectedEmail) return;
-            
-            customLocations.forEach(l => {
-                if (l.employees && l.employees.includes(selectedEmail)) {
-                    l.employees = l.employees.filter(e => e !== selectedEmail);
-                }
-            });
-            
-            const targetLoc = customLocations.find(l => l.id === locId);
-            if (!targetLoc.employees) targetLoc.employees = [];
-            targetLoc.employees.push(selectedEmail);
-            
-            saveSettings().then(() => renderLocations());
-        }
-    );
-}
-
-function unassignEmployee(email, locId) {
-    const loc = customLocations.find(l => l.id === locId);
-    if (loc && loc.employees) {
-        loc.employees = loc.employees.filter(e => e !== email);
-        saveSettings().then(() => renderLocations());
-    }
-}
-
-function openMapModal(locId = 'main') {
-    if (!leafletLoaded || typeof L === 'undefined') {
-        alert("Loading map engine... Please try again in 2 seconds.");
-        return;
-    }
-    
-    currentEditingLocationId = locId;
-    document.getElementById('gps-map-modal').style.display = 'flex';
-    
-    setTimeout(() => {
-        if (!map) {
-            initMap();
-        } else {
-            map.invalidateSize();
-            updateMapToCurrentLocation();
-        }
-    }, 200);
-}
-
-function updateMapToCurrentLocation() {
-    let initialLat = 40.7128;
-    let initialLng = -74.0060;
-    let initialRadius = 150;
-
-    if (currentEditingLocationId === 'main') {
-        if (mapSavedLat && mapSavedLng) {
-            initialLat = mapSavedLat;
-            initialLng = mapSavedLng;
-            initialRadius = mapSavedRadius || 150;
-        }
-    } else {
-        const loc = customLocations.find(l => l.id === currentEditingLocationId);
-        if (loc && loc.lat && loc.lng) {
-            initialLat = loc.lat;
-            initialLng = loc.lng;
-            initialRadius = loc.radius || 150;
-        }
-    }
-
-    if (map) {
-        map.setView([initialLat, initialLng], 16);
-        if (geofenceCircle) {
-            geofenceCircle.setLatLng([initialLat, initialLng]);
-            geofenceCircle.setRadius(initialRadius);
-        }
-    }
-    const slider = document.getElementById('radius-slider');
-    if (slider) {
-        slider.value = initialRadius;
-        updateCirclePreview();
-    }
-}
-
-function initMap() {
-    let initialLat = 40.7128;
-    let initialLng = -74.0060;
-    let initialRadius = 150;
-
-    if (currentEditingLocationId === 'main') {
-        if (mapSavedLat && mapSavedLng) {
-            initialLat = mapSavedLat;
-            initialLng = mapSavedLng;
-            initialRadius = mapSavedRadius || 150;
-        }
-    } else {
-        const loc = customLocations.find(l => l.id === currentEditingLocationId);
-        if (loc && loc.lat && loc.lng) {
-            initialLat = loc.lat;
-            initialLng = loc.lng;
-            initialRadius = loc.radius || 150;
-        }
-    }
-
-    map = L.map('map').setView([initialLat, initialLng], 16);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
-    }).addTo(map);
-
-    geofenceCircle = L.circle([initialLat, initialLng], {
-        color: '#4ade80',
-        fillColor: '#4ade80',
-        fillOpacity: 0.2,
-        radius: initialRadius
-    }).addTo(map);
-
-    map.on('move', function() {
-        geofenceCircle.setLatLng(map.getCenter());
-    });
-
-    const slider = document.getElementById('radius-slider');
-    if (slider) {
-        slider.value = initialRadius;
-        updateCirclePreview();
-    }
-
-    if (currentEditingLocationId === 'main' && !mapSavedLat && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(position => {
-            map.setView([position.coords.latitude, position.coords.longitude], 16);
-            geofenceCircle.setLatLng([position.coords.latitude, position.coords.longitude]);
-        });
-    }
-}
-
-async function confirmMapLocation() {
-    const leader = getLeader();
-    if (!leader || !map) return;
-    
-    const center = map.getCenter();
-    const radius = document.getElementById('radius-slider').value;
-    const saveBtn = document.getElementById('save-map-btn');
-    
-    saveBtn.innerText = "Saving to Cloud...";
-    saveBtn.disabled = true;
-
-    if (currentEditingLocationId === 'main') {
-        mapSavedLat = center.lat;
-        mapSavedLng = center.lng;
-        mapSavedRadius = parseInt(radius);
-    } else {
-        const loc = customLocations.find(l => l.id === currentEditingLocationId);
-        if (loc) {
-            loc.lat = center.lat;
-            loc.lng = center.lng;
-            loc.radius = parseInt(radius);
-        }
-    }
-
-    await saveSettings();
-    if(document.getElementById('settings-locations-view') && document.getElementById('settings-locations-view').style.display === 'block') {
-        renderLocations();
-    }
-
-    saveBtn.innerText = "Saved Successfully!";
-    saveBtn.style.backgroundColor = "#4ade80";
-    saveBtn.style.color = "black";
-    
-    setTimeout(() => {
-        closeMapModal();
-        saveBtn.innerText = "Save Boundary & Close";
-        saveBtn.style.backgroundColor = "#1a1a1a";
-        saveBtn.style.color = "white";
-        saveBtn.disabled = false;
-    }, 1500);
 }
 
 // --- CUSTOM EMPLOYEE TIME LOGIC ---
@@ -2182,13 +1815,48 @@ function renderCustomTimeList() {
 // --- DAILY PIN GENERATOR ---
 async function loadTodayPIN() {
     const pinDisplay = document.getElementById('live-pin-display');
+    const activeState = document.getElementById('pin-active-state');
+    const disabledState = document.getElementById('pin-disabled-state');
     const leader = getLeader();
-    if (!pinDisplay || !leader) return;
+    
+    if (!leader) return;
     await ensureSupabase();
 
     try {
-        const { data } = await supabaseClient.from('settings').select('daily_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
-        if (data && data.daily_pin) pinDisplay.innerText = data.daily_pin;
+        const { data } = await supabaseClient.from('settings').select('daily_pin, require_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        
+        // Ensure we are on the page that actually has these elements before trying to modify them
+        if (activeState && disabledState && pinDisplay) {
+            if (data && data.require_pin) {
+                activeState.style.display = "block";
+                disabledState.style.display = "none";
+
+                const todayStr = getUniversalDate();
+                let savedDate = "";
+                let pinValue = "";
+
+                if (data.daily_pin) {
+                    if (data.daily_pin.includes(':')) {
+                        const parts = data.daily_pin.split(':');
+                        savedDate = parts[0];
+                        pinValue = parts[1];
+                    } else {
+                        // Fallback logic for any PINs saved before this strict update
+                        pinValue = data.daily_pin;
+                        savedDate = localStorage.getItem('last_pin_date_' + leader.company_id) || "";
+                    }
+                }
+
+                if (savedDate !== todayStr || !pinValue) {
+                    await generateNewPIN(); 
+                } else {
+                    pinDisplay.innerText = pinValue;
+                }
+            } else {
+                activeState.style.display = "none";
+                disabledState.style.display = "block";
+            }
+        }
     } catch (err) { console.error(err); }
 }
 
@@ -2198,7 +1866,197 @@ async function generateNewPIN() {
     await ensureSupabase();
 
     const newPin = Math.floor(1000 + Math.random() * 9000).toString();
-    document.getElementById('live-pin-display').innerText = newPin;
+    const pinDisplay = document.getElementById('live-pin-display');
+    if (pinDisplay) pinDisplay.innerText = newPin;
+
+    try {
+        let safeCompanyId = leader.company_id;
+        if (!safeCompanyId) {
+            safeCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
+            await supabaseClient.from('users').update({ company_id: safeCompanyId }).eq('id', leader.id);
+            leader.company_id = safeCompanyId;
+            sessionStorage.setItem('loggedInLeader', JSON.stringify(leader));
+        }
+
+        const todayStr = getUniversalDate();
+        const cloudPayload = todayStr + ':' + newPin;
+
+        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', safeCompanyId).limit(1).maybeSingle();
+        if (existingData) {
+            await supabaseClient.from('settings').update({ daily_pin: cloudPayload }).eq('id', existingData.id);
+        } else {
+            await supabaseClient.from('settings').insert([{ daily_pin: cloudPayload, company_id: safeCompanyId }]);
+        }
+
+        localStorage.setItem('last_pin_date_' + safeCompanyId, todayStr);
+
+    } catch (err) { console.error(err); }
+}
+
+// --- LEAFLET MAP & GEOFENCING ENGINE ---
+let map = null;
+let geofenceCircle = null;
+let mapSavedLat = null;
+let mapSavedLng = null;
+let mapSavedRadius = 150;
+let leafletLoaded = false;
+
+function injectMapDependencies() {
+    if (document.querySelector('link[href*="leaflet"]')) {
+        leafletLoaded = true;
+        return;
+    }
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(link);
+    
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.onload = () => { leafletLoaded = true; };
+    document.head.appendChild(script);
+}
+
+function injectMapModalHTML() {
+    if (document.getElementById('gps-map-modal') || !window.location.pathname.includes('settings')) return;
+    
+    const mapModalHtml = `
+        <div id="gps-map-modal" class="modal-bg" style="z-index: 10000; display: none;">
+            <div class="modal-box animated-modal" style="width: 90%; max-width: 500px; padding: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 class="section-title" style="margin: 0;">Set Geofence Boundary</h3>
+                    <span class="close" onclick="closeMapModal()" style="cursor: pointer; font-size: 20px;">×</span>
+                </div>
+                <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Drag the map to center the pin on your physical workplace.</p>
+                
+                <div id="map" style="height: 300px; border-radius: 8px; border: 2px solid #1a1a1a; margin-bottom: 15px; position: relative;">
+                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000; pointer-events: none; text-shadow: 0 0 5px white; font-size: 24px;">
+                        📍
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <label style="font-size: 12px; font-weight: bold; color: #1a1a1a; display: flex; justify-content: space-between;">
+                        Allowed Radius: <span id="radius-display" style="color: #4ade80;">150 meters</span>
+                    </label>
+                    <input type="range" id="radius-slider" min="50" max="1000" step="10" value="150" style="width: 100%; margin-top: 10px; cursor: pointer;" oninput="updateCirclePreview()">
+                    <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa; margin-top: 5px;">
+                        <span>Tight (50m)</span>
+                        <span>Wide (1000m)</span>
+                    </div>
+                </div>
+
+                <button id="save-map-btn" class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="confirmMapLocation()">Save Boundary & Close</button>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', mapModalHtml);
+}
+
+function bindGPSControls() {
+    const gpsSwitch = document.getElementById('require-gps');
+    if (gpsSwitch) {
+        gpsSwitch.onchange = handleGPSToggle;
+    }
+
+    const oldButton = document.querySelector('button[onclick="pinpointWorkplaceLocation()"]');
+    if (oldButton) {
+        oldButton.innerText = "📍 Edit Workplace Location & Radius";
+        oldButton.onclick = openMapModal;
+        oldButton.removeAttribute('onclick'); 
+    }
+}
+
+function handleGPSToggle() {
+    const isChecked = document.getElementById('require-gps').checked;
+    saveSettings(); 
+    if (isChecked) {
+        openMapModal();
+    }
+}
+
+function openMapModal() {
+    if (!leafletLoaded || typeof L === 'undefined') {
+        alert("Loading map engine... Please try again in 2 seconds.");
+        return;
+    }
+    document.getElementById('gps-map-modal').style.display = 'flex';
+    
+    setTimeout(() => {
+        if (!map) {
+            initMap();
+        } else {
+            map.invalidateSize();
+            if(mapSavedLat && mapSavedLng) {
+                map.setView([mapSavedLat, mapSavedLng], 16);
+                document.getElementById('radius-slider').value = mapSavedRadius;
+                updateCirclePreview();
+            }
+        }
+    }, 200);
+}
+
+function closeMapModal() {
+    document.getElementById('gps-map-modal').style.display = 'none';
+    if(!mapSavedLat && document.getElementById('require-gps').checked) {
+        document.getElementById('require-gps').checked = false;
+        saveSettings();
+    }
+}
+
+function initMap() {
+    let initialLat = 40.7128;
+    let initialLng = -74.0060;
+
+    if (mapSavedLat && mapSavedLng) {
+        initialLat = mapSavedLat;
+        initialLng = mapSavedLng;
+    }
+
+    map = L.map('map').setView([initialLat, initialLng], 16);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    geofenceCircle = L.circle(map.getCenter(), {
+        color: '#4ade80',
+        fillColor: '#4ade80',
+        fillOpacity: 0.2,
+        radius: document.getElementById('radius-slider').value
+    }).addTo(map);
+
+    map.on('move', function() {
+        geofenceCircle.setLatLng(map.getCenter());
+    });
+
+    if (!mapSavedLat && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(position => {
+            map.setView([position.coords.latitude, position.coords.longitude], 16);
+            geofenceCircle.setLatLng([position.coords.latitude, position.coords.longitude]);
+        });
+    }
+}
+
+function updateCirclePreview() {
+    const currentRadius = document.getElementById('radius-slider').value;
+    document.getElementById('radius-display').innerText = `${currentRadius} meters`;
+    if (geofenceCircle) {
+        geofenceCircle.setRadius(currentRadius);
+    }
+}
+
+async function confirmMapLocation() {
+    const leader = getLeader();
+    if (!leader || !map) return;
+    await ensureSupabase();
+
+    const center = map.getCenter();
+    const radius = document.getElementById('radius-slider').value;
+
+    const saveBtn = document.getElementById('save-map-btn');
+    saveBtn.innerText = "Saving to Cloud...";
+    saveBtn.disabled = true;
 
     try {
         let safeCompanyId = leader.company_id;
@@ -2210,12 +2068,45 @@ async function generateNewPIN() {
         }
 
         const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', safeCompanyId).limit(1).maybeSingle();
+        
+        const payload = {
+            office_lat: center.lat,
+            office_lng: center.lng,
+            office_radius: parseInt(radius),
+            require_gps: true,
+            company_id: safeCompanyId
+        };
+
         if (existingData) {
-            await supabaseClient.from('settings').update({ daily_pin: newPin }).eq('id', existingData.id);
+            await supabaseClient.from('settings').update(payload).eq('id', existingData.id);
         } else {
-            await supabaseClient.from('settings').insert([{ daily_pin: newPin, company_id: safeCompanyId }]);
+            await supabaseClient.from('settings').insert([payload]);
         }
-    } catch (err) { console.error(err); }
+
+        mapSavedLat = center.lat;
+        mapSavedLng = center.lng;
+        mapSavedRadius = radius;
+        
+        document.getElementById('require-gps').checked = true;
+
+        saveBtn.innerText = "Saved Successfully!";
+        saveBtn.style.backgroundColor = "#4ade80";
+        saveBtn.style.color = "black";
+        
+        setTimeout(() => {
+            closeMapModal();
+            saveBtn.innerText = "Save Boundary & Close";
+            saveBtn.style.backgroundColor = "#1a1a1a";
+            saveBtn.style.color = "white";
+            saveBtn.disabled = false;
+        }, 1500);
+
+    } catch (err) {
+        console.error("Map Save Error:", err);
+        alert("Failed to save location to cloud.");
+        saveBtn.innerText = "Save Boundary & Close";
+        saveBtn.disabled = false;
+    }
 }
 
 function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
@@ -2261,13 +2152,13 @@ async function handleStaffLogin() {
             sessionStorage.setItem('loggedInStaff', JSON.stringify(user));
             window.location.href = 'staff-dashboard.html';
         } else {
-            alert("Incorrect email or password.");
+            openInfoModal("Login Failed", "Incorrect email or password.");
             loginBtn.innerText = "Login";
             loginBtn.disabled = false;
         }
     } catch (err) {
         console.error("Staff Login Crash:", err);
-        alert("Database Error: " + err.message);
+        openInfoModal("Database Error", err.message);
         loginBtn.innerText = "Login";
         loginBtn.disabled = false;
     }
@@ -2342,28 +2233,36 @@ async function loadStaffRecords() {
 
         let safeLogs = Array.isArray(logs) ? logs : [];
         let validCheckinDates = new Set();
-        safeLogs.forEach(log => {
-            const logDate = new Date(log.date);
-            if (logDate <= today) validCheckinDates.add(log.date);
-        });
-        const totalChecks = validCheckinDates.size;
+        let personalHolidaysSet = new Set();
         
+        safeLogs.forEach(log => {
+            if (log.status === 'Holiday/Off') {
+                personalHolidaysSet.add(log.date);
+            } else if (log.status === 'Present') {
+                const logDate = parseLocal(log.date);
+                if (logDate <= today) validCheckinDates.add(log.date);
+            }
+        });
+
+        // CALCULATE LEDGER STATS SAFELY
         let workingDays = 0;
         if (currentStaff.joined_date) {
             const joinedDate = parseLocal(currentStaff.joined_date);
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                 const dateStr = getUniversalDate(d);
-                if (!holidaysArray.includes(dateStr)) workingDays++;
+                if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) workingDays++;
             }
         }
         if (workingDays === 0) workingDays = 1; 
+
+        const totalChecks = validCheckinDates.size;
         
         let percent = Math.round((totalChecks / workingDays) * 100);
         if (percent > 100) percent = 100;
         
         const todayStr2 = getUniversalDate(today);
-        const isHoliday = holidaysArray.includes(todayStr2);
-        const checkedInToday = safeLogs.some(log => log.date === todayStr2);
+        const isHoliday = holidaysArray.includes(todayStr2) || personalHolidaysSet.has(todayStr2);
+        const checkedInToday = validCheckinDates.has(todayStr2);
 
         let exceptionText = "None scheduled";
         if (settings && settings.exceptions) {
@@ -2397,7 +2296,7 @@ async function loadStaffRecords() {
             if(checksEl) { checksEl.innerText = `${totalChecks} / ${workingDays}`; checksEl.style.color = "#4ade80"; }
 
             const avgEl = document.getElementById('staff-ledger-avg') || document.getElementById('avg-in-time');
-            if(avgEl) avgEl.innerText = calculateAvgCheckInTime(safeLogs);
+            if(avgEl) avgEl.innerText = calculateAvgCheckInTime(safeLogs.filter(l => l.status === 'Present'));
 
             const percentBox = document.getElementById('staff-ledger-percent') || document.getElementById('attendance-percent-box');
             if(percentBox) {
@@ -2497,16 +2396,19 @@ async function loadStaffRecords() {
                 calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
             }
 
+            const nowStrict = new Date();
+            nowStrict.setHours(0,0,0,0);
+
             for (let day = 1; day <= daysInMonth; day++) {
                 const currentIterationDate = new Date(year, month, day);
                 const dateStrIteration = getUniversalDate(currentIterationDate);
-                const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
+                const wasPresent = validCheckinDates.has(dateStrIteration);
                 
                 let inlineStyle = CAL_STYLES.default;
                 
                 if (currentIterationDate < empJoinedDate) {
                     inlineStyle = CAL_STYLES.disabled;
-                } else if (holidaysArray.includes(dateStrIteration)) {
+                } else if (holidaysArray.includes(dateStrIteration) || personalHolidaysSet.has(dateStrIteration)) {
                     inlineStyle = CAL_STYLES.holiday;
                 } else if (currentIterationDate > today) {
                     inlineStyle = CAL_STYLES.default;
@@ -2581,7 +2483,7 @@ async function startDailyScanner() {
             .maybeSingle();
 
         if (existingLog) {
-            alert("Action Denied 🚫\n\nYou have already checked in today.");
+            openInfoModal("Action Denied", "You have already checked in today.");
             return;
         }
 
@@ -2592,7 +2494,7 @@ async function startDailyScanner() {
             let holidayArray = [];
             try { holidayArray = JSON.parse(rules.holidays); } catch(e){}
             if (holidayArray.includes(todayDateStr)) {
-                alert("Scanner Locked 🔒\n\nToday has been declared an official Holiday by your organization.");
+                openInfoModal("Scanner Locked", "Today has been declared an official Holiday by your organization.");
                 return;
             }
         }
@@ -2625,151 +2527,156 @@ async function startDailyScanner() {
         const currentTime = `${currentHours}:${currentMinutes}`;
 
         if (currentTime < allowedStart || currentTime > allowedEnd) {
-            alert(`Scanner Locked 🔒\n\nYou can only check in between ${allowedStart} and ${allowedEnd}.`);
+            openInfoModal("Scanner Locked", `You can only check in between ${allowedStart} and ${allowedEnd}.`);
             return; 
         }
 
         if (rules && rules.require_pin) {
-            const userPin = prompt("SECURITY CHECK: Enter the 4-digit Daily Access PIN provided by your Manager:");
-            if (userPin !== rules.daily_pin) {
-                alert("Incorrect Access PIN. Check-in aborted.");
-                return;
-            }
-        }
-
-        if (rules && rules.require_gps) {
-            
-            let targetLat = rules.office_lat;
-            let targetLng = rules.office_lng;
-            let targetRadius = rules.office_radius ? rules.office_radius : 150;
-
-            let customLocs = [];
-            try { customLocs = JSON.parse(rules.custom_locations); } catch(e){}
-            if (Array.isArray(customLocs)) {
-                const myLoc = customLocs.find(loc => loc.employees && loc.employees.includes(currentStaff.email));
-                if (myLoc && myLoc.lat && myLoc.lng) {
-                    targetLat = myLoc.lat;
-                    targetLng = myLoc.lng;
-                    targetRadius = myLoc.radius ? myLoc.radius : 150;
-                }
-            }
-
-            if (!targetLat || !targetLng) {
-                alert("Manager Error: Office GPS location has not been pinned in settings yet!");
-                return;
-            }
-            
-            alert("Verifying your location within assigned campus limits...");
-            const position = await new Promise((resolve, reject) => {
-                navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
-            }).catch(err => {
-                alert("GPS Error: Please enable location permissions on your device to check in.");
-                throw err;
-            });
-
-            const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, targetLat, targetLng);
-
-            if (distanceMeters > targetRadius) {
-                alert(`Geofence Violation 🚫\n\nYou are too far from your assigned location (${Math.round(distanceMeters)} meters away). You must be within ${targetRadius} meters to clock in.`);
-                return;
-            }
-        }
-
-        const statusCard = document.getElementById('status-card');
-        statusCard.innerHTML = `
-            <div id="scanner-container" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; border: 3px solid #1a1a1a; background-color: #000; margin-bottom: 15px;">
-                <video id="staff-video" width="100%" height="auto" autoplay muted playsinline></video>
-            </div>
-            <p id="scanner-status" style="font-size: 12px; color: #f59e0b; font-weight: bold; margin: 0;">LOADING AI MODELS...</p>
-        `;
-
-        const video = document.getElementById('staff-video');
-        const scannerStatus = document.getElementById('scanner-status');
-
-        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
-        await Promise.all([
-            faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-        ]);
-
-        scannerStatus.innerText = "CAMERA ACTIVE. LOOK AT THE SCREEN.";
-        scannerStatus.style.color = "#4ade80";
-
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
-        video.srcObject = stream;
-
-        const savedNumbers = JSON.parse(currentStaff.face_data);
-        const savedFloatArray = new Float32Array(savedNumbers);
-        const labeledDescriptor = new faceapi.LabeledFaceDescriptors(currentStaff.name, [savedFloatArray]);
-        
-        const faceMatcher = new faceapi.FaceMatcher([labeledDescriptor], 0.6);
-
-        video.onplay = () => {
-            const canvas = faceapi.createCanvasFromMedia(video);
-            canvas.style.position = 'absolute';
-            canvas.style.top = '0';
-            canvas.style.left = '0';
-            document.getElementById('scanner-container').append(canvas);
-
-            const displaySize = { width: video.clientWidth, height: video.clientHeight };
-            faceapi.matchDimensions(canvas, displaySize);
-
-            scannerInterval = setInterval(async () => {
-                const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
-                
-                if (detection) {
-                    const resizedDetections = faceapi.resizeResults(detection, displaySize);
-                    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-                    faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
-
-                    const match = faceMatcher.findBestMatch(detection.descriptor);
-                    
-                    if (match.label === currentStaff.name) {
-                        clearInterval(scannerInterval); 
-                        video.srcObject.getTracks().forEach(track => track.stop()); 
-                        
-                        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                        scannerStatus.innerText = "MATCH FOUND! SYNCING ATTENDANCE...";
-                        
-                        supabaseClient.from('checkins').insert([{
-                            user_email: currentStaff.email,
-                            user_name: currentStaff.name,
-                            date: todayDateStr,
-                            time: timeStr,
-                            status: 'Present',
-                            company_id: safeCompanyId 
-                        }]).then(({ error }) => {
-                            if (error) {
-                                alert("Database Error: " + error.message + "\n\nPlease ensure your 'checkins' table has exactly these columns: user_email, user_name, date, time, status, company_id.");
-                                return;
-                            }
-                            
-                            statusCard.innerHTML = `
-                                <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
-                                <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
-                                <p style="font-size: 12px; color: #4ade80; margin-top: 5px; font-weight: 600;">Successfully clocked in at ${timeStr}</p>
-                            `;
-                            statusCard.classList.remove('ghost-theme');
-                            statusCard.style.border = '1px solid #e0e0e0';
-                            statusCard.style.backgroundColor = '#ffffff';
-                            
-                            loadStaffRecords();
-                        });
-                    } else {
-                        scannerStatus.innerText = "FACE NOT MATCHED. ADJUST LIGHTING OR ANGLE...";
-                        scannerStatus.style.color = "#f59e0b";
+            openPromptModal(
+                "SECURITY CHECK",
+                "Enter the 4-digit Daily Access PIN provided by your Manager:",
+                "text",
+                "",
+                async function(userPin) {
+                    let actualDbPin = rules.daily_pin;
+                    if (actualDbPin && actualDbPin.includes(':')) {
+                        actualDbPin = actualDbPin.split(':')[1];
                     }
-                } else {
-                    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+                    if (userPin !== actualDbPin) {
+                        openInfoModal("Verification Failed", "Incorrect Access PIN. Check-in aborted.");
+                        return;
+                    }
+                    continueScannerProcess(rules, safeCompanyId, todayDateStr, now);
                 }
-            }, 500); 
-        };
+            );
+            return; 
+        }
+        
+        continueScannerProcess(rules, safeCompanyId, todayDateStr, now);
+
     } catch (err) {
-        alert("System verification failed.");
+        openInfoModal("Error", "System verification failed.");
         console.error(err);
     }
+}
+
+async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
+    if (rules && rules.require_gps) {
+        if (!rules.office_lat || !rules.office_lng) {
+            openInfoModal("Manager Error", "Office GPS location has not been pinned in settings yet!");
+            return;
+        }
+        
+        try {
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+            });
+
+            const allowedRadius = rules.office_radius ? rules.office_radius : 150;
+            const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, rules.office_lat, rules.office_lng);
+
+            if (distanceMeters > allowedRadius) {
+                openInfoModal("Geofence Violation", `You are too far from the office (${Math.round(distanceMeters)} meters away). You must be within ${allowedRadius} meters to clock in.`);
+                return;
+            }
+        } catch (err) {
+            openInfoModal("GPS Error", "Please enable location permissions on your device to check in.");
+            return;
+        }
+    }
+
+    const statusCard = document.getElementById('status-card');
+    statusCard.innerHTML = `
+        <div id="scanner-container" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; border: 3px solid #1a1a1a; background-color: #000; margin-bottom: 15px;">
+            <video id="staff-video" width="100%" height="auto" autoplay muted playsinline></video>
+        </div>
+        <p id="scanner-status" style="font-size: 12px; color: #f59e0b; font-weight: bold; margin: 0;">LOADING AI MODELS...</p>
+    `;
+
+    const video = document.getElementById('staff-video');
+    const scannerStatus = document.getElementById('scanner-status');
+
+    const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+    await Promise.all([
+        faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+    ]);
+
+    scannerStatus.innerText = "CAMERA ACTIVE. LOOK AT THE SCREEN.";
+    scannerStatus.style.color = "#4ade80";
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+    video.srcObject = stream;
+
+    const savedNumbers = JSON.parse(currentStaff.face_data);
+    const savedFloatArray = new Float32Array(savedNumbers);
+    const labeledDescriptor = new faceapi.LabeledFaceDescriptors(currentStaff.name, [savedFloatArray]);
+    
+    const faceMatcher = new faceapi.FaceMatcher([labeledDescriptor], 0.6);
+
+    video.onplay = () => {
+        const canvas = faceapi.createCanvasFromMedia(video);
+        canvas.style.position = 'absolute';
+        canvas.style.top = '0';
+        canvas.style.left = '0';
+        document.getElementById('scanner-container').append(canvas);
+
+        const displaySize = { width: video.clientWidth, height: video.clientHeight };
+        faceapi.matchDimensions(canvas, displaySize);
+
+        scannerInterval = setInterval(async () => {
+            const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
+            
+            if (detection) {
+                const resizedDetections = faceapi.resizeResults(detection, displaySize);
+                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+                faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
+
+                const match = faceMatcher.findBestMatch(detection.descriptor);
+                
+                if (match.label === currentStaff.name) {
+                    clearInterval(scannerInterval); 
+                    video.srcObject.getTracks().forEach(track => track.stop()); 
+                    
+                    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                    scannerStatus.innerText = "MATCH FOUND! SYNCING ATTENDANCE...";
+                    
+                    supabaseClient.from('checkins').insert([{
+                        user_email: currentStaff.email,
+                        user_name: currentStaff.name,
+                        date: todayDateStr,
+                        time: timeStr,
+                        status: 'Present',
+                        company_id: safeCompanyId 
+                    }]).then(({ error }) => {
+                        if (error) {
+                            openInfoModal("Database Error", error.message + "\n\nPlease ensure your 'checkins' table has exactly these columns: user_email, user_name, date, time, status, company_id.");
+                            return;
+                        }
+                        
+                        statusCard.innerHTML = `
+                            <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
+                            <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
+                            <p style="font-size: 12px; color: #4ade80; margin-top: 5px; font-weight: 600;">Successfully clocked in at ${timeStr}</p>
+                        `;
+                        statusCard.classList.remove('ghost-theme');
+                        statusCard.style.border = '1px solid #e0e0e0';
+                        statusCard.style.backgroundColor = '#ffffff';
+                        
+                        loadStaffRecords();
+                    });
+                } else {
+                    scannerStatus.innerText = "FACE NOT MATCHED. ADJUST LIGHTING OR ANGLE...";
+                    scannerStatus.style.color = "#f59e0b";
+                }
+            } else {
+                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+            }
+        }, 500); 
+    };
 }
 
 function bindTimePickerFix() {
