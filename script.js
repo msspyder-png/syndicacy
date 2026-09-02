@@ -1603,6 +1603,8 @@ async function loadSettings() {
             document.getElementById('check-in-end').value = data.check_in_end || "10:00";
             document.getElementById('require-gps').checked = data.require_gps;
             document.getElementById('require-pin').checked = data.require_pin;
+            const locBtn = document.getElementById('manage-locations-btn');
+            if (locBtn) locBtn.style.display = data.require_gps ? 'block' : 'none';
             
             if (data.office_lat && data.office_lng) {
                 mapSavedLat = data.office_lat;
@@ -1701,6 +1703,7 @@ async function saveSettings() {
             holidays: JSON.stringify(localHolidays),
             exceptions: JSON.stringify(exceptionsArray),
             custom_schedules: JSON.stringify(customSchedules),
+            locations: JSON.stringify(workspaceLocations), // NEW LINE
             company_id: safeCompanyId
         };
 
@@ -1969,10 +1972,11 @@ function bindGPSControls() {
 
 function handleGPSToggle() {
     const isChecked = document.getElementById('require-gps').checked;
-    saveSettings(); 
-    if (isChecked) {
-        openMapModal();
+    const locBtn = document.getElementById('manage-locations-btn');
+    if (locBtn) {
+        locBtn.style.display = isChecked ? 'block' : 'none';
     }
+    saveSettings(); 
 }
 
 function openMapModal() {
@@ -2043,69 +2047,6 @@ function updateCirclePreview() {
     document.getElementById('radius-display').innerText = `${currentRadius} meters`;
     if (geofenceCircle) {
         geofenceCircle.setRadius(currentRadius);
-    }
-}
-
-async function confirmMapLocation() {
-    const leader = getLeader();
-    if (!leader || !map) return;
-    await ensureSupabase();
-
-    const center = map.getCenter();
-    const radius = document.getElementById('radius-slider').value;
-
-    const saveBtn = document.getElementById('save-map-btn');
-    saveBtn.innerText = "Saving to Cloud...";
-    saveBtn.disabled = true;
-
-    try {
-        let safeCompanyId = leader.company_id;
-        if (!safeCompanyId) {
-            safeCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
-            await supabaseClient.from('users').update({ company_id: safeCompanyId }).eq('id', leader.id);
-            leader.company_id = safeCompanyId;
-            sessionStorage.setItem('loggedInLeader', JSON.stringify(leader));
-        }
-
-        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', safeCompanyId).limit(1).maybeSingle();
-        
-        const payload = {
-            office_lat: center.lat,
-            office_lng: center.lng,
-            office_radius: parseInt(radius),
-            require_gps: true,
-            company_id: safeCompanyId
-        };
-
-        if (existingData) {
-            await supabaseClient.from('settings').update(payload).eq('id', existingData.id);
-        } else {
-            await supabaseClient.from('settings').insert([payload]);
-        }
-
-        mapSavedLat = center.lat;
-        mapSavedLng = center.lng;
-        mapSavedRadius = radius;
-        
-        document.getElementById('require-gps').checked = true;
-
-        saveBtn.innerText = "Saved Successfully!";
-        saveBtn.style.backgroundColor = "#4ade80";
-        saveBtn.style.color = "black";
-        
-        setTimeout(() => {
-            closeMapModal();
-            saveBtn.innerText = "Save Boundary & Close";
-            saveBtn.style.backgroundColor = "#1a1a1a";
-            saveBtn.style.color = "white";
-            saveBtn.disabled = false;
-        }, 1500);
-
-    } catch (err) {
-        console.error("Map Save Error:", err);
-        alert("Failed to save location to cloud.");
-        saveBtn.innerText = "Save Boundary & Close";
-        saveBtn.disabled = false;
     }
 }
 
@@ -2563,7 +2504,29 @@ async function startDailyScanner() {
 
 async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
     if (rules && rules.require_gps) {
-        if (!rules.office_lat || !rules.office_lng) {
+        let targetLat, targetLng, targetRadius;
+        
+        let locations = [];
+        try { if (rules.locations) locations = JSON.parse(rules.locations); } catch(e){}
+
+        if (locations && locations.length > 0) {
+            // Check if user is explicitly assigned to a custom location
+            let userLocation = locations.find(loc => loc.staff && loc.staff.includes(currentStaff.email));
+            
+            // If not found, default to Main Campus
+            if (!userLocation) userLocation = locations.find(loc => loc.id === 'main') || locations[0];
+            
+            targetLat = userLocation.lat;
+            targetLng = userLocation.lng;
+            targetRadius = userLocation.radius || 150;
+        } else {
+            // Legacy Fallback for backwards compatibility
+            targetLat = rules.office_lat;
+            targetLng = rules.office_lng;
+            targetRadius = rules.office_radius || 150;
+        }
+
+        if (!targetLat || !targetLng) {
             openInfoModal("Manager Error", "Office GPS location has not been pinned in settings yet!");
             return;
         }
@@ -2573,11 +2536,10 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
                 navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
             });
 
-            const allowedRadius = rules.office_radius ? rules.office_radius : 150;
-            const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, rules.office_lat, rules.office_lng);
+            const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, targetLat, targetLng);
 
-            if (distanceMeters > allowedRadius) {
-                openInfoModal("Geofence Violation", `You are too far from the office (${Math.round(distanceMeters)} meters away). You must be within ${allowedRadius} meters to clock in.`);
+            if (distanceMeters > targetRadius) {
+                openInfoModal("Geofence Violation", `You are too far from your assigned workplace (${Math.round(distanceMeters)} meters away). You must be within ${targetRadius} meters to clock in.`);
                 return;
             }
         } catch (err) {
@@ -2587,6 +2549,7 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
     }
 
     const statusCard = document.getElementById('status-card');
+    
     statusCard.innerHTML = `
         <div id="scanner-container" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; border: 3px solid #1a1a1a; background-color: #000; margin-bottom: 15px;">
             <video id="staff-video" width="100%" height="auto" autoplay muted playsinline></video>
@@ -2714,3 +2677,192 @@ window.addEventListener('DOMContentLoaded', async () => {
     loadTodayPIN(); 
     loadStaffDashboard(); 
 });
+
+// ==========================================
+// --- MULTI-LOCATION ENGINE ---
+// ==========================================
+let workspaceLocations = [];
+let activeLocationEditId = null;
+
+async function loadLocationsPage() {
+    const leader = getLeader();
+    if (!leader) return;
+    await ensureSupabase();
+
+    try {
+        const { data, error } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        
+        if (data && data.locations) {
+            try { workspaceLocations = JSON.parse(data.locations); } catch(e){}
+        }
+        
+        // Ensure Main Campus always exists
+        if (!workspaceLocations.find(l => l.id === 'main')) {
+            workspaceLocations.unshift({
+                id: 'main',
+                name: 'MAIN CAMPUS',
+                lat: data?.office_lat || null,
+                lng: data?.office_lng || null,
+                radius: data?.office_radius || 150,
+                staff: []
+            });
+        }
+        renderLocations();
+    } catch (err) { console.error(err); }
+}
+
+function renderLocations() {
+    const container = document.getElementById('locations-list-container');
+    if (!container) return;
+    container.innerHTML = "";
+
+    workspaceLocations.forEach(loc => {
+        const isMain = loc.id === 'main';
+        const geoText = loc.lat ? `Pinned: ${loc.radius}m radius` : 'Location not pinned';
+        const staffCount = loc.staff ? loc.staff.length : 0;
+        
+        const deleteBtn = isMain ? '' : `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 24px; height: 24px;" onclick="deleteLocation('${loc.id}')">×</button>`;
+
+        const html = `
+            <div class="form-card" style="text-align: left; padding: 20px; margin-bottom: 15px; border-left: 4px solid ${isMain ? '#1a1a1a' : '#eaeaea'};">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin: 0 0 4px 0; font-size: 15px; text-transform: uppercase; letter-spacing: 1px;">${loc.name}</h3>
+                        <p style="margin: 0; font-size: 11px; color: ${loc.lat ? '#4ade80' : '#f59e0b'}; font-weight: bold;">📍 ${geoText}</p>
+                    </div>
+                    ${deleteBtn}
+                </div>
+                
+                <div style="display: flex; gap: 10px;">
+                    <button class="google-btn" style="flex: 1; padding: 10px; font-size: 12px; margin: 0;" onclick="openLocationMap('${loc.id}')">Edit Area</button>
+                    ${!isMain ? `<button class="google-btn" style="flex: 1; padding: 10px; font-size: 12px; margin: 0;" onclick="openStaffAssignModal('${loc.id}')">Staff (${staffCount})</button>` : ''}
+                </div>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', html);
+    });
+}
+
+function promptNewLocation() {
+    openPromptModal("New Workplace", "Enter a name for the new location:", "text", "", function(val) {
+        if (!val || val.trim() === '') return;
+        workspaceLocations.push({
+            id: 'loc_' + Math.random().toString(36).substr(2, 9),
+            name: val.trim(),
+            lat: null, lng: null, radius: 150,
+            staff: []
+        });
+        saveSettings();
+        renderLocations();
+    });
+}
+
+function deleteLocation(id) {
+    if (!confirm("Remove this location? Assigned staff will default back to Main Campus.")) return;
+    workspaceLocations = workspaceLocations.filter(l => l.id !== id);
+    saveSettings();
+    renderLocations();
+}
+
+function openLocationMap(id) {
+    activeLocationEditId = id;
+    const loc = workspaceLocations.find(l => l.id === id);
+    
+    mapSavedLat = loc.lat;
+    mapSavedLng = loc.lng;
+    mapSavedRadius = loc.radius || 150;
+    
+    document.getElementById('radius-slider').value = mapSavedRadius;
+    document.getElementById('gps-map-modal').style.display = 'flex';
+    
+    setTimeout(() => {
+        if (!map) initMap();
+        else {
+            map.invalidateSize();
+            if (mapSavedLat) map.setView([mapSavedLat, mapSavedLng], 16);
+            updateCirclePreview();
+        }
+    }, 200);
+}
+
+// Modify the existing confirmMapLocation to handle array saves
+async function confirmMapLocation() {
+    if (!activeLocationEditId) return; // Keep backward compatibility
+    
+    const center = map.getCenter();
+    const radius = document.getElementById('radius-slider').value;
+    const saveBtn = document.getElementById('save-map-btn');
+    saveBtn.innerText = "Saving...";
+    saveBtn.disabled = true;
+
+    // Update the specific location in the array
+    const locIndex = workspaceLocations.findIndex(l => l.id === activeLocationEditId);
+    if (locIndex !== -1) {
+        workspaceLocations[locIndex].lat = center.lat;
+        workspaceLocations[locIndex].lng = center.lng;
+        workspaceLocations[locIndex].radius = parseInt(radius);
+    }
+
+    await saveSettings();
+    if (document.getElementById('locations-list-container')) renderLocations();
+
+    saveBtn.innerText = "Saved!";
+    saveBtn.style.backgroundColor = "#4ade80";
+    setTimeout(() => {
+        closeMapModal();
+        saveBtn.innerText = "Save Boundary";
+        saveBtn.style.backgroundColor = "#1a1a1a";
+        saveBtn.disabled = false;
+    }, 1000);
+}
+
+async function openStaffAssignModal(locId) {
+    activeLocationEditId = locId;
+    const leader = getLeader();
+    await ensureSupabase();
+    
+    const loc = workspaceLocations.find(l => l.id === locId);
+    const listContainer = document.getElementById('staff-checkbox-list');
+    listContainer.innerHTML = "<p style='font-size:12px; color:#888;'>Loading team...</p>";
+    
+    openModal('assign-staff-modal');
+
+    const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+    
+    listContainer.innerHTML = "";
+    if (!staff || staff.length === 0) {
+        listContainer.innerHTML = "<p style='font-size:12px; color:#888;'>No staff available.</p>";
+        return;
+    }
+
+    staff.forEach(user => {
+        const isAssigned = loc.staff && loc.staff.includes(user.email);
+        listContainer.innerHTML += `
+            <label style="display: flex; align-items: center; gap: 10px; padding: 8px; border-bottom: 1px solid #f0f0f0; cursor: pointer;">
+                <input type="checkbox" class="staff-assign-cb" value="${user.email}" ${isAssigned ? 'checked' : ''}>
+                <span style="font-size: 13px; color: #1a1a1a; font-weight: 500;">${user.name} <span style="color:#888; font-weight:normal;">(${user.role})</span></span>
+            </label>
+        `;
+    });
+}
+
+function saveStaffAssignments() {
+    const checkboxes = document.querySelectorAll('.staff-assign-cb');
+    let selectedEmails = [];
+    checkboxes.forEach(cb => { if (cb.checked) selectedEmails.push(cb.value); });
+
+    const locIndex = workspaceLocations.findIndex(l => l.id === activeLocationEditId);
+    if (locIndex !== -1) {
+        // Remove these emails from all OTHER custom locations to prevent conflicts
+        workspaceLocations.forEach((l, idx) => {
+            if (idx !== locIndex && l.id !== 'main') {
+                l.staff = (l.staff || []).filter(email => !selectedEmails.includes(email));
+            }
+        });
+        workspaceLocations[locIndex].staff = selectedEmails;
+    }
+    
+    saveSettings();
+    renderLocations();
+    closeModal('assign-staff-modal');
+}
