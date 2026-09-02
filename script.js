@@ -1023,10 +1023,10 @@ async function loadIndividualAnalytics() {
             
             if (currentIterationDate < empJoinedDate) {
                 inlineStyle = CAL_STYLES.disabled;
-            } else if (currentIterationDate > today) {
-                inlineStyle = CAL_STYLES.default;
             } else if (holidaysArray.includes(dateStrIteration)) {
                 inlineStyle = CAL_STYLES.holiday;
+            } else if (currentIterationDate > today) {
+                inlineStyle = CAL_STYLES.default;
             } else if (wasPresent) { 
                 inlineStyle = CAL_STYLES.present; 
             } else { 
