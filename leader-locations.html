@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Workplaces - SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="dashboard-body">
+
+    <div class="dashboard-content" style="padding-bottom: 90px;">
+        <div style="text-align: left; margin-top: 10px; margin-bottom: 10px;">
+            <a href="leader-settings.html" style="color: #888; text-decoration: none; font-size: 14px;">← Back to Settings</a>
+        </div>
+        
+        <div class="dash-header">
+            <h2 class="title" style="font-size: 24px; margin-top: 10px;">GPS Workplaces</h2>
+            <p class="subtitle">Manage automated check-in zones</p>
+        </div>
+
+        <div id="locations-list-container">
+            <!-- Location Cards will inject here -->
+        </div>
+
+        <button class="google-btn" style="width: 100%; border-style: dashed; margin-top: 10px;" onclick="promptNewLocation()">+ Add New Custom Location</button>
+    </div>
+
+    <!-- STAFF ASSIGNMENT MODAL -->
+    <div id="assign-staff-modal" class="modal-bg" style="z-index: 10000;">
+        <div class="modal-box animated-modal" style="width: 90%; max-width: 400px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 class="section-title" style="margin: 0;">Assign to Location</h3>
+                <span class="close" onclick="closeModal('assign-staff-modal')">×</span>
+            </div>
+            <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Staff not explicitly assigned to custom locations will automatically default to the Main Campus.</p>
+            
+            <div id="staff-checkbox-list" style="max-height: 250px; overflow-y: auto; text-align: left; border: 1px solid #eaeaea; border-radius: 6px; padding: 10px; margin-bottom: 15px;">
+                <!-- Staff checkboxes inject here -->
+            </div>
+
+            <button class="main-btn form-btn" style="width: 100%;" onclick="saveStaffAssignments()">Save Assignments</button>
+        </div>
+    </div>
+
+    <!-- LEAFLET MAP MODAL (Carried over for geofencing) -->
+    <div id="gps-map-modal" class="modal-bg" style="z-index: 10001;">
+        <div class="modal-box animated-modal" style="width: 90%; max-width: 500px; padding: 15px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 class="section-title" style="margin: 0;">Set Geofence Boundary</h3>
+                <span class="close" onclick="closeMapModal()">×</span>
+            </div>
+            <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Drag the map to center the pin on this workplace.</p>
+            
+            <div id="map" style="height: 300px; border-radius: 8px; border: 2px solid #1a1a1a; margin-bottom: 15px; position: relative;">
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000; pointer-events: none; text-shadow: 0 0 5px white; font-size: 24px;">📍</div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="font-size: 12px; font-weight: bold; color: #1a1a1a; display: flex; justify-content: space-between;">
+                    Allowed Radius: <span id="radius-display" style="color: #4ade80;">150 meters</span>
+                </label>
+                <input type="range" id="radius-slider" min="50" max="1000" step="10" value="150" style="width: 100%; margin-top: 10px; cursor: pointer;" oninput="updateCirclePreview()">
+            </div>
+
+            <button id="save-map-btn" class="main-btn form-btn" style="width: 100%;" onclick="confirmMapLocation()">Save Boundary</button>
+        </div>
+    </div>
+
+    <script src="script.js?v=2000"></script>
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            if (typeof loadLocationsPage === 'function') loadLocationsPage();
+        });
+    </script>
+</body>
+</html>
