@@ -133,7 +133,6 @@ function closeConfirmModal() {
 function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
     let modalEl = document.getElementById('prompt-modal');
     
-    // Inject the modal HTML if it doesn't exist yet
     if (!modalEl) {
         const modalHtml = `
             <div id="prompt-modal" class="modal-bg" style="z-index: 10001; display: none;">
@@ -885,7 +884,6 @@ async function loadTeamLedger() {
         }
 
         const today = new Date();
-        today.setHours(0,0,0,0);
         const todayStr = getUniversalDate(today);
 
         staff.forEach(user => {
@@ -984,7 +982,6 @@ async function loadIndividualAnalytics() {
         updateElementSafe('email-staff-btn', `Email ${firstName}`);
 
         const today = new Date();
-        today.setHours(0,0,0,0);
         
         let safeLogs = Array.isArray(logs) ? logs : [];
         let validCheckinDates = new Set();
@@ -1822,18 +1819,46 @@ async function loadTodayPIN() {
     await ensureSupabase();
 
     try {
-        const { data } = await supabaseClient.from('settings').select('daily_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
-        if (data && data.daily_pin) pinDisplay.innerText = data.daily_pin;
+        const { data } = await supabaseClient.from('settings').select('daily_pin, require_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        
+        const subtext = document.getElementById('pin-subtext');
+        const genBtn = pinDisplay.closest('.code-card').querySelector('button');
+
+        if (data && data.require_pin) {
+            pinDisplay.style.fontSize = "48px";
+            pinDisplay.style.letterSpacing = "8px";
+            pinDisplay.style.color = "white";
+            if(subtext) subtext.innerText = "Employees must enter this to unlock the scanner.";
+            if(genBtn) genBtn.style.display = "inline-block";
+
+            const todayStr = getUniversalDate();
+            const lastPinDate = localStorage.getItem('last_pin_date_' + leader.company_id);
+            
+            if (lastPinDate !== todayStr || !data.daily_pin) {
+                await generateNewPIN(true);
+            } else {
+                pinDisplay.innerText = data.daily_pin;
+            }
+        } else {
+            pinDisplay.innerText = "OFF";
+            pinDisplay.style.fontSize = "32px";
+            pinDisplay.style.letterSpacing = "4px";
+            pinDisplay.style.color = "#ef4444"; 
+            
+            if(subtext) subtext.innerText = "3-Step Dynamic Access is currently turned off. Go to Settings to enable it.";
+            if(genBtn) genBtn.style.display = "none";
+        }
     } catch (err) { console.error(err); }
 }
 
-async function generateNewPIN() {
+async function generateNewPIN(isAuto = false) {
     const leader = getLeader();
     if (!leader) return;
     await ensureSupabase();
 
     const newPin = Math.floor(1000 + Math.random() * 9000).toString();
-    document.getElementById('live-pin-display').innerText = newPin;
+    const pinDisplay = document.getElementById('live-pin-display');
+    if (pinDisplay) pinDisplay.innerText = newPin;
 
     try {
         let safeCompanyId = leader.company_id;
@@ -1850,6 +1875,10 @@ async function generateNewPIN() {
         } else {
             await supabaseClient.from('settings').insert([{ daily_pin: newPin, company_id: safeCompanyId }]);
         }
+
+        const todayStr = getUniversalDate();
+        localStorage.setItem('last_pin_date_' + safeCompanyId, todayStr);
+
     } catch (err) { console.error(err); }
 }
 
