@@ -129,7 +129,7 @@ function closeConfirmModal() {
     if (modalEl) modalEl.style.display = 'none';
 }
 
-// --- NEW PROMPT MODAL CONTROLS ---
+// --- NEW SMART PROMPT MODAL (NOW SUPPORTS DROPDOWNS) ---
 function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
     let modalEl = document.getElementById('prompt-modal');
     
@@ -140,7 +140,7 @@ function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
                     <span class="close" onclick="closePromptModal()">×</span>
                     <h3 class="section-title" id="prompt-title" style="text-align: center; margin-bottom: 15px;">Prompt</h3>
                     <p id="prompt-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 15px; text-align: center;">Description</p>
-                    <input type="text" id="prompt-input" class="input-field" style="width: 100%; margin-bottom: 20px;" placeholder="">
+                    <div id="prompt-input-container" style="width: 100%; margin-bottom: 20px;"></div>
                     <div style="display: flex; gap: 10px;">
                         <button class="google-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px;" onclick="closePromptModal()">Cancel</button>
                         <button class="main-btn form-btn" id="prompt-action-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;">Submit</button>
@@ -154,25 +154,38 @@ function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
 
     const titleEl = document.getElementById('prompt-title');
     const descEl = document.getElementById('prompt-desc');
-    const inputEl = document.getElementById('prompt-input');
+    const inputContainer = document.getElementById('prompt-input-container');
     const confirmBtn = document.getElementById('prompt-action-btn');
     
-    if (titleEl && descEl && inputEl && confirmBtn) {
+    if (titleEl && descEl && inputContainer && confirmBtn) {
         titleEl.innerText = title;
         descEl.innerText = desc;
-        inputEl.type = inputType || 'text';
-        inputEl.value = defaultValue || '';
+        
+        if (inputType === 'select' && Array.isArray(defaultValue)) {
+            let selectHtml = `<select id="prompt-input" class="input-field" style="width: 100%; cursor: pointer;">`;
+            selectHtml += `<option value="" disabled selected>Select an option...</option>`;
+            defaultValue.forEach(opt => {
+                selectHtml += `<option value="${opt.value}">${opt.label}</option>`;
+            });
+            selectHtml += `</select>`;
+            inputContainer.innerHTML = selectHtml;
+        } else {
+            inputContainer.innerHTML = `<input type="${inputType}" id="prompt-input" class="input-field" style="width: 100%;" placeholder="">`;
+            document.getElementById('prompt-input').value = defaultValue || '';
+        }
         
         const newBtn = confirmBtn.cloneNode(true);
         confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
         
         newBtn.addEventListener('click', function() {
-            onConfirm(inputEl.value);
+            const finalInput = document.getElementById('prompt-input');
+            onConfirm(finalInput ? finalInput.value : '');
             closePromptModal();
         });
         
         modalEl.style.display = 'flex';
-        inputEl.focus();
+        const finalInput = document.getElementById('prompt-input');
+        if (finalInput) finalInput.focus();
     }
 }
 
@@ -982,7 +995,6 @@ async function loadIndividualAnalytics() {
         updateElementSafe('email-staff-btn', `Email ${firstName}`);
 
         const today = new Date();
-        today.setHours(0,0,0,0);
         
         let safeLogs = Array.isArray(logs) ? logs : [];
         let validCheckinDates = new Set();
@@ -1371,6 +1383,8 @@ async function loadTeamDirectory() {
 
 let localHolidays = [];
 let customSchedules = []; 
+let customLocations = [];
+let currentEditingLocationId = null;
 let settingsDate = new Date();
 let sundaysToggled = false;
 let saturdaysToggled = false;
@@ -1380,7 +1394,7 @@ function initializeSettingsCalendar() {
     if (!calendar) return; 
 
     const leader = getLeader();
-    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(2000, 0, 1);
+    let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(2000, 0, 1);
     joinedDate.setHours(0,0,0,0);
 
     const year = settingsDate.getFullYear();
@@ -1436,7 +1450,6 @@ function initializeSettingsCalendar() {
     }
 
     const nowStrict = new Date();
-    // Normalize to start of day to avoid timezone hour shifts
     nowStrict.setHours(0,0,0,0);
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -1456,8 +1469,6 @@ function initializeSettingsCalendar() {
         dayDiv.style.borderRadius = '4px';
         
         const isToday = (dateStr === getUniversalDate(nowStrict));
-        
-        // Prevent editing past days relative to current date
         const isPastDay = currentIterationDate < nowStrict;
         const isHoliday = localHolidays.includes(dateStr);
 
@@ -1504,7 +1515,7 @@ function markAllSundays() {
     const btn = document.getElementById('btn-toggle-sundays');
     const now = new Date();
     const leader = getLeader();
-    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
+    let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
     joinedDate.setHours(0,0,0,0);
     
     const maxYear = (now.getMonth() === 11 && now.getDate() >= 25) ? now.getFullYear() + 1 : now.getFullYear();
@@ -1534,7 +1545,7 @@ function markSecondSaturdays() {
     const btn = document.getElementById('btn-toggle-saturdays');
     const now = new Date();
     const leader = getLeader();
-    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
+    let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
     joinedDate.setHours(0,0,0,0);
     
     const maxYear = (now.getMonth() === 11 && now.getDate() >= 25) ? now.getFullYear() + 1 : now.getFullYear();
@@ -1601,7 +1612,13 @@ async function loadSettings() {
         if (data) {
             startInput.value = data.check_in_start || "09:00";
             document.getElementById('check-in-end').value = data.check_in_end || "10:00";
-            document.getElementById('require-gps').checked = data.require_gps;
+            
+            const gpsCheckbox = document.getElementById('require-gps');
+            if (gpsCheckbox) {
+                gpsCheckbox.checked = data.require_gps;
+                handleGPSToggle(); 
+            }
+
             document.getElementById('require-pin').checked = data.require_pin;
             
             if (data.office_lat && data.office_lng) {
@@ -1643,10 +1660,19 @@ async function loadSettings() {
             }
             renderCustomTimeList();
 
+            if (data.custom_locations) {
+                try { customLocations = JSON.parse(data.custom_locations); } catch(e){}
+            } else {
+                customLocations = [];
+            }
+
         } else {
             if(startInput) startInput.value = "09:00";
             if(document.getElementById('check-in-end')) document.getElementById('check-in-end').value = "10:00";
-            if(document.getElementById('require-gps')) document.getElementById('require-gps').checked = false;
+            if(document.getElementById('require-gps')) {
+                document.getElementById('require-gps').checked = false;
+                handleGPSToggle();
+            }
             if(document.getElementById('require-pin')) document.getElementById('require-pin').checked = false;
         }
     } catch (err) {
@@ -1682,7 +1708,6 @@ async function saveSettings() {
             }
         });
 
-        // Ensure company ID exists before saving
         let safeCompanyId = leader.company_id;
         if (!safeCompanyId) {
             safeCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
@@ -1701,6 +1726,7 @@ async function saveSettings() {
             holidays: JSON.stringify(localHolidays),
             exceptions: JSON.stringify(exceptionsArray),
             custom_schedules: JSON.stringify(customSchedules),
+            custom_locations: JSON.stringify(customLocations),
             company_id: safeCompanyId
         };
 
@@ -1725,6 +1751,347 @@ async function saveSettings() {
             subtitle.style.color = "red";
         }
     }
+}
+
+// --- GPS MULTI-LOCATION LOGIC ---
+function handleGPSToggle() {
+    const isChecked = document.getElementById('require-gps');
+    const manageBtn = document.getElementById('manage-locations-btn');
+    if (manageBtn && isChecked) {
+        manageBtn.style.display = isChecked.checked ? 'block' : 'none';
+    }
+    saveSettings();
+}
+
+function openLocationsView() {
+    document.getElementById('settings-main-view').style.display = 'none';
+    const locView = document.getElementById('settings-locations-view');
+    if(locView) {
+        locView.style.display = 'block';
+        window.scrollTo(0,0);
+    }
+    renderLocations();
+}
+
+function closeLocationsView() {
+    document.getElementById('settings-locations-view').style.display = 'none';
+    document.getElementById('settings-main-view').style.display = 'block';
+    window.scrollTo(0,0);
+}
+
+async function renderLocations() {
+    const container = document.getElementById('locations-list-container');
+    if (!container) return;
+    
+    container.innerHTML = '<p style="font-size: 12px; color: #888; text-align: center; padding: 20px;">Loading staff data...</p>';
+    
+    await ensureSupabase();
+    const leader = getLeader();
+    if(!leader) return;
+    
+    const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+    const safeStaff = staff || [];
+    
+    let html = '';
+    
+    // Main Campus
+    let mainStaff = safeStaff.filter(s => {
+        let inCustom = customLocations.find(loc => loc.employees && loc.employees.includes(s.email));
+        return !inCustom;
+    });
+    
+    html += `
+        <div class="form-card" style="text-align: left; padding: 20px; border: 2px solid #1a1a1a;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h3 class="section-title" style="margin: 0; border: none; padding: 0;">Main Campus</h3>
+                <button class="i-btn" style="width: auto; padding: 4px 10px; border-radius: 4px; font-style: normal; font-family: inherit;" onclick="openMapModal('main')">📍 Edit GPS</button>
+            </div>
+            <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Default location for all employees.</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+    `;
+    
+    if (mainStaff.length === 0) {
+        html += `<span style="font-size: 11px; color: #aaa;">No employees currently assigned here.</span>`;
+    } else {
+        mainStaff.forEach(s => {
+            html += `<span style="background: #f0f0f0; padding: 4px 10px; border-radius: 20px; font-size: 11px; color: #333;">${s.name}</span>`;
+        });
+    }
+    html += `</div></div>`;
+    
+    // Custom Locations
+    customLocations.forEach(loc => {
+        let locStaff = safeStaff.filter(s => loc.employees && loc.employees.includes(s.email));
+        
+        html += `
+            <div class="form-card" style="text-align: left; padding: 20px; margin-top: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h3 class="section-title" style="margin: 0; border: none; padding: 0;">${loc.name}</h3>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="i-btn" style="width: auto; padding: 4px 10px; border-radius: 4px; font-style: normal; font-family: inherit;" onclick="openMapModal('${loc.id}')">📍 Edit</button>
+                        <button class="i-btn" style="width: auto; padding: 4px 10px; border-radius: 4px; font-style: normal; font-family: inherit; color: #ef4444; border-color: #fca5a5; background: #fef2f2;" onclick="removeLocation('${loc.id}')">Remove</button>
+                    </div>
+                </div>
+                <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Custom remote or branch location.</p>
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;">
+        `;
+        
+        if (locStaff.length === 0) {
+            html += `<span style="font-size: 11px; color: #aaa;">No employees currently assigned here.</span>`;
+        } else {
+            locStaff.forEach(s => {
+                html += `
+                    <span style="background: #1a1a1a; color: #ffffff; padding: 4px 10px; border-radius: 20px; font-size: 11px; display: flex; align-items: center; gap: 5px;">
+                        ${s.name} 
+                        <span style="cursor: pointer; font-weight: bold; color: #ef4444; margin-left: 3px;" onclick="unassignEmployee('${s.email}', '${loc.id}')">×</span>
+                    </span>
+                `;
+            });
+        }
+        
+        html += `
+                </div>
+                <button class="google-btn" style="width: 100%; font-size: 11px; padding: 8px; border-style: dashed;" onclick="assignStaffToLocation('${loc.id}')">+ Assign Employee Here</button>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function addNewLocation() {
+    openPromptModal(
+        "New Location", 
+        "Enter a name for the new location (e.g., Downtown Branch):", 
+        "text", 
+        "", 
+        function(name) {
+            if (!name || name.trim() === "") return;
+            const newId = 'loc_' + Math.random().toString(36).substr(2, 9);
+            customLocations.push({
+                id: newId,
+                name: name.trim(),
+                lat: mapSavedLat || 40.7128, 
+                lng: mapSavedLng || -74.0060,
+                radius: 150,
+                employees: []
+            });
+            saveSettings().then(() => {
+                renderLocations();
+                openMapModal(newId);
+            });
+        }
+    );
+}
+
+function removeLocation(id) {
+    openConfirmModal(
+        "Remove Location", 
+        "Are you sure you want to delete this location? Employees assigned here will revert to the Main Campus.", 
+        function() {
+            customLocations = customLocations.filter(l => l.id !== id);
+            saveSettings().then(() => renderLocations());
+        }
+    );
+}
+
+async function assignStaffToLocation(locId) {
+    await ensureSupabase();
+    const leader = getLeader();
+    const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+    
+    if (!staff || staff.length === 0) {
+        openInfoModal("No Staff", "You have no staff to assign.");
+        return;
+    }
+
+    const loc = customLocations.find(l => l.id === locId);
+    const unassignedStaff = staff.filter(s => !(loc.employees && loc.employees.includes(s.email)));
+    
+    if (unassignedStaff.length === 0) {
+        openInfoModal("All Staff Assigned", "All available staff are already assigned to this location.");
+        return;
+    }
+
+    const options = unassignedStaff.map(s => ({ label: s.name, value: s.email }));
+    
+    openPromptModal(
+        `Assign to ${loc.name}`, 
+        "Select an employee to assign to this location:", 
+        "select", 
+        options, 
+        function(selectedEmail) {
+            if (!selectedEmail) return;
+            
+            customLocations.forEach(l => {
+                if (l.employees && l.employees.includes(selectedEmail)) {
+                    l.employees = l.employees.filter(e => e !== selectedEmail);
+                }
+            });
+            
+            const targetLoc = customLocations.find(l => l.id === locId);
+            if (!targetLoc.employees) targetLoc.employees = [];
+            targetLoc.employees.push(selectedEmail);
+            
+            saveSettings().then(() => renderLocations());
+        }
+    );
+}
+
+function unassignEmployee(email, locId) {
+    const loc = customLocations.find(l => l.id === locId);
+    if (loc && loc.employees) {
+        loc.employees = loc.employees.filter(e => e !== email);
+        saveSettings().then(() => renderLocations());
+    }
+}
+
+let currentEditingLocationId = 'main';
+
+function openMapModal(locId = 'main') {
+    if (!leafletLoaded || typeof L === 'undefined') {
+        alert("Loading map engine... Please try again in 2 seconds.");
+        return;
+    }
+    
+    currentEditingLocationId = locId;
+    document.getElementById('gps-map-modal').style.display = 'flex';
+    
+    setTimeout(() => {
+        if (!map) {
+            initMap();
+        } else {
+            map.invalidateSize();
+            updateMapToCurrentLocation();
+        }
+    }, 200);
+}
+
+function updateMapToCurrentLocation() {
+    let initialLat = 40.7128;
+    let initialLng = -74.0060;
+    let initialRadius = 150;
+
+    if (currentEditingLocationId === 'main') {
+        if (mapSavedLat && mapSavedLng) {
+            initialLat = mapSavedLat;
+            initialLng = mapSavedLng;
+            initialRadius = mapSavedRadius || 150;
+        }
+    } else {
+        const loc = customLocations.find(l => l.id === currentEditingLocationId);
+        if (loc && loc.lat && loc.lng) {
+            initialLat = loc.lat;
+            initialLng = loc.lng;
+            initialRadius = loc.radius || 150;
+        }
+    }
+
+    if (map) {
+        map.setView([initialLat, initialLng], 16);
+        if (geofenceCircle) {
+            geofenceCircle.setLatLng([initialLat, initialLng]);
+            geofenceCircle.setRadius(initialRadius);
+        }
+    }
+    const slider = document.getElementById('radius-slider');
+    if (slider) {
+        slider.value = initialRadius;
+        updateCirclePreview();
+    }
+}
+
+function initMap() {
+    let initialLat = 40.7128;
+    let initialLng = -74.0060;
+    let initialRadius = 150;
+
+    if (currentEditingLocationId === 'main') {
+        if (mapSavedLat && mapSavedLng) {
+            initialLat = mapSavedLat;
+            initialLng = mapSavedLng;
+            initialRadius = mapSavedRadius || 150;
+        }
+    } else {
+        const loc = customLocations.find(l => l.id === currentEditingLocationId);
+        if (loc && loc.lat && loc.lng) {
+            initialLat = loc.lat;
+            initialLng = loc.lng;
+            initialRadius = loc.radius || 150;
+        }
+    }
+
+    map = L.map('map').setView([initialLat, initialLng], 16);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    geofenceCircle = L.circle([initialLat, initialLng], {
+        color: '#4ade80',
+        fillColor: '#4ade80',
+        fillOpacity: 0.2,
+        radius: initialRadius
+    }).addTo(map);
+
+    map.on('move', function() {
+        geofenceCircle.setLatLng(map.getCenter());
+    });
+
+    const slider = document.getElementById('radius-slider');
+    if (slider) {
+        slider.value = initialRadius;
+        updateCirclePreview();
+    }
+
+    if (currentEditingLocationId === 'main' && !mapSavedLat && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(position => {
+            map.setView([position.coords.latitude, position.coords.longitude], 16);
+            geofenceCircle.setLatLng([position.coords.latitude, position.coords.longitude]);
+        });
+    }
+}
+
+async function confirmMapLocation() {
+    const leader = getLeader();
+    if (!leader || !map) return;
+    
+    const center = map.getCenter();
+    const radius = document.getElementById('radius-slider').value;
+    const saveBtn = document.getElementById('save-map-btn');
+    
+    saveBtn.innerText = "Saving to Cloud...";
+    saveBtn.disabled = true;
+
+    if (currentEditingLocationId === 'main') {
+        mapSavedLat = center.lat;
+        mapSavedLng = center.lng;
+        mapSavedRadius = parseInt(radius);
+    } else {
+        const loc = customLocations.find(l => l.id === currentEditingLocationId);
+        if (loc) {
+            loc.lat = center.lat;
+            loc.lng = center.lng;
+            loc.radius = parseInt(radius);
+        }
+    }
+
+    await saveSettings();
+    if(document.getElementById('settings-locations-view').style.display === 'block') {
+        renderLocations();
+    }
+
+    saveBtn.innerText = "Saved Successfully!";
+    saveBtn.style.backgroundColor = "#4ade80";
+    saveBtn.style.color = "black";
+    
+    setTimeout(() => {
+        closeMapModal();
+        saveBtn.innerText = "Save Boundary & Close";
+        saveBtn.style.backgroundColor = "#1a1a1a";
+        saveBtn.style.color = "white";
+        saveBtn.disabled = false;
+    }, 1500);
 }
 
 // --- CUSTOM EMPLOYEE TIME LOGIC ---
@@ -1825,7 +2192,6 @@ async function loadTodayPIN() {
     try {
         const { data } = await supabaseClient.from('settings').select('daily_pin, require_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
-        // Ensure we are on the page that actually has these elements before trying to modify them
         if (activeState && disabledState && pinDisplay) {
             if (data && data.require_pin) {
                 activeState.style.display = "block";
@@ -1841,7 +2207,6 @@ async function loadTodayPIN() {
                         savedDate = parts[0];
                         pinValue = parts[1];
                     } else {
-                        // Fallback logic for any PINs saved before this strict update
                         pinValue = data.daily_pin;
                         savedDate = localStorage.getItem('last_pin_date_' + leader.company_id) || "";
                     }
@@ -1891,237 +2256,6 @@ async function generateNewPIN() {
         localStorage.setItem('last_pin_date_' + safeCompanyId, todayStr);
 
     } catch (err) { console.error(err); }
-}
-
-// --- LEAFLET MAP & GEOFENCING ENGINE ---
-let map = null;
-let geofenceCircle = null;
-let mapSavedLat = null;
-let mapSavedLng = null;
-let mapSavedRadius = 150;
-let leafletLoaded = false;
-
-function injectMapDependencies() {
-    if (document.querySelector('link[href*="leaflet"]')) {
-        leafletLoaded = true;
-        return;
-    }
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    document.head.appendChild(link);
-    
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.onload = () => { leafletLoaded = true; };
-    document.head.appendChild(script);
-}
-
-function injectMapModalHTML() {
-    if (document.getElementById('gps-map-modal') || !window.location.pathname.includes('settings')) return;
-    
-    const mapModalHtml = `
-        <div id="gps-map-modal" class="modal-bg" style="z-index: 10000; display: none;">
-            <div class="modal-box animated-modal" style="width: 90%; max-width: 500px; padding: 15px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <h3 class="section-title" style="margin: 0;">Set Geofence Boundary</h3>
-                    <span class="close" onclick="closeMapModal()" style="cursor: pointer; font-size: 20px;">×</span>
-                </div>
-                <p style="font-size: 11px; color: #888; margin-bottom: 15px;">Drag the map to center the pin on your physical workplace.</p>
-                
-                <div id="map" style="height: 300px; border-radius: 8px; border: 2px solid #1a1a1a; margin-bottom: 15px; position: relative;">
-                    <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); z-index: 1000; pointer-events: none; text-shadow: 0 0 5px white; font-size: 24px;">
-                        📍
-                    </div>
-                </div>
-                
-                <div style="margin-bottom: 20px;">
-                    <label style="font-size: 12px; font-weight: bold; color: #1a1a1a; display: flex; justify-content: space-between;">
-                        Allowed Radius: <span id="radius-display" style="color: #4ade80;">150 meters</span>
-                    </label>
-                    <input type="range" id="radius-slider" min="50" max="1000" step="10" value="150" style="width: 100%; margin-top: 10px; cursor: pointer;" oninput="updateCirclePreview()">
-                    <div style="display: flex; justify-content: space-between; font-size: 9px; color: #aaa; margin-top: 5px;">
-                        <span>Tight (50m)</span>
-                        <span>Wide (1000m)</span>
-                    </div>
-                </div>
-
-                <button id="save-map-btn" class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="confirmMapLocation()">Save Boundary & Close</button>
-            </div>
-        </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', mapModalHtml);
-}
-
-function bindGPSControls() {
-    const gpsSwitch = document.getElementById('require-gps');
-    if (gpsSwitch) {
-        gpsSwitch.onchange = handleGPSToggle;
-    }
-
-    const oldButton = document.querySelector('button[onclick="pinpointWorkplaceLocation()"]');
-    if (oldButton) {
-        oldButton.innerText = "📍 Edit Workplace Location & Radius";
-        oldButton.onclick = openMapModal;
-        oldButton.removeAttribute('onclick'); 
-    }
-}
-
-function handleGPSToggle() {
-    const isChecked = document.getElementById('require-gps').checked;
-    saveSettings(); 
-    if (isChecked) {
-        openMapModal();
-    }
-}
-
-function openMapModal() {
-    if (!leafletLoaded || typeof L === 'undefined') {
-        alert("Loading map engine... Please try again in 2 seconds.");
-        return;
-    }
-    document.getElementById('gps-map-modal').style.display = 'flex';
-    
-    setTimeout(() => {
-        if (!map) {
-            initMap();
-        } else {
-            map.invalidateSize();
-            if(mapSavedLat && mapSavedLng) {
-                map.setView([mapSavedLat, mapSavedLng], 16);
-                document.getElementById('radius-slider').value = mapSavedRadius;
-                updateCirclePreview();
-            }
-        }
-    }, 200);
-}
-
-function closeMapModal() {
-    document.getElementById('gps-map-modal').style.display = 'none';
-    if(!mapSavedLat && document.getElementById('require-gps').checked) {
-        document.getElementById('require-gps').checked = false;
-        saveSettings();
-    }
-}
-
-function initMap() {
-    let initialLat = 40.7128;
-    let initialLng = -74.0060;
-
-    if (mapSavedLat && mapSavedLng) {
-        initialLat = mapSavedLat;
-        initialLng = mapSavedLng;
-    }
-
-    map = L.map('map').setView([initialLat, initialLng], 16);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap'
-    }).addTo(map);
-
-    geofenceCircle = L.circle(map.getCenter(), {
-        color: '#4ade80',
-        fillColor: '#4ade80',
-        fillOpacity: 0.2,
-        radius: document.getElementById('radius-slider').value
-    }).addTo(map);
-
-    map.on('move', function() {
-        geofenceCircle.setLatLng(map.getCenter());
-    });
-
-    if (!mapSavedLat && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(position => {
-            map.setView([position.coords.latitude, position.coords.longitude], 16);
-            geofenceCircle.setLatLng([position.coords.latitude, position.coords.longitude]);
-        });
-    }
-}
-
-function updateCirclePreview() {
-    const currentRadius = document.getElementById('radius-slider').value;
-    document.getElementById('radius-display').innerText = `${currentRadius} meters`;
-    if (geofenceCircle) {
-        geofenceCircle.setRadius(currentRadius);
-    }
-}
-
-async function confirmMapLocation() {
-    const leader = getLeader();
-    if (!leader || !map) return;
-    await ensureSupabase();
-
-    const center = map.getCenter();
-    const radius = document.getElementById('radius-slider').value;
-
-    const saveBtn = document.getElementById('save-map-btn');
-    saveBtn.innerText = "Saving to Cloud...";
-    saveBtn.disabled = true;
-
-    try {
-        let safeCompanyId = leader.company_id;
-        if (!safeCompanyId) {
-            safeCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
-            await supabaseClient.from('users').update({ company_id: safeCompanyId }).eq('id', leader.id);
-            leader.company_id = safeCompanyId;
-            sessionStorage.setItem('loggedInLeader', JSON.stringify(leader));
-        }
-
-        const { data: existingData } = await supabaseClient.from('settings').select('id').eq('company_id', safeCompanyId).limit(1).maybeSingle();
-        
-        const payload = {
-            office_lat: center.lat,
-            office_lng: center.lng,
-            office_radius: parseInt(radius),
-            require_gps: true,
-            company_id: safeCompanyId
-        };
-
-        if (existingData) {
-            await supabaseClient.from('settings').update(payload).eq('id', existingData.id);
-        } else {
-            await supabaseClient.from('settings').insert([payload]);
-        }
-
-        mapSavedLat = center.lat;
-        mapSavedLng = center.lng;
-        mapSavedRadius = radius;
-        
-        document.getElementById('require-gps').checked = true;
-
-        saveBtn.innerText = "Saved Successfully!";
-        saveBtn.style.backgroundColor = "#4ade80";
-        saveBtn.style.color = "black";
-        
-        setTimeout(() => {
-            closeMapModal();
-            saveBtn.innerText = "Save Boundary & Close";
-            saveBtn.style.backgroundColor = "#1a1a1a";
-            saveBtn.style.color = "white";
-            saveBtn.disabled = false;
-        }, 1500);
-
-    } catch (err) {
-        console.error("Map Save Error:", err);
-        alert("Failed to save location to cloud.");
-        saveBtn.innerText = "Save Boundary & Close";
-        saveBtn.disabled = false;
-    }
-}
-
-function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
-    const R = 6371e3; 
-    const φ1 = lat1 * Math.PI/180;
-    const φ2 = lat2 * Math.PI/180;
-    const Δφ = (lat2-lat1) * Math.PI/180;
-    const Δλ = (lon2-lon1) * Math.PI/180;
-
-    const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-              Math.cos(φ1) * Math.cos(φ2) *
-              Math.sin(Δλ/2) * Math.sin(Δλ/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-    return R * c; 
 }
 
 // ==========================================
@@ -2563,7 +2697,24 @@ async function startDailyScanner() {
 
 async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
     if (rules && rules.require_gps) {
-        if (!rules.office_lat || !rules.office_lng) {
+        
+        // DETERMINE WHICH GPS TARGET TO USE (MAIN OR CUSTOM)
+        let targetLat = rules.office_lat;
+        let targetLng = rules.office_lng;
+        let targetRadius = rules.office_radius ? rules.office_radius : 150;
+
+        let customLocs = [];
+        try { customLocs = JSON.parse(rules.custom_locations); } catch(e){}
+        if (Array.isArray(customLocs)) {
+            const myLoc = customLocs.find(loc => loc.employees && loc.employees.includes(currentStaff.email));
+            if (myLoc && myLoc.lat && myLoc.lng) {
+                targetLat = myLoc.lat;
+                targetLng = myLoc.lng;
+                targetRadius = myLoc.radius ? myLoc.radius : 150;
+            }
+        }
+
+        if (!targetLat || !targetLng) {
             openInfoModal("Manager Error", "Office GPS location has not been pinned in settings yet!");
             return;
         }
@@ -2573,11 +2724,10 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
                 navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
             });
 
-            const allowedRadius = rules.office_radius ? rules.office_radius : 150;
-            const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, rules.office_lat, rules.office_lng);
+            const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, targetLat, targetLng);
 
-            if (distanceMeters > allowedRadius) {
-                openInfoModal("Geofence Violation", `You are too far from the office (${Math.round(distanceMeters)} meters away). You must be within ${allowedRadius} meters to clock in.`);
+            if (distanceMeters > targetRadius) {
+                openInfoModal("Geofence Violation", `You are too far from your assigned location (${Math.round(distanceMeters)} meters away). You must be within ${targetRadius} meters to clock in.`);
                 return;
             }
         } catch (err) {
