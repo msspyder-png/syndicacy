@@ -81,7 +81,6 @@ function closeModal(id) {
     if (modal) modal.style.display = 'none';
 }
 
-// --- MISSING SETTINGS MODAL CONTROLS ---
 function openInfoModal(title, desc) {
     const titleEl = document.getElementById('info-title');
     const descEl = document.getElementById('info-desc');
@@ -94,6 +93,32 @@ function openInfoModal(title, desc) {
 }
 function closeInfoModal() {
     const modalEl = document.getElementById('info-modal');
+    if (modalEl) modalEl.style.display = 'none';
+}
+
+function openConfirmModal(title, desc, onConfirm) {
+    const titleEl = document.getElementById('confirm-title');
+    const descEl = document.getElementById('confirm-desc');
+    const modalEl = document.getElementById('confirm-modal');
+    const confirmBtn = document.getElementById('confirm-action-btn');
+    
+    if (titleEl && descEl && modalEl && confirmBtn) {
+        titleEl.innerText = title;
+        descEl.innerText = desc;
+        
+        const newBtn = confirmBtn.cloneNode(true);
+        confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+        
+        newBtn.addEventListener('click', function() {
+            onConfirm();
+            closeConfirmModal();
+        });
+        
+        modalEl.style.display = 'flex';
+    }
+}
+function closeConfirmModal() {
+    const modalEl = document.getElementById('confirm-modal');
     if (modalEl) modalEl.style.display = 'none';
 }
 
@@ -715,7 +740,7 @@ async function loadTodayAttendance() {
         let pendingCount = 0;
 
         (staffMembers || []).forEach(staff => {
-            const log = (attendanceLogs || []).find(a => a.user_email === staff.email);
+            const log = (attendanceLogs || []).find(a => a.user_email === staff.email && a.status === 'Present');
             const initial = staff.name ? staff.name.charAt(0).toUpperCase() : '?';
             const shortName = staff.name ? staff.name.split(' ')[0] : 'Staff';
 
@@ -800,34 +825,51 @@ async function loadTeamLedger() {
         }
 
         const today = new Date();
+        const todayStr = getUniversalDate(today);
 
         staff.forEach(user => {
             const userLogs = attendance ? attendance.filter(log => log.user_email === user.email) : [];
-            let statusHtml = userLogs.length > 0 ? `<span style="color:#4ade80; font-weight:bold;">Active</span>` : `<span style="color:#f59e0b; font-weight:bold;">Pending</span>`;
             
-            let avgTimeStr = calculateAvgCheckInTime(userLogs);
+            let validCheckinDates = new Set();
+            let personalHolidaysSet = new Set();
+            userLogs.forEach(log => {
+                if (log.status === 'Holiday/Off') {
+                    personalHolidaysSet.add(log.date);
+                } else if (log.status === 'Present') {
+                    const logDate = new Date(log.date);
+                    if (logDate <= today) validCheckinDates.add(log.date);
+                }
+            });
 
             let workingDays = 0; 
             if (user.joined_date) {
                 const joinedDate = new Date(user.joined_date);
                 for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                     const dateStr = getUniversalDate(d);
-                    if (!holidaysArray.includes(dateStr)) workingDays++;
+                    if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) workingDays++;
                 }
             }
             if (workingDays === 0) workingDays = 1; 
 
-            let validCheckinDates = new Set();
-            userLogs.forEach(log => {
-                const logDate = new Date(log.date);
-                if (logDate <= today) validCheckinDates.add(log.date);
-            });
             const validCheckinCount = validCheckinDates.size;
-
             const attendPercent = Math.round((validCheckinCount / workingDays) * 100);
             const displayPercent = attendPercent > 100 ? 100 : attendPercent; 
 
+            const presentLogs = userLogs.filter(log => log.status === 'Present');
+            let avgTimeStr = calculateAvgCheckInTime(presentLogs);
             let percentColor = displayPercent >= 80 ? '#4ade80' : (displayPercent >= 50 ? '#f59e0b' : '#ef4444');
+
+            const checkedInToday = presentLogs.some(log => log.date === todayStr);
+            const isHolidayToday = holidaysArray.includes(todayStr) || personalHolidaysSet.has(todayStr);
+
+            let statusHtml;
+            if (isHolidayToday) {
+                statusHtml = `<span style="color:#888; font-weight:bold;">Holiday</span>`;
+            } else if (checkedInToday) {
+                statusHtml = `<span style="color:#4ade80; font-weight:bold;">Active</span>`;
+            } else {
+                statusHtml = `<span style="color:#f59e0b; font-weight:bold;">Pending</span>`;
+            }
 
             tableBody.insertAdjacentHTML('beforeend', `
                 <tr style="border-bottom: 1px solid #eaeaea; cursor: pointer;" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'" onmouseover="this.style.backgroundColor='#f9f9f9'" onmouseout="this.style.backgroundColor='transparent'">
@@ -882,46 +924,45 @@ async function loadIndividualAnalytics() {
 
         const today = new Date();
         
+        let safeLogs = Array.isArray(logs) ? logs : [];
+        let validCheckinDates = new Set();
+        let personalHolidaysSet = new Set();
+        
+        safeLogs.forEach(log => {
+            if (log.status === 'Holiday/Off') {
+                personalHolidaysSet.add(log.date);
+            } else if (log.status === 'Present') {
+                const logDate = new Date(log.date);
+                if (logDate <= today) validCheckinDates.add(log.date);
+            }
+        });
+
         // --- PROPER TOTAL WORKING DAYS CALCULATION ---
         let workingDays = 0; 
         if (user && user.joined_date) {
             const joinedDate = new Date(user.joined_date);
-            // We loop from join date UP TO today (inclusive) to find out exactly how many days they were SUPPOSED to work
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                 const dateStr = getUniversalDate(d);
-                // If it is NOT a holiday, then it counts as a required working day
-                if (!holidaysArray.includes(dateStr)) {
+                if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) {
                     workingDays++;
                 }
             }
         }
         
-        // Failsafe: if they joined today and today is a holiday, workingDays is 0. We make it 1 to avoid a 0 division error.
+        // Failsafe
         if (workingDays === 0) workingDays = 1; 
 
-        // --- FILTER LOGS TO AVOID COUNTING FUTURE OR DUPLICATE CHECK-INS ---
-        let safeLogs = Array.isArray(logs) ? logs : [];
-        let validCheckinDates = new Set();
-        
-        safeLogs.forEach(log => {
-            const logDate = new Date(log.date);
-            // Only count logs that happened on or before today
-            if (logDate <= today) {
-                validCheckinDates.add(log.date);
-            }
-        });
-        
         const totalChecks = validCheckinDates.size;
         updateElementSafe('total-checkins-value', `${totalChecks} / ${workingDays}`);
-        updateElementSafe('avg-in-time', calculateAvgCheckInTime(logs));
+        updateElementSafe('avg-in-time', calculateAvgCheckInTime(safeLogs.filter(l => l.status === 'Present')));
         
         let percent = Math.round((totalChecks / workingDays) * 100);
-        if (percent > 100) percent = 100; // Hard cap at 100% just in case
+        if (percent > 100) percent = 100; 
         
         updateElementSafe('attendance-percent-box', `${percent}%`, percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444'));
 
         const todayStr2 = getUniversalDate(today);
-        const checkedInToday = logs && logs.some(log => log.date === todayStr2);
+        const checkedInToday = validCheckinDates.has(todayStr2);
 
         // --- NEW TODAY'S STATUS LOGIC (PRO UPGRADE) ---
         try {
@@ -936,7 +977,7 @@ async function loadIndividualAnalytics() {
                     let todayStatus = "Not Yet";
                     let todayColor = "#f59e0b"; 
 
-                    if (holidaysArray.includes(todayStr2)) {
+                    if (holidaysArray.includes(todayStr2) || personalHolidaysSet.has(todayStr2)) {
                         todayStatus = "Holiday / Off";
                         todayColor = "#a0a0a0"; 
                     } else if (checkedInToday) {
@@ -1014,16 +1055,24 @@ async function loadIndividualAnalytics() {
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
         }
 
+        const nowStrict = new Date();
+        nowStrict.setHours(0,0,0,0);
+
         for (let day = 1; day <= daysInMonth; day++) {
             const currentIterationDate = new Date(year, month, day);
             const dateStrIteration = getUniversalDate(currentIterationDate);
-            const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
+            
+            const wasPresent = validCheckinDates.has(dateStrIteration);
+            const isPersonalHoliday = personalHolidaysSet.has(dateStrIteration);
+            const isCommonHoliday = holidaysArray.includes(dateStrIteration);
+            const isPast = currentIterationDate < nowStrict;
+            const isToday = dateStrIteration === getUniversalDate(nowStrict);
             
             let inlineStyle = CAL_STYLES.default;
             
             if (currentIterationDate < empJoinedDate) {
                 inlineStyle = CAL_STYLES.disabled;
-            } else if (holidaysArray.includes(dateStrIteration)) {
+            } else if (isCommonHoliday || isPersonalHoliday) {
                 inlineStyle = CAL_STYLES.holiday;
             } else if (currentIterationDate > today) {
                 inlineStyle = CAL_STYLES.default;
@@ -1032,10 +1081,83 @@ async function loadIndividualAnalytics() {
             } else { 
                 inlineStyle = CAL_STYLES.absent; 
             }
+
+            let cursorStyle = "cursor: default;";
+            let clickAttr = "";
+
+            if (currentIterationDate >= empJoinedDate) {
+                if (isCommonHoliday) {
+                    cursorStyle = "cursor: pointer;";
+                    clickAttr = `onclick="handleEmployeeCalendarClick('${dateStrIteration}', true, false, ${isPast}, ${isToday}, ${wasPresent})"`;
+                } else if (isPast) {
+                    cursorStyle = "cursor: default;";
+                    clickAttr = "";
+                } else if (isToday && wasPresent) {
+                    cursorStyle = "cursor: default;";
+                    clickAttr = "";
+                } else {
+                    cursorStyle = "cursor: pointer;";
+                    clickAttr = `onclick="handleEmployeeCalendarClick('${dateStrIteration}', false, ${isPersonalHoliday}, ${isPast}, ${isToday}, ${wasPresent})"`;
+                }
+            }
             
-            calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle}">${day}</div>`);
+            calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle} ${cursorStyle}" ${clickAttr}>${day}</div>`);
         }
     } catch (err) { console.error(err); }
+}
+
+function handleEmployeeCalendarClick(dateStr, isCommonHoliday, isPersonalHoliday, isPast, isToday, wasPresent) {
+    if (isCommonHoliday) {
+        openInfoModal('Common Holiday', 'This day is a common holiday for all employees. To change this, please go to the Settings tab.');
+        return;
+    }
+
+    if (isPast || (isToday && wasPresent)) {
+        return;
+    }
+
+    const action = isPersonalHoliday ? 'remove' : 'add';
+    const title = isPersonalHoliday ? 'Remove Holiday' : 'Assign Holiday';
+    const desc = isPersonalHoliday 
+        ? `Are you sure you want to remove the personal holiday for ${currentViewedUser.name} on ${dateStr}?` 
+        : `Are you sure you want to assign a personal holiday for ${currentViewedUser.name} on ${dateStr}?`;
+
+    openConfirmModal(title, desc, async function() {
+        await togglePersonalHoliday(dateStr, action);
+    });
+}
+
+async function togglePersonalHoliday(dateStr, action) {
+    await ensureSupabase();
+    const leader = getLeader();
+    if (!leader || !currentViewedUser) return;
+
+    try {
+        if (action === 'add') {
+            const { error } = await supabaseClient.from('checkins').insert([{
+                user_email: currentViewedUser.email,
+                user_name: currentViewedUser.name,
+                date: dateStr,
+                time: '--:--',
+                status: 'Holiday/Off',
+                company_id: leader.company_id
+            }]);
+            if (error) throw error;
+        } else if (action === 'remove') {
+            const { error } = await supabaseClient.from('checkins')
+                .delete()
+                .eq('user_email', currentViewedUser.email)
+                .eq('date', dateStr)
+                .eq('status', 'Holiday/Off')
+                .eq('company_id', leader.company_id);
+            if (error) throw error;
+        }
+        
+        loadIndividualAnalytics();
+    } catch (err) {
+        console.error(err);
+        alert("Failed to update holiday: " + err.message);
+    }
 }
 
 function changeMonth(offset) {
@@ -1983,31 +2105,38 @@ async function loadStaffRecords() {
         try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
         if (!Array.isArray(holidaysArray)) holidaysArray = [];
 
+        let safeLogs = Array.isArray(logs) ? logs : [];
+        let validCheckinDates = new Set();
+        let personalHolidaysSet = new Set();
+        
+        safeLogs.forEach(log => {
+            if (log.status === 'Holiday/Off') {
+                personalHolidaysSet.add(log.date);
+            } else if (log.status === 'Present') {
+                const logDate = new Date(log.date);
+                if (logDate <= today) validCheckinDates.add(log.date);
+            }
+        });
+
         // CALCULATE LEDGER STATS SAFELY
         let workingDays = 0;
         if (currentStaff.joined_date) {
             const joinedDate = new Date(currentStaff.joined_date);
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                 const dateStr = getUniversalDate(d);
-                if (!holidaysArray.includes(dateStr)) workingDays++;
+                if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) workingDays++;
             }
         }
         if (workingDays === 0) workingDays = 1; 
 
-        let safeLogs = Array.isArray(logs) ? logs : [];
-        let validCheckinDates = new Set();
-        safeLogs.forEach(log => {
-            const logDate = new Date(log.date);
-            if (logDate <= today) validCheckinDates.add(log.date);
-        });
         const totalChecks = validCheckinDates.size;
         
         let percent = Math.round((totalChecks / workingDays) * 100);
         if (percent > 100) percent = 100;
         
         const todayStr2 = getUniversalDate(today);
-        const isHoliday = holidaysArray.includes(todayStr2);
-        const checkedInToday = safeLogs.some(log => log.date === todayStr2);
+        const isHoliday = holidaysArray.includes(todayStr2) || personalHolidaysSet.has(todayStr2);
+        const checkedInToday = validCheckinDates.has(todayStr2);
 
         let exceptionText = "None scheduled";
         if (settings && settings.exceptions) {
@@ -2041,7 +2170,7 @@ async function loadStaffRecords() {
             if(checksEl) { checksEl.innerText = `${totalChecks} / ${workingDays}`; checksEl.style.color = "#4ade80"; }
 
             const avgEl = document.getElementById('staff-ledger-avg') || document.getElementById('avg-in-time');
-            if(avgEl) avgEl.innerText = calculateAvgCheckInTime(safeLogs);
+            if(avgEl) avgEl.innerText = calculateAvgCheckInTime(safeLogs.filter(l => l.status === 'Present'));
 
             const percentBox = document.getElementById('staff-ledger-percent') || document.getElementById('attendance-percent-box');
             if(percentBox) {
@@ -2145,13 +2274,13 @@ async function loadStaffRecords() {
             for (let day = 1; day <= daysInMonth; day++) {
                 const currentIterationDate = new Date(year, month, day);
                 const dateStrIteration = getUniversalDate(currentIterationDate);
-                const wasPresent = logs && logs.some(log => log.date === dateStrIteration);
+                const wasPresent = validCheckinDates.has(dateStrIteration);
                 
                 let inlineStyle = CAL_STYLES.default;
                 
                 if (currentIterationDate < empJoinedDate) {
                     inlineStyle = CAL_STYLES.disabled;
-                } else if (holidaysArray.includes(dateStrIteration)) {
+                } else if (holidaysArray.includes(dateStrIteration) || personalHolidaysSet.has(dateStrIteration)) {
                     inlineStyle = CAL_STYLES.holiday;
                 } else if (currentIterationDate > today) {
                     inlineStyle = CAL_STYLES.default;
