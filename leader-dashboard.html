@@ -16,6 +16,14 @@
             <p class="subtitle">Live attendance tracking</p>
         </div>
 
+        <!-- GLOBAL HOLIDAY STATE -->
+        <div id="global-holiday-msg" style="display: none; text-align: center; padding: 60px 20px;">
+            <div style="font-size: 48px; margin-bottom: 15px;">🏝️</div>
+            <h3 style="font-size: 20px; margin-bottom: 10px; color: #1a1a1a;">Global Holiday</h3>
+            <p style="font-size: 14px; color: #888; line-height: 1.5; max-width: 280px; margin: 0 auto;">The organization is officially closed today. No check-ins are required or expected from staff.</p>
+        </div>
+
+        <!-- ACTIVE TODAY -->
         <div class="status-section">
             <h3 class="section-title">Active Today</h3>
             <div class="member-grid" id="active-today-list">
@@ -23,10 +31,27 @@
             </div>
         </div>
 
+        <!-- PENDING CHECK-INS -->
         <div class="status-section">
             <h3 class="section-title">Pending Check-ins</h3>
             <div class="member-grid" id="pending-today-list">
                 <!-- JavaScript will automatically load pending staff here -->
+            </div>
+        </div>
+
+        <!-- ABSENT TODAY -->
+        <div class="status-section">
+            <h3 class="section-title" style="color: #ef4444; border-bottom-color: #fecaca;">Absent Today</h3>
+            <div class="member-grid" id="absent-today-list">
+                <!-- JavaScript will automatically load absent staff here -->
+            </div>
+        </div>
+
+        <!-- ON LEAVE / OFF -->
+        <div class="status-section">
+            <h3 class="section-title" style="color: #888;">On Leave / Off Today</h3>
+            <div class="member-grid" id="off-today-list">
+                <!-- JavaScript will automatically load exempt/holiday staff here -->
             </div>
         </div>
     </div>

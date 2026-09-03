@@ -799,6 +799,10 @@ async function captureFace() {
 async function loadTodayAttendance() {
     const activeList = document.getElementById('active-today-list');
     const pendingList = document.getElementById('pending-today-list');
+    const absentList = document.getElementById('absent-today-list');
+    const offList = document.getElementById('off-today-list');
+    const globalHolidayMsg = document.getElementById('global-holiday-msg');
+    
     const leader = getLeader();
 
     if (!activeList || !pendingList || !leader) return;
@@ -810,22 +814,65 @@ async function loadTodayAttendance() {
         const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         if (staffErr) throw staffErr;
 
-        // FIXED TABLE NAME: 'checkins'
         const { data: attendanceLogs, error: attErr } = await supabaseClient.from('checkins').select('*').eq('date', todayStr).eq('company_id', leader.company_id);
         if (attErr) throw attErr;
 
+        const { data: settings, error: setErr } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        
+        let globalHolidays = [];
+        let customSchedules = [];
+        let exceptions = [];
+        let globalEnd = "10:00";
+
+        if (settings) {
+            if (settings.holidays) try { globalHolidays = JSON.parse(settings.holidays); } catch(e){}
+            if (settings.custom_schedules) try { customSchedules = JSON.parse(settings.custom_schedules); } catch(e){}
+            if (settings.exceptions) try { exceptions = JSON.parse(settings.exceptions); } catch(e){}
+            if (settings.check_in_end) globalEnd = settings.check_in_end;
+        }
+
+        // --- GLOBAL HOLIDAY OVERRIDE ---
+        if (globalHolidays.includes(todayStr)) {
+            if (globalHolidayMsg) globalHolidayMsg.style.display = 'block';
+            document.querySelectorAll('.status-section').forEach(el => el.style.display = 'none');
+            return;
+        }
+
+        if (globalHolidayMsg) globalHolidayMsg.style.display = 'none';
+        document.querySelectorAll('.status-section').forEach(el => el.style.display = 'block');
+
         activeList.innerHTML = "";
         pendingList.innerHTML = "";
+        if (absentList) absentList.innerHTML = "";
+        if (offList) offList.innerHTML = "";
 
         let activeCount = 0;
         let pendingCount = 0;
+        let absentCount = 0;
+        let offCount = 0;
+
+        const now = new Date();
+        const currentHours = String(now.getHours()).padStart(2, '0');
+        const currentMinutes = String(now.getMinutes()).padStart(2, '0');
+        const currentTime = `${currentHours}:${currentMinutes}`;
 
         (staffMembers || []).forEach(staff => {
-            const log = (attendanceLogs || []).find(a => a.user_email === staff.email && a.status === 'Present');
+            const log = (attendanceLogs || []).find(a => a.user_email === staff.email);
             const initial = staff.name ? staff.name.charAt(0).toUpperCase() : '?';
             const shortName = staff.name ? staff.name.split(' ')[0] : 'Staff';
 
-            if (log) {
+            if (log && log.status === 'Holiday/Off') {
+                offCount++;
+                if (offList) {
+                    offList.insertAdjacentHTML('beforeend', `
+                        <div class="member-card" style="background-color: #1a1a1a; border: 1px solid #1a1a1a; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                            <div class="avatar" style="background: #ffffff; color: #1a1a1a;">${initial}</div>
+                            <span class="name" style="color: #ffffff;">${shortName}</span>
+                            <span style="font-size: 9px; color: #aaa; font-weight: 500; margin-top: 2px;">Exempt</span>
+                        </div>
+                    `);
+                }
+            } else if (log && log.status === 'Present') {
                 activeCount++;
                 activeList.insertAdjacentHTML('beforeend', `
                     <div class="member-card present">
@@ -835,18 +882,41 @@ async function loadTodayAttendance() {
                     </div>
                 `);
             } else {
-                pendingCount++;
-                pendingList.insertAdjacentHTML('beforeend', `
-                    <div class="member-card absent">
-                        <div class="avatar" style="background: #f0f0f0; color: #333;">${initial}</div>
-                        <span class="name">${shortName}</span>
-                    </div>
-                `);
+                let allowedEnd = globalEnd;
+                
+                const myCustom = customSchedules.find(c => c.email === staff.email);
+                if (myCustom) allowedEnd = myCustom.end;
+                
+                const todayException = exceptions.find(ex => ex.date === todayStr);
+                if (todayException) allowedEnd = todayException.end;
+
+                if (currentTime > allowedEnd) {
+                    absentCount++;
+                    if (absentList) {
+                        absentList.insertAdjacentHTML('beforeend', `
+                            <div class="member-card" style="background-color: #fef2f2; border: 1px dashed #ef4444;">
+                                <div class="avatar" style="background: #fca5a5; color: #7f1d1d;">${initial}</div>
+                                <span class="name" style="color: #ef4444;">${shortName}</span>
+                            </div>
+                        `);
+                    }
+                } else {
+                    pendingCount++;
+                    pendingList.insertAdjacentHTML('beforeend', `
+                        <div class="member-card absent">
+                            <div class="avatar" style="background: #f0f0f0; color: #333;">${initial}</div>
+                            <span class="name">${shortName}</span>
+                        </div>
+                    `);
+                }
             }
         });
 
         if (activeCount === 0) activeList.innerHTML = `<p style="font-size: 12px; color: #888; grid-column: 1 / -1;">No one has checked in yet today.</p>`;
-        if (pendingCount === 0) pendingList.innerHTML = `<p style="font-size: 12px; color: #888; grid-column: 1 / -1;">Everyone is here!</p>`;
+        if (pendingCount === 0) pendingList.innerHTML = `<p style="font-size: 12px; color: #888; grid-column: 1 / -1;">Everyone has checked in or passed their window.</p>`;
+        if (absentList && absentCount === 0) absentList.innerHTML = `<p style="font-size: 12px; color: #888; grid-column: 1 / -1;">No absentees.</p>`;
+        if (offList && offCount === 0) offList.innerHTML = `<p style="font-size: 12px; color: #888; grid-column: 1 / -1;">No staff on personal leave today.</p>`;
+
     } catch (err) {
         console.error(err);
     }
@@ -2961,7 +3031,7 @@ async function openStaffAssignModal(locId) {
     
     openModal('assign-staff-modal');
 
-    const { data: staff } = await users.select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+    const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
     
     listContainer.innerHTML = "";
     if (!staff || staff.length === 0) {
