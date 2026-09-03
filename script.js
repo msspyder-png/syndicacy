@@ -1812,44 +1812,13 @@ async function loadSettings() {
 async function saveSettings() {
     const leader = getLeader();
     if (!leader) return;
-
-    const subtitle = document.querySelector('.dash-header .subtitle');
     
-    // Validate Time Ranges before hitting DB
-    if (document.getElementById('check-in-start')) {
-        const startVal = document.getElementById('check-in-start').value;
-        const endVal = document.getElementById('check-in-end').value;
-        
-        if (startVal && endVal && startVal >= endVal) {
-            openInfoModal("Invalid Time Range", "The Check-in Window end time must be later than the start time. Because attendance is logged by calendar day, overnight shifts (e.g., 8:00 PM to 1:00 AM) are not supported.");
-            if (subtitle) { subtitle.innerText = "Save blocked: Invalid time range"; subtitle.style.color = "#ef4444"; }
-            return;
-        }
-
-        let invalidExc = false;
-        document.querySelectorAll('#exception-list div').forEach(row => {
-            const inputs = row.querySelectorAll('input');
-            if(inputs.length >= 3 && inputs[1].value && inputs[2].value) {
-                if (inputs[1].value >= inputs[2].value) invalidExc = true;
-            }
-        });
-
-        if (invalidExc) {
-            openInfoModal("Invalid Exception Range", "An exception's end time must be later than its start time. Overnight shifts are not supported.");
-            if (subtitle) { subtitle.innerText = "Save blocked: Invalid exception time"; subtitle.style.color = "#ef4444"; }
-            return;
-        }
-    }
-
     await ensureSupabase();
 
-    if (subtitle && !subtitle.innerText.includes("Saving") && !subtitle.innerText.includes("blocked")) {
-        subtitle.innerText = "Saving changes to cloud...";
-        subtitle.style.color = "#f59e0b"; 
-    }
+    const subtitle = document.querySelector('.dash-header .subtitle');
+    let safeCompanyId = leader.company_id;
 
     try {
-        let safeCompanyId = leader.company_id;
         if (!safeCompanyId) {
             safeCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
             await supabaseClient.from('users').update({ company_id: safeCompanyId }).eq('id', leader.id);
@@ -1858,6 +1827,65 @@ async function saveSettings() {
         }
 
         const { data: existingData } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
+
+        if (document.getElementById('check-in-start')) {
+            const startVal = document.getElementById('check-in-start').value;
+            const endVal = document.getElementById('check-in-end').value;
+            
+            if (startVal && endVal && startVal >= endVal) {
+                if (existingData && existingData.check_in_start && existingData.check_in_end) {
+                    document.getElementById('check-in-start').value = existingData.check_in_start;
+                    document.getElementById('check-in-end').value = existingData.check_in_end;
+                } else {
+                    document.getElementById('check-in-start').value = "09:00";
+                    document.getElementById('check-in-end').value = "10:00";
+                }
+                
+                openInfoModal("Invalid Time Range", "The Check-in Window end time must be later than the start time. Because attendance is logged by calendar day, overnight shifts (e.g., 8:00 PM to 1:00 AM) are not supported. \n\nYour inputs have been safely reverted.");
+                if (subtitle) { subtitle.innerText = "Save blocked: Invalid time range"; subtitle.style.color = "#ef4444"; }
+                return;
+            }
+
+            let invalidExc = false;
+            document.querySelectorAll('#exception-list div').forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                if(inputs.length >= 3 && inputs[1].value && inputs[2].value) {
+                    if (inputs[1].value >= inputs[2].value) invalidExc = true;
+                }
+            });
+
+            if (invalidExc) {
+                if (existingData && existingData.exceptions) {
+                    try {
+                        let parsed = JSON.parse(existingData.exceptions);
+                        let oldExceptions = Array.isArray(parsed) ? parsed : parsed.data || [];
+                        const list = document.getElementById('exception-list');
+                        list.innerHTML = ""; 
+                        oldExceptions.forEach(exc => {
+                            addException(); 
+                            const rows = list.children;
+                            const lastRow = rows[rows.length - 1];
+                            const inputs = lastRow.querySelectorAll('input');
+                            if(inputs.length >= 3) {
+                                inputs[0].value = exc.date;
+                                inputs[1].value = exc.start;
+                                inputs[2].value = exc.end;
+                            }
+                        });
+                    } catch(e){}
+                }
+                
+                openInfoModal("Invalid Exception Range", "An exception's end time must be later than its start time. Overnight shifts are not supported.\n\nYour exceptions list has been safely reverted.");
+                if (subtitle) { subtitle.innerText = "Save blocked: Invalid exception time"; subtitle.style.color = "#ef4444"; }
+                return;
+            }
+        }
+
+        let originalText = subtitle ? subtitle.innerText : "Organizational parameters";
+        if (subtitle && !subtitle.innerText.includes("Saving") && !subtitle.innerText.includes("blocked")) {
+            subtitle.innerText = "Saving changes to cloud...";
+            subtitle.style.color = "#f59e0b"; 
+        }
 
         let payload = { company_id: safeCompanyId };
 
