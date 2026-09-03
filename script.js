@@ -114,6 +114,7 @@ function openInfoModal(title, desc) {
     if (titleEl && descEl && modalEl) {
         titleEl.innerText = title;
         descEl.innerText = desc;
+        modalEl.style.zIndex = '10005'; // Force to front layer
         modalEl.style.display = 'flex';
     }
 }
@@ -141,6 +142,7 @@ function openConfirmModal(title, desc, onConfirm) {
             closeConfirmModal();
         });
         
+        modalEl.style.zIndex = '10006'; // Force to front layer
         modalEl.style.display = 'flex';
     }
 }
@@ -191,6 +193,7 @@ function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
             closePromptModal();
         });
         
+        modalEl.style.zIndex = '10007'; // Force to front layer
         modalEl.style.display = 'flex';
         inputEl.focus();
     }
@@ -1977,7 +1980,7 @@ function updateExceptionCount() {
 }
 
 // --- CUSTOM EMPLOYEE TIME LOGIC ---
-async function openCustomTimeModal() {
+async function openCustomTimeModal(editEmail = null) {
     const leader = getLeader();
     if (!leader || !supabaseClient) return;
 
@@ -1992,6 +1995,18 @@ async function openCustomTimeModal() {
             staff.forEach(s => {
                 select.innerHTML += `<option value="${s.email}">${s.name} (${s.role})</option>`;
             });
+            
+            if (typeof editEmail === 'string') {
+                const existing = customSchedules.find(c => c.email === editEmail);
+                if (existing) {
+                    select.value = existing.email;
+                    document.getElementById('custom-time-start').value = existing.start;
+                    document.getElementById('custom-time-end').value = existing.end;
+                }
+            } else {
+                document.getElementById('custom-time-start').value = "09:00";
+                document.getElementById('custom-time-end').value = "10:00";
+            }
         } else {
             select.innerHTML = '<option value="" disabled selected>No staff found</option>';
         }
@@ -2049,13 +2064,15 @@ function renderCustomTimeList() {
         div.style.backgroundColor = '#f9f9f9';
         div.style.border = '1px solid #eaeaea';
         div.style.borderRadius = '4px';
+        div.style.cursor = 'pointer';
+        div.onclick = function() { openCustomTimeModal(c.email); };
 
         div.innerHTML = `
-            <div style="display: flex; flex-direction: column;">
+            <div style="display: flex; flex-direction: column; pointer-events: none;">
                 <span style="font-size: 12px; font-weight: 600; color: #1a1a1a;">${c.name}</span>
                 <span style="font-size: 10px; color: #888;">${c.start} - ${c.end}</span>
             </div>
-            <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 24px; height: 24px;" onclick="removeCustomTime('${c.email}')">X</button>
+            <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 24px; height: 24px;" onclick="event.stopPropagation(); removeCustomTime('${c.email}')">X</button>
         `;
         list.appendChild(div);
     });
@@ -2427,6 +2444,7 @@ async function loadStaffRecords() {
         let customSchedulesActive = true;
         let exceptionsActive = true;
         let globalEnd = "10:00";
+        let globalStart = "09:00";
 
         if (settings) {
             if (settings.holidays) try { holidaysArray = JSON.parse(settings.holidays); } catch(e){}
@@ -2448,6 +2466,7 @@ async function loadStaffRecords() {
             }
 
             if (settings.check_in_end) globalEnd = settings.check_in_end;
+            if (settings.check_in_start) globalStart = settings.check_in_start;
         }
 
         if (!Array.isArray(holidaysArray)) holidaysArray = [];
@@ -2508,7 +2527,18 @@ async function loadStaffRecords() {
 
         // --- DIRECT DOM MAPPING ---
         try {
-            updateElementSafe('staff-window-display', `${settings?.check_in_start || "09:00"} - ${settings?.check_in_end || "10:00"}`);
+            let displayStart = globalStart;
+            let displayEnd = globalEnd;
+            
+            if (customSchedulesActive) {
+                const myCustom = customSchedules.find(c => c.email === currentStaff.email);
+                if (myCustom) {
+                    displayStart = myCustom.start;
+                    displayEnd = myCustom.end;
+                }
+            }
+            
+            updateElementSafe('staff-window-display', `${displayStart} - ${displayEnd}`);
             updateElementSafe('staff-exception-display', exceptionText);
 
             const isGpsOn = settings && settings.require_gps;

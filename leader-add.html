@@ -28,17 +28,25 @@
             </div>
 
             <div class="input-group">
-                <select id="staff-role" class="input-field select-field" onchange="togglemRole()">
+                <select id="staff-role" class="input-field select-field" onchange="toggleCustomRole()">
                     <option value="" disabled selected>Select Designation / Role</option>
-                    <option value="Student">Student</option>
-                    <option value="HR">HR Manager</option>
+                    <option value="Software Engineer">Software Engineer</option>
+                    <option value="Project Manager">Project Manager</option>
+                    <option value="HR Professional">HR Professional</option>
+                    <option value="Sales Representative">Sales Representative</option>
+                    <option value="Marketing Specialist">Marketing Specialist</option>
+                    <option value="Accountant / Finance">Accountant / Finance</option>
+                    <option value="Customer Support">Customer Support</option>
+                    <option value="Administrative Assistant">Administrative Assistant</option>
                     <option value="Team Lead">Team Lead</option>
+                    <option value="Contractor">Contractor</option>
+                    <option value="Intern">Intern</option>
                     <option value="other">Other...</option>
                 </select>
             </div>
 
-            <div class="input-group" id="m-role-container" style="display: none;">
-                <input type="text" id="m-role" class="input-field" placeholder="Specify m Role">
+            <div class="input-group" id="custom-role-container" style="display: none;">
+                <input type="text" id="custom-role" class="input-field" placeholder="Specify Custom Role">
             </div>
 
             <div class="button-stack">
