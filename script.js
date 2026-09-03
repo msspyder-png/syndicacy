@@ -2469,29 +2469,32 @@ async function loadStaffRecords() {
 
     let displayStart = globalStart;
     let displayEnd = globalEnd;
-    let exceptionText = "None scheduled";
+    let exceptionText = "--"; 
     
-    if (exceptionsActive && Array.isArray(exceptions)) {
-        const futureExc = exceptions.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
-        if (futureExc.length > 0) {
-            const next = futureExc[0]; const parts = next.date.split('-');
-            exceptionText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${formatTime12(next.start)} - ${formatTime12(next.end)})`;
-        }
-        
-        const todayException = exceptions.find(ex => ex.date === todayStr2);
-        if (todayException) {
-            displayStart = todayException.start;
-            displayEnd = todayException.end;
-        }
-    } else if (!exceptionsActive) {
-        exceptionText = "Exceptions Paused";
-    }
-    
+    let myCustom = null;
     if (customSchedulesActive) {
-        const myCustom = customSchedules.find(c => c.email === currentStaff.email);
-        if (myCustom) {
-            displayStart = myCustom.start;
-            displayEnd = myCustom.end;
+        myCustom = customSchedules.find(c => c.email === currentStaff.email);
+    }
+
+    if (myCustom) {
+        displayStart = myCustom.start;
+        displayEnd = myCustom.end;
+    } else {
+        exceptionText = "None scheduled";
+        if (exceptionsActive && Array.isArray(exceptions)) {
+            const futureExc = exceptions.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
+            if (futureExc.length > 0) {
+                const next = futureExc[0]; const parts = next.date.split('-');
+                exceptionText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${formatTime12(next.start)} - ${formatTime12(next.end)})`;
+            }
+            
+            const todayException = exceptions.find(ex => ex.date === todayStr2);
+            if (todayException) {
+                displayStart = todayException.start;
+                displayEnd = todayException.end;
+            }
+        } else if (!exceptionsActive) {
+            exceptionText = "Exceptions Paused";
         }
     }
 
@@ -2579,10 +2582,16 @@ async function loadStaffRecords() {
             else { statusBox.innerText = "Absent"; statusBox.style.color = "#ef4444"; }
         }
 
-        const dashHeader = document.querySelector('.dash-header h2');
-        if (dashHeader && dashHeader.innerText.includes("Good Morning")) {
+        const dashHeader = document.getElementById('greeting-title');
+        if (dashHeader) {
             const shortName = currentStaff.name ? currentStaff.name.split(' ')[0] : 'Staff';
-            dashHeader.innerText = `Good Morning, ${shortName}`;
+            
+            if (!window.currentGreeting) {
+                const greetings = ["Hi", "Hello", "What's up", "Greetings", "Welcome back", "Hey there", "Howdy"];
+                window.currentGreeting = greetings[Math.floor(Math.random() * greetings.length)];
+            }
+            
+            dashHeader.innerText = `${window.currentGreeting}, ${shortName}`;
         }
         
         updateElementSafe('status-avatar', currentStaff.name ? currentStaff.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase() : '--');
@@ -2662,7 +2671,6 @@ async function loadStaffRecords() {
             }
         }
 
-        // --- 7-DAY WEEKLY PULSE MAPPER ---
         const pulseGrid = document.getElementById('weekly-pulse-grid');
         const pulseMotivation = document.getElementById('weekly-motivation-msg');
         if (pulseGrid) {
@@ -2701,7 +2709,6 @@ async function loadStaffRecords() {
                     bgCol = "transparent"; borCol = "#eaeaea"; textCol = "#888";
                 }
                 
-                // Keep the border color semantic, just thicken it and pop the icon slightly if it represents today
                 const isTodayCircle = (loopDateStr === getUniversalDate(today)) ? `border: 2px solid ${borCol !== '#eaeaea' ? borCol : '#1a1a1a'}; transform: scale(1.1); font-weight: 800;` : `border: 1px solid ${borCol};`;
                 
                 pulseGrid.insertAdjacentHTML('beforeend', `
