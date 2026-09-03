@@ -1573,6 +1573,7 @@ function initializeSettingsCalendar() {
     }
 
     const nowStrict = new Date();
+    // Normalize to start of day to avoid timezone hour shifts
     nowStrict.setHours(0,0,0,0);
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -2371,7 +2372,6 @@ async function loadStaffRecords() {
     await ensureSupabase();
     if (!currentStaff || !supabaseClient) return;
 
-    // 1. FETCH CLOUD DATA
     let safeLogs = [];
     let settings = null;
     try {
@@ -2387,7 +2387,6 @@ async function loadStaffRecords() {
     today.setHours(0, 0, 0, 0);
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-    // 2. PARSE SETTINGS & SHIFT LOCATIONS
     let holidaysArray = [];
     let customSchedules = [];
     let exceptions = [];
@@ -2440,7 +2439,6 @@ async function loadStaffRecords() {
         }
     }
 
-    // 3. PROCESS LOGS
     let validCheckinDates = new Set();
     let personalHolidaysSet = new Set();
     
@@ -2453,7 +2451,6 @@ async function loadStaffRecords() {
         }
     });
 
-    // 4. CALCULATE LEDGER STATS
     let workingDays = 0;
     const joinedDate = currentStaff.joined_date ? parseLocal(currentStaff.joined_date) : new Date();
     for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
@@ -2470,7 +2467,6 @@ async function loadStaffRecords() {
     const isHoliday = holidaysArray.includes(todayStr2) || personalHolidaysSet.has(todayStr2);
     const checkedInToday = validCheckinDates.has(todayStr2);
 
-    // 5. CALCULATE TIME WINDOW
     let displayStart = globalStart;
     let displayEnd = globalEnd;
     let exceptionText = "None scheduled";
@@ -2499,7 +2495,6 @@ async function loadStaffRecords() {
         }
     }
 
-    // --- 6. TOP 5 HOLIDAY TRACKER ---
     const holidaysListEl = document.getElementById('staff-upcoming-holidays-list');
     if (holidaysListEl) {
         const allFutureHolidays = [];
@@ -2551,7 +2546,6 @@ async function loadStaffRecords() {
         }
     }
 
-    // --- DIRECT DOM MAPPING & LIVE COUNTDOWN ---
     try {
         const isGpsOn = settings && settings.require_gps;
         updateElementSafe('staff-gps-display', isGpsOn ? "ENABLED" : "DISABLED", isGpsOn ? "#4ade80" : "#888", isGpsOn ? "#dcfce7" : "#e8e8e8");
@@ -2593,7 +2587,6 @@ async function loadStaffRecords() {
         
         updateElementSafe('status-avatar', currentStaff.name ? currentStaff.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase() : '--');
 
-        // HOME TAB DYNAMIC LOGIC
         const statusCard = document.getElementById('status-card');
         const checkInBtn = document.getElementById('check-in-btn');
         const shiftPanel = document.getElementById('shift-details-panel');
@@ -2695,9 +2688,12 @@ async function loadStaffRecords() {
                 } else if (validCheckinDates.has(loopDateStr)) {
                     bgCol = "#4ade80"; borCol = "#4ade80"; textCol = "#1a1a1a";
                     iconHtml = "✓";
-                } else if (holidaysArray.includes(loopDateStr) || personalHolidaysSet.has(loopDateStr)) {
+                } else if (holidaysArray.includes(loopDateStr)) {
                     bgCol = "#1a1a1a"; borCol = "#1a1a1a"; textCol = "#ffffff";
-                    iconHtml = "■";
+                    iconHtml = loopDate.getDate();
+                } else if (personalHolidaysSet.has(loopDateStr)) {
+                    bgCol = "#ffffff"; borCol = "#1a1a1a"; textCol = "#1a1a1a";
+                    iconHtml = loopDate.getDate();
                 } else if (loopDate < today) {
                     bgCol = "transparent"; borCol = "#ef4444"; textCol = "#ef4444";
                     iconHtml = "×";
@@ -2705,7 +2701,8 @@ async function loadStaffRecords() {
                     bgCol = "transparent"; borCol = "#eaeaea"; textCol = "#888";
                 }
                 
-                const isTodayCircle = (loopDateStr === getUniversalDate(today)) ? 'border: 2px solid #1a1a1a; transform: scale(1.1); font-weight: 800;' : `border: 1px solid ${borCol};`;
+                // Keep the border color semantic, just thicken it and pop the icon slightly if it represents today
+                const isTodayCircle = (loopDateStr === getUniversalDate(today)) ? `border: 2px solid ${borCol !== '#eaeaea' ? borCol : '#1a1a1a'}; transform: scale(1.1); font-weight: 800;` : `border: 1px solid ${borCol};`;
                 
                 pulseGrid.insertAdjacentHTML('beforeend', `
                     <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1;">
