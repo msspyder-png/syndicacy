@@ -2679,8 +2679,6 @@ async function loadStaffRecords() {
             startOfWeek.setDate(today.getDate() - currentDayOfWeek);
             
             const dayLetters = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-            let presentCountThisWeek = 0;
-            let missedCountThisWeek = 0;
             
             for (let i = 0; i < 7; i++) {
                 const loopDate = new Date(startOfWeek);
@@ -2697,14 +2695,12 @@ async function loadStaffRecords() {
                 } else if (validCheckinDates.has(loopDateStr)) {
                     bgCol = "#4ade80"; borCol = "#4ade80"; textCol = "#1a1a1a";
                     iconHtml = "✓";
-                    presentCountThisWeek++;
                 } else if (holidaysArray.includes(loopDateStr) || personalHolidaysSet.has(loopDateStr)) {
                     bgCol = "#1a1a1a"; borCol = "#1a1a1a"; textCol = "#ffffff";
                     iconHtml = "■";
                 } else if (loopDate < today) {
                     bgCol = "transparent"; borCol = "#ef4444"; textCol = "#ef4444";
                     iconHtml = "×";
-                    missedCountThisWeek++;
                 } else {
                     bgCol = "transparent"; borCol = "#eaeaea"; textCol = "#888";
                 }
@@ -2722,18 +2718,42 @@ async function loadStaffRecords() {
             }
 
             if (pulseMotivation) {
-                if (presentCountThisWeek === 0 && missedCountThisWeek === 0) {
-                    pulseMotivation.innerText = "Fresh week! 🚀";
-                    pulseMotivation.style.color = "#888";
-                    pulseMotivation.style.background = "#f0f0f0";
-                } else if (missedCountThisWeek > 0) {
-                    pulseMotivation.innerText = "Bounce back! 💪";
-                    pulseMotivation.style.color = "#ef4444";
-                    pulseMotivation.style.background = "#fef2f2";
+                let currentStreak = 0;
+                let tempDate = new Date(today);
+                
+                const now2 = new Date();
+                const cTime = String(now2.getHours()).padStart(2, '0') + ':' + String(now2.getMinutes()).padStart(2, '0');
+
+                while (tempDate >= joinedDate) {
+                    const dStr = getUniversalDate(tempDate);
+                    const isHol = holidaysArray.includes(dStr) || personalHolidaysSet.has(dStr);
+                    const isPresent = validCheckinDates.has(dStr);
+                    
+                    if (isPresent) {
+                        currentStreak++;
+                    } else if (!isHol) {
+                        if (tempDate.getTime() === today.getTime()) {
+                            if (cTime > displayEnd) {
+                                break; 
+                            }
+                        } else {
+                            break; 
+                        }
+                    }
+                    tempDate.setDate(tempDate.getDate() - 1);
+                    tempDate.setHours(0,0,0,0);
+                }
+
+                if (currentStreak > 0) {
+                    pulseMotivation.innerText = `Streak: ${currentStreak} 🔥`;
+                    pulseMotivation.style.color = "#d97706"; 
+                    pulseMotivation.style.background = "transparent";
+                    pulseMotivation.style.padding = "0";
                 } else {
-                    pulseMotivation.innerText = `${presentCountThisWeek}-Day Streak 🔥`;
-                    pulseMotivation.style.color = "#4ade80";
-                    pulseMotivation.style.background = "#dcfce7";
+                    pulseMotivation.innerText = "Streak: 0";
+                    pulseMotivation.style.color = "#888";
+                    pulseMotivation.style.background = "transparent";
+                    pulseMotivation.style.padding = "0";
                 }
             }
         }
