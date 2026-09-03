@@ -1573,7 +1573,6 @@ function initializeSettingsCalendar() {
     }
 
     const nowStrict = new Date();
-    // Normalize to start of day to avoid timezone hour shifts
     nowStrict.setHours(0,0,0,0);
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -1813,11 +1812,38 @@ async function loadSettings() {
 async function saveSettings() {
     const leader = getLeader();
     if (!leader) return;
-    await ensureSupabase();
 
     const subtitle = document.querySelector('.dash-header .subtitle');
-    let originalText = subtitle ? subtitle.innerText : "Organizational parameters";
-    if (subtitle && !subtitle.innerText.includes("Saving")) {
+    
+    // Validate Time Ranges before hitting DB
+    if (document.getElementById('check-in-start')) {
+        const startVal = document.getElementById('check-in-start').value;
+        const endVal = document.getElementById('check-in-end').value;
+        
+        if (startVal && endVal && startVal >= endVal) {
+            openInfoModal("Invalid Time Range", "The Check-in Window end time must be later than the start time. Because attendance is logged by calendar day, overnight shifts (e.g., 8:00 PM to 1:00 AM) are not supported.");
+            if (subtitle) { subtitle.innerText = "Save blocked: Invalid time range"; subtitle.style.color = "#ef4444"; }
+            return;
+        }
+
+        let invalidExc = false;
+        document.querySelectorAll('#exception-list div').forEach(row => {
+            const inputs = row.querySelectorAll('input');
+            if(inputs.length >= 3 && inputs[1].value && inputs[2].value) {
+                if (inputs[1].value >= inputs[2].value) invalidExc = true;
+            }
+        });
+
+        if (invalidExc) {
+            openInfoModal("Invalid Exception Range", "An exception's end time must be later than its start time. Overnight shifts are not supported.");
+            if (subtitle) { subtitle.innerText = "Save blocked: Invalid exception time"; subtitle.style.color = "#ef4444"; }
+            return;
+        }
+    }
+
+    await ensureSupabase();
+
+    if (subtitle && !subtitle.innerText.includes("Saving") && !subtitle.innerText.includes("blocked")) {
         subtitle.innerText = "Saving changes to cloud...";
         subtitle.style.color = "#f59e0b"; 
     }
@@ -1879,7 +1905,7 @@ async function saveSettings() {
             subtitle.innerText = "All changes saved ✓";
             subtitle.style.color = "#4ade80"; 
             setTimeout(() => {
-                subtitle.innerText = originalText; 
+                subtitle.innerText = "Organizational parameters"; 
                 subtitle.style.color = "#888"; 
             }, 2000);
         }
@@ -1968,6 +1994,11 @@ function saveCustomTime() {
 
     if (!select.value || !start || !end) {
         openInfoModal("Missing Info", "Please select an employee and set both times.");
+        return;
+    }
+
+    if (start >= end) {
+        openInfoModal("Invalid Time Range", "The custom end time must be later than the start time. Overnight shifts spanning across midnight are not supported.");
         return;
     }
 
