@@ -92,7 +92,6 @@ function closeModal(id) {
 function openInfoModal(title, desc) {
     let modalEl = document.getElementById('info-modal');
     
-    // Auto-inject the clean UI modal into the page if it doesn't exist
     if (!modalEl) {
         const modalHtml = `
             <div id="info-modal" class="modal-bg" style="z-index: 10005; display: none;">
@@ -114,7 +113,7 @@ function openInfoModal(title, desc) {
     if (titleEl && descEl && modalEl) {
         titleEl.innerText = title;
         descEl.innerText = desc;
-        modalEl.style.zIndex = '10005'; // Force to front layer
+        modalEl.style.zIndex = '10005'; 
         modalEl.style.display = 'flex';
     }
 }
@@ -142,7 +141,7 @@ function openConfirmModal(title, desc, onConfirm) {
             closeConfirmModal();
         });
         
-        modalEl.style.zIndex = '10006'; // Force to front layer
+        modalEl.style.zIndex = '10006'; 
         modalEl.style.display = 'flex';
     }
 }
@@ -151,7 +150,6 @@ function closeConfirmModal() {
     if (modalEl) modalEl.style.display = 'none';
 }
 
-// --- NEW PROMPT MODAL CONTROLS ---
 function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
     let modalEl = document.getElementById('prompt-modal');
     
@@ -193,7 +191,7 @@ function openPromptModal(title, desc, inputType, defaultValue, onConfirm) {
             closePromptModal();
         });
         
-        modalEl.style.zIndex = '10007'; // Force to front layer
+        modalEl.style.zIndex = '10007'; 
         modalEl.style.display = 'flex';
         inputEl.focus();
     }
@@ -210,7 +208,6 @@ window.onclick = function(event) {
     }
 };
 
-// --- TOGGLE UI CONTROLS ---
 function toggleExceptionsUI() {
     const toggle = document.getElementById('toggle-exceptions');
     if (!toggle) return;
@@ -238,7 +235,6 @@ function toggleCustomTimeUI() {
     }
     if(list) list.style.opacity = isActive ? '1' : '0.5';
 }
-
 
 // --- SMART AUTHENTICATION (DETECTIVE MODE) ---
 async function handleLeaderAuth() {
@@ -280,7 +276,6 @@ async function handleLeaderAuth() {
                     await supabaseClient.from('users').update({ company_id: user.company_id }).eq('id', user.id);
                 }
                 
-                // Clear any lingering staff sessions to prevent data bleeding
                 sessionStorage.removeItem('loggedInStaff');
                 sessionStorage.setItem('loggedInLeader', JSON.stringify(user));
                 window.location.href = 'leader-dashboard.html';
@@ -319,7 +314,6 @@ async function handleLeaderAuth() {
     }
 }
 
-// --- VERIFY OTP & REGISTER TO CLOUD DATABASE ---
 async function verifyOTP() {
     await ensureSupabase();
     try {
@@ -359,7 +353,6 @@ async function verifyOTP() {
     }
 }
 
-// --- 1. TOGGLE CUSTOM ROLE ---
 function toggleCustomRole() {
     const roleSelect = document.getElementById('staff-role');
     const customRoleContainer = document.getElementById('custom-role-container');
@@ -372,7 +365,6 @@ function toggleCustomRole() {
     }
 }
 
-// --- 2. FILTER DIRECTORY ---
 function filterDirectory() {
     const searchQuery = document.getElementById('staff-search').value.toLowerCase();
     const staffCards = document.querySelectorAll('#directory-list .directory-card');
@@ -388,7 +380,6 @@ function filterDirectory() {
     });
 }
 
-// --- 3. GENERATE INVITE DATA (Helper Function) ---
 async function generateInvite() {
     await ensureSupabase();
     const leader = getLeader();
@@ -441,7 +432,6 @@ async function generateInvite() {
     }
 }
 
-// --- 4. COPY INVITE LINK (Clipboard) ---
 async function copyInviteLink() {
     const copyBtn = document.querySelectorAll('.form-card .google-btn')[0];
     const originalText = copyBtn.innerText;
@@ -463,7 +453,6 @@ async function copyInviteLink() {
     copyBtn.disabled = false;
 }
 
-// --- 5. SEND DIRECT INVITE (Email) ---
 async function sendInviteLink() {
     const inviteBtn = document.querySelector('.form-card .main-btn');
     const originalText = inviteBtn.innerText;
@@ -485,7 +474,6 @@ async function sendInviteLink() {
     inviteBtn.disabled = false;
 }
 
-// --- FETCH PENDING & SCANNED INVITES ---
 async function loadPendingInvites() {
     await ensureSupabase();
     const pendingList = document.getElementById('pending-list');
@@ -547,7 +535,6 @@ async function loadPendingInvites() {
     } catch (err) { console.error(err); }
 }
 
-// --- APPROVE THE EMPLOYEE ---
 async function approveInvite(inviteId, employeeName) {
     openConfirmModal("Approve Staff", `Are you sure you want to officially approve ${employeeName}'s face scan and add them to the team?`, async function() {
         await ensureSupabase();
@@ -579,7 +566,7 @@ async function approveInvite(inviteId, employeeName) {
                     name: inviteData.name,
                     face_data: inviteData.face_data,
                     face_image: inviteData.face_image,
-                    company_id: inviteData.company_id // Attach to boss's workspace
+                    company_id: inviteData.company_id
                 }]);
 
             if (insertError) throw insertError;
@@ -601,7 +588,6 @@ async function approveInvite(inviteId, employeeName) {
     });
 }
 
-// --- CUSTOM SUCCESS POPUP FOR ADD SECTION ---
 function showApprovalSuccessModal(name) {
     const modalDiv = document.createElement('div');
     modalDiv.className = 'modal-bg';
@@ -627,7 +613,6 @@ function showApprovalSuccessModal(name) {
     document.body.appendChild(modalDiv);
 }
 
-// --- REJECT / DELETE INVITE ---
 async function deleteInvite(inviteId, employeeName) {
     openConfirmModal("Delete Invite", `Are you sure you want to delete the invite for ${employeeName}?`, async function() {
         await ensureSupabase();
@@ -644,7 +629,6 @@ async function deleteInvite(inviteId, employeeName) {
     });
 }
 
-// --- EMPLOYEE JOIN PAGE (READING & ENFORCING LINK SECURITY) ---
 async function verifyInviteLink() {
     const loadingState = document.getElementById('loading-state');
     const successState = document.getElementById('success-state');
@@ -706,7 +690,6 @@ async function verifyInviteLink() {
     }
 }
 
-// --- START ONBOARDING CAMERA (JOIN.HTML) ---
 async function startFaceScan() {
     await ensureFaceApi();
     const startBtn = document.getElementById('start-btn');
@@ -761,7 +744,6 @@ async function startFaceScan() {
     }
 }
 
-// --- CAPTURE ONBOARDING FACE & SNAPSHOT ---
 async function captureFace() {
     await ensureSupabase();
     await ensureFaceApi();
@@ -828,7 +810,6 @@ async function captureFace() {
     }
 }
 
-// --- DASHBOARD LIVE ATTENDANCE ---
 async function loadTodayAttendance() {
     const activeList = document.getElementById('active-today-list');
     const pendingList = document.getElementById('pending-today-list');
@@ -881,7 +862,6 @@ async function loadTodayAttendance() {
             if (settings.check_in_end) globalEnd = settings.check_in_end;
         }
 
-        // --- GLOBAL HOLIDAY OVERRIDE ---
         if (globalHolidays.includes(todayStr)) {
             if (globalHolidayMsg) globalHolidayMsg.style.display = 'block';
             document.querySelectorAll('.status-section').forEach(el => el.style.display = 'none');
@@ -934,13 +914,11 @@ async function loadTodayAttendance() {
             } else {
                 let allowedEnd = globalEnd;
                 
-                // Exception evaluated first
                 if (exceptionsActive) {
                     const todayException = exceptions.find(ex => ex.date === todayStr);
                     if (todayException) allowedEnd = todayException.end;
                 }
                 
-                // Custom evaluated last (Overriding Exception)
                 if (customSchedulesActive) {
                     const myCustom = customSchedules.find(c => c.email === staff.email);
                     if (myCustom) allowedEnd = myCustom.end;
@@ -978,7 +956,6 @@ async function loadTodayAttendance() {
     }
 }
 
-// --- HELPER: CALCULATE AVERAGE CHECK-IN TIME ---
 function calculateAvgCheckInTime(logs) {
     if (!logs || logs.length === 0) return "--:--";
     let totalMins = 0;
@@ -1007,7 +984,6 @@ function calculateAvgCheckInTime(logs) {
     return `${String(displayH).padStart(2, '0')}:${String(avgM).padStart(2, '0')} ${ampm}`;
 }
 
-// --- SPREADSHEET: COMPLETE TEAM LEDGER ---
 async function loadTeamLedger() {
     const tableBody = document.getElementById('ledger-table-body');
     const leader = getLeader();
@@ -1016,8 +992,6 @@ async function loadTeamLedger() {
 
     try {
         const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
-        
-        // FIXED TABLE NAME: 'checkins'
         const { data: attendance } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
         const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
@@ -1091,7 +1065,6 @@ async function loadTeamLedger() {
     } catch (err) { console.error(err); }
 }
 
-// --- INDIVIDUAL ANALYTICS ---
 let analyticsDate = new Date(); 
 let currentViewedUser = null; 
 
@@ -1107,8 +1080,6 @@ async function loadIndividualAnalytics() {
 
     try {
         const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).maybeSingle();
-        
-        // FIXED TABLE NAME: 'checkins'
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
         const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
@@ -1145,21 +1116,17 @@ async function loadIndividualAnalytics() {
             }
         });
 
-        // --- PROPER TOTAL WORKING DAYS CALCULATION ---
         let workingDays = 0; 
         if (user && user.joined_date) {
             const joinedDate = parseLocal(user.joined_date);
-            // We loop from join date UP TO today (inclusive) to find out exactly how many days they were SUPPOSED to work
             for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
                 const dateStr = getUniversalDate(d);
-                // If it is NOT a holiday, then it counts as a required working day
                 if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) {
                     workingDays++;
                 }
             }
         }
         
-        // Failsafe
         if (workingDays === 0) workingDays = 1; 
 
         const totalChecks = validCheckinDates.size;
@@ -1174,7 +1141,6 @@ async function loadIndividualAnalytics() {
         const todayStr2 = getUniversalDate(today);
         const checkedInToday = validCheckinDates.has(todayStr2);
 
-        // --- NEW TODAY'S STATUS LOGIC (PRO UPGRADE) ---
         try {
             const labels = document.querySelectorAll('.stat-label');
             let statusLabelEl = Array.from(labels).find(el => el.innerText.trim().toUpperCase() === 'SYSTEM STATUS');
@@ -1218,13 +1184,11 @@ async function loadIndividualAnalytics() {
                             }
                         }
                         
-                        // Exception First
                         if (exceptionsActive) {
                             const todayException = exceptionsArray.find(ex => ex.date === todayStr2);
                             if (todayException) allowedEnd = todayException.end;
                         }
 
-                        // Custom Last (Override)
                         if (customSchedulesActive) {
                             const myCustom = customSchedulesArray.find(c => c.email === targetEmail);
                             if (myCustom) allowedEnd = myCustom.end;
@@ -1246,7 +1210,6 @@ async function loadIndividualAnalytics() {
                 }
             }
         } catch(e) { console.warn("Could not update system status UI"); }
-        // ----------------------------------------------
 
         const year = analyticsDate.getFullYear();
         const month = analyticsDate.getMonth();
@@ -1337,7 +1300,6 @@ async function loadIndividualAnalytics() {
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle} ${cursorStyle}" ${clickAttr}>${day}</div>`);
         }
 
-        // Inject legend for Personal Off if missing
         const legendContainers = document.querySelectorAll('.dashboard-content div[style*="justify-content: space-around"]');
         legendContainers.forEach(container => {
             container.style.flexWrap = 'wrap';
@@ -1409,7 +1371,6 @@ function changeMonth(offset) {
     loadIndividualAnalytics(); 
 }
 
-// --- SECURE PASSWORD REVEAL (STRICTLY ENFORCED) ---
 async function revealPassword() {
     if (!currentViewedUser) return;
     
@@ -1449,7 +1410,6 @@ async function revealPassword() {
     );
 }
 
-// --- EMAIL CREDENTIALS TO STAFF ---
 async function emailCredentials() {
     if (!currentViewedUser) return;
     
@@ -1491,7 +1451,6 @@ async function emailCredentials() {
     );
 }
 
-// --- RENAME EMPLOYEE ---
 async function renameEmployee() {
     if (!currentViewedUser) return;
     
@@ -1518,7 +1477,6 @@ async function renameEmployee() {
     );
 }
 
-// --- TEAM DIRECTORY ---
 async function loadTeamDirectory() {
     const directoryList = document.getElementById('directory-list');
     const leader = getLeader();
@@ -1547,10 +1505,6 @@ async function loadTeamDirectory() {
         });
     } catch (err) { console.error(err); }
 }
-
-// ==========================================
-// --- SETTINGS CALENDAR & RULES ENGINE ---
-// ==========================================
 
 let localHolidays = [];
 let customSchedules = []; 
@@ -1619,7 +1573,6 @@ function initializeSettingsCalendar() {
     }
 
     const nowStrict = new Date();
-    // Normalize to start of day to avoid timezone hour shifts
     nowStrict.setHours(0,0,0,0);
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -1640,7 +1593,6 @@ function initializeSettingsCalendar() {
         
         const isToday = (dateStr === getUniversalDate(nowStrict));
         
-        // Prevent editing past days relative to current date
         const isPastDay = currentIterationDate < nowStrict;
         const isHoliday = localHolidays.includes(dateStr);
 
@@ -1857,7 +1809,6 @@ async function loadSettings() {
     }
 }
 
-// THE AUTO-SAVE ENGINE
 async function saveSettings() {
     const leader = getLeader();
     if (!leader) return;
@@ -1881,15 +1832,12 @@ async function saveSettings() {
 
         const { data: existingData } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
 
-        // Start with a blank payload containing only the company ID
         let payload = { company_id: safeCompanyId };
 
-        // If existing data is found, copy it into our payload so we don't accidentally wipe fields we aren't viewing
         if (existingData) {
             payload = { ...existingData };
         }
 
-        // 1. ONLY update Calendar & Parameter data if we are actively viewing the Settings page
         if (document.getElementById('check-in-start')) {
             payload.check_in_start = document.getElementById('check-in-start').value;
             payload.check_in_end = document.getElementById('check-in-end').value;
@@ -1916,12 +1864,10 @@ async function saveSettings() {
             payload.custom_schedules = JSON.stringify({ active: isCtActive, data: customSchedules });
         }
 
-        // 2. ONLY update GPS Locations data if we are actively viewing the Locations page
         if (document.getElementById('locations-list-container')) {
             payload.locations = JSON.stringify(workspaceLocations);
         }
 
-        // Push the merged payload back to Supabase
         if (existingData) {
             await supabaseClient.from('settings').update(payload).eq('id', existingData.id);
         } else {
@@ -1945,7 +1891,6 @@ async function saveSettings() {
     }
 }
 
-// --- EXCEPTION DATES LOGIC ---
 function addException() {
     const list = document.getElementById('exception-list');
     if (!list) return;
@@ -1979,7 +1924,6 @@ function updateExceptionCount() {
     }
 }
 
-// --- CUSTOM EMPLOYEE TIME LOGIC ---
 async function openCustomTimeModal(editEmail = null) {
     const leader = getLeader();
     if (!leader || !supabaseClient) return;
@@ -2078,7 +2022,6 @@ function renderCustomTimeList() {
     });
 }
 
-// --- DAILY PIN GENERATOR ---
 async function loadTodayPIN() {
     const pinDisplay = document.getElementById('live-pin-display');
     const activeState = document.getElementById('pin-active-state');
@@ -2091,7 +2034,6 @@ async function loadTodayPIN() {
     try {
         const { data } = await supabaseClient.from('settings').select('daily_pin, require_pin').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
-        // Ensure we are on the page that actually has these elements before trying to modify them
         if (activeState && disabledState && pinDisplay) {
             if (data && data.require_pin) {
                 activeState.style.display = "block";
@@ -2107,7 +2049,6 @@ async function loadTodayPIN() {
                         savedDate = parts[0];
                         pinValue = parts[1];
                     } else {
-                        // Fallback logic for any PINs saved before this strict update
                         pinValue = data.daily_pin;
                         savedDate = localStorage.getItem('last_pin_date_' + leader.company_id) || "";
                     }
@@ -2159,7 +2100,6 @@ async function generateNewPIN() {
     } catch (err) { console.error(err); }
 }
 
-// --- LEAFLET MAP & GEOFENCING ENGINE ---
 let map = null;
 let geofenceCircle = null;
 let mapSavedLat = null;
@@ -2241,7 +2181,6 @@ function handleGPSToggle() {
     }
     saveSettings(); 
     
-    // Auto-redirect ONLY if toggled ON and no Main Location map data is found
     if (isChecked) {
         if (typeof mapSavedLat !== 'undefined' && !mapSavedLat) {
             window.location.href = 'leader-locations.html';
@@ -2335,10 +2274,6 @@ function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
     return R * c; 
 }
 
-// ==========================================
-// --- STAFF PORTAL & DIRECT ID MAPPING ---
-// ==========================================
-
 let currentStaff = null; 
 let scannerInterval = null;
 let staffAnalyticsDate = new Date();
@@ -2421,281 +2356,473 @@ async function loadStaffDashboard() {
     }
 }
 
+function formatTime12(timeStr) {
+    const match = timeStr.match(/(\d+):(\d+)/);
+    if (!match) return timeStr;
+    let h = parseInt(match[1]);
+    const m = match[2];
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    if (h === 0) h = 12;
+    return `${h}:${m} ${ampm}`;
+}
+
 async function loadStaffRecords() {
     await ensureSupabase();
     if (!currentStaff || !supabaseClient) return;
 
+    // 1. FETCH CLOUD DATA
+    let safeLogs = [];
+    let settings = null;
     try {
-        const targetEmail = currentStaff.email;
-        const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
+        const { data: logsData } = await supabaseClient.from('checkins').select('*').eq('user_email', currentStaff.email);
+        const { data: settingsData } = await supabaseClient.from('settings').select('*').eq('company_id', currentStaff.company_id).limit(1).maybeSingle();
+        safeLogs = Array.isArray(logsData) ? logsData : [];
+        settings = settingsData;
+    } catch (e) {
+        console.error("Error fetching staff data:", e);
+    }
 
-        const { data: logs, error: logsErr } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail).eq('company_id', safeCompanyId);
-        if (logsErr) console.error("Logs error:", logsErr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-        const { data: settings, error: setErr } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
-        if (setErr) console.error("Settings error:", setErr);
+    // 2. PARSE SETTINGS & SHIFT LOCATIONS
+    let holidaysArray = [];
+    let customSchedules = [];
+    let exceptions = [];
+    let customSchedulesActive = true;
+    let exceptionsActive = true;
+    let globalStart = "09:00";
+    let globalEnd = "10:00";
+    
+    let assignedZone = "Main Campus";
+    let isGpsExempt = false;
 
-        const today = new Date();
-        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        
-        let holidaysArray = [];
-        let customSchedules = [];
-        let exceptions = [];
-        let customSchedulesActive = true;
-        let exceptionsActive = true;
-        let globalEnd = "10:00";
-        let globalStart = "09:00";
-
-        if (settings) {
-            if (settings.holidays) try { holidaysArray = JSON.parse(settings.holidays); } catch(e){}
-            
-            if (settings.custom_schedules) {
-                try {
-                    let parsed = JSON.parse(settings.custom_schedules);
-                    if (Array.isArray(parsed)) { customSchedules = parsed; }
-                    else { customSchedulesActive = parsed.active; customSchedules = parsed.data || []; }
-                } catch(e){}
-            }
-            
-            if (settings.exceptions) {
-                try {
-                    let parsed = JSON.parse(settings.exceptions);
-                    if (Array.isArray(parsed)) { exceptions = parsed; }
-                    else { exceptionsActive = parsed.active; exceptions = parsed.data || []; }
-                } catch(e){}
-            }
-
-            if (settings.check_in_end) globalEnd = settings.check_in_end;
-            if (settings.check_in_start) globalStart = settings.check_in_start;
+    if (settings) {
+        if (settings.holidays) {
+            try { holidaysArray = JSON.parse(settings.holidays); } catch(e){}
+            if (!Array.isArray(holidaysArray)) holidaysArray = [];
         }
-
-        if (!Array.isArray(holidaysArray)) holidaysArray = [];
-
-        let safeLogs = Array.isArray(logs) ? logs : [];
-        let validCheckinDates = new Set();
-        let personalHolidaysSet = new Set();
-        
-        safeLogs.forEach(log => {
-            if (log.status === 'Holiday/Off') {
-                personalHolidaysSet.add(log.date);
-            } else if (log.status === 'Present') {
-                const logDate = parseLocal(log.date);
-                if (logDate <= today) validCheckinDates.add(log.date);
-            }
-        });
-
-        // CALCULATE LEDGER STATS SAFELY
-        let workingDays = 0;
-        if (currentStaff.joined_date) {
-            const joinedDate = parseLocal(currentStaff.joined_date);
-            for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
-                const dateStr = getUniversalDate(d);
-                if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) workingDays++;
-            }
-        }
-        if (workingDays === 0) workingDays = 1; 
-
-        const totalChecks = validCheckinDates.size;
-        
-        let percent = Math.round((totalChecks / workingDays) * 100);
-        if (percent > 100) percent = 100;
-        
-        const todayStr2 = getUniversalDate(today);
-        const isHoliday = holidaysArray.includes(todayStr2) || personalHolidaysSet.has(todayStr2);
-        const checkedInToday = validCheckinDates.has(todayStr2);
-
-        let exceptionText = "None scheduled";
-        if (settings && settings.exceptions) {
-            let excArray = [];
-            let isExActive = true;
-            try { 
-                let parsed = JSON.parse(settings.exceptions); 
-                if (Array.isArray(parsed)) excArray = parsed;
-                else { isExActive = parsed.active; excArray = parsed.data || []; }
+        if (settings.custom_schedules) {
+            try {
+                let parsed = JSON.parse(settings.custom_schedules);
+                if (Array.isArray(parsed)) customSchedules = parsed;
+                else { customSchedulesActive = parsed.active; customSchedules = parsed.data || []; }
             } catch(e){}
-            
-            if (isExActive && Array.isArray(excArray)) {
-                const futureExc = excArray.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
-                if (futureExc.length > 0) {
-                    const next = futureExc[0]; const parts = next.date.split('-');
-                    exceptionText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${next.start} - ${next.end})`;
-                }
-            } else if (!isExActive) {
-                exceptionText = "Exceptions Paused";
-            }
         }
-
-        // --- DIRECT DOM MAPPING ---
-        try {
-            let displayStart = globalStart;
-            let displayEnd = globalEnd;
-            
-            if (customSchedulesActive) {
-                const myCustom = customSchedules.find(c => c.email === currentStaff.email);
-                if (myCustom) {
-                    displayStart = myCustom.start;
-                    displayEnd = myCustom.end;
-                }
-            }
-            
-            updateElementSafe('staff-window-display', `${displayStart} - ${displayEnd}`);
-            updateElementSafe('staff-exception-display', exceptionText);
-
-            const isGpsOn = settings && settings.require_gps;
-            updateElementSafe('staff-gps-display', isGpsOn ? "ENABLED" : "DISABLED", isGpsOn ? "#4ade80" : "#888", isGpsOn ? "#dcfce7" : "#e8e8e8");
-
-            const isPinOn = settings && settings.require_pin;
-            updateElementSafe('staff-pin-display', isPinOn ? "ENABLED" : "DISABLED", isPinOn ? "#4ade80" : "#888", isPinOn ? "#dcfce7" : "#e8e8e8");
-
-            updateElementSafe('staff-ledger-name', currentStaff.name || "Staff");
-            updateElementSafe('staff-ledger-role', currentStaff.role || "Unknown Role");
-            updateElementSafe('staff-ledger-joined', currentStaff.joined_date || "N/A");
-            
-            const checksEl = document.getElementById('staff-ledger-checkins') || document.getElementById('total-checkins-value');
-            if(checksEl) { checksEl.innerText = `${totalChecks} / ${workingDays}`; checksEl.style.color = "#4ade80"; }
-
-            const avgEl = document.getElementById('staff-ledger-avg') || document.getElementById('avg-in-time');
-            if(avgEl) avgEl.innerText = calculateAvgCheckInTime(safeLogs.filter(l => l.status === 'Present'));
-
-            const percentBox = document.getElementById('staff-ledger-percent') || document.getElementById('attendance-percent-box');
-            if(percentBox) {
-                percentBox.innerText = `${percent}%`;
-                percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
-            }
-
-            const statusBox = document.getElementById('staff-ledger-status') || document.getElementById('employee-status-box');
-            if (statusBox) {
-                if (isHoliday) { statusBox.innerText = "Holiday/Off"; statusBox.style.color = "#a0a0a0"; }
-                else if (checkedInToday) { statusBox.innerText = "Active"; statusBox.style.color = "#4ade80"; }
-                else { statusBox.innerText = "Absent"; statusBox.style.color = "#ef4444"; }
-            }
-
-            const dashHeader = document.querySelector('.dash-header h2');
-            if (dashHeader && dashHeader.innerText.includes("Good Morning")) {
-                const shortName = currentStaff.name ? currentStaff.name.split(' ')[0] : 'Staff';
-                dashHeader.innerText = `Good Morning, ${shortName}`;
-            }
-            
-            updateElementSafe('status-avatar', currentStaff.name ? currentStaff.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase() : '--');
-
-            const statusCard = document.getElementById('status-card');
-            const checkInBtn = document.getElementById('check-in-btn');
-            if (statusCard && checkInBtn) {
-                if (isHoliday) {
-                    checkInBtn.style.display = "none";
-                    updateElementSafe('status-text', "Holiday / Off");
-                } else if (checkedInToday) {
-                    statusCard.innerHTML = `<div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div><h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>`;
-                    statusCard.classList.remove('ghost-theme');
-                    statusCard.style.border = '1px solid #e0e0e0';
-                    statusCard.style.backgroundColor = '#ffffff';
-                } else {
-                    updateElementSafe('status-text', "Pending Check-in");
-                }
-            }
-
-            const nextHolidayBox = document.getElementById('staff-next-holiday');
-            if (nextHolidayBox) {
-                const upcoming = holidaysArray.filter(d => new Date(d) >= today).sort();
-                if (upcoming.length > 0) {
-                    const parts = upcoming[0].split('-');
-                    nextHolidayBox.innerText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])}, ${parts[0]}`;
-                } else {
-                    nextHolidayBox.innerText = "No upcoming holidays";
-                }
-            }
-        } catch (e) { console.warn("DOM mapping error"); }
-
-        const calendarGrid = document.getElementById('staff-analytics-calendar') || document.getElementById('analytics-calendar');
-        if (calendarGrid) {
-            const year = staffAnalyticsDate.getFullYear();
-            const month = staffAnalyticsDate.getMonth();
-            
-            const empJoinedDate = currentStaff && currentStaff.joined_date ? parseLocal(currentStaff.joined_date) : new Date();
-
-            const monthTitle = document.getElementById('cal-month-display') || document.getElementById('calendar-month-title');
-            if (monthTitle) {
-                let prevDisabled = false;
-                if (year < empJoinedDate.getFullYear() || (year === empJoinedDate.getFullYear() && month <= empJoinedDate.getMonth())) {
-                    prevDisabled = true;
-                }
-
-                const prevBtn = document.getElementById('staff-cal-prev');
-                if (prevBtn) {
-                    if (prevDisabled) {
-                        prevBtn.disabled = true;
-                        prevBtn.style.opacity = '0.3';
-                        prevBtn.style.cursor = 'not-allowed';
-                    } else {
-                        prevBtn.disabled = false;
-                        prevBtn.style.opacity = '1';
-                        prevBtn.style.cursor = 'pointer';
+        if (settings.exceptions) {
+            try {
+                let parsed = JSON.parse(settings.exceptions);
+                if (Array.isArray(parsed)) exceptions = parsed;
+                else { exceptionsActive = parsed.active; exceptions = parsed.data || []; }
+            } catch(e){}
+        }
+        if (settings.check_in_start) globalStart = settings.check_in_start;
+        if (settings.check_in_end) globalEnd = settings.check_in_end;
+        
+        if (settings.locations && settings.require_gps) {
+            try {
+                const locations = JSON.parse(settings.locations);
+                let userLoc = locations.find(loc => loc.staff && loc.staff.includes(currentStaff.email));
+                if (!userLoc) userLoc = locations.find(loc => loc.id === 'main') || locations[0];
+                
+                if (userLoc) {
+                    assignedZone = userLoc.name;
+                    if (userLoc.id === 'exempt' || userLoc.isExempt) {
+                        isGpsExempt = true;
+                        assignedZone = "GPS Exempt";
                     }
                 }
-                
-                if (document.getElementById('cal-month-display')) {
-                    document.getElementById('cal-month-display').innerText = `${monthNames[month]} ${year}`;
-                }
-            }
+            } catch(e) {}
+        } else if (!settings.require_gps) {
+            assignedZone = "GPS Disabled (Anywhere)";
+        }
+    }
 
-            calendarGrid.innerHTML = `
-                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
-                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">M</div>
-                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">T</div>
-                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">W</div>
-                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">T</div>
-                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">F</div>
-                <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
-            `;
+    // 3. PROCESS LOGS
+    let validCheckinDates = new Set();
+    let personalHolidaysSet = new Set();
+    
+    safeLogs.forEach(log => {
+        if (log.status === 'Holiday/Off') {
+            personalHolidaysSet.add(log.date);
+        } else if (log.status === 'Present') {
+            const logDate = parseLocal(log.date);
+            if (logDate <= today) validCheckinDates.add(log.date);
+        }
+    });
 
-            const firstDayIndex = new Date(year, month, 1).getDay();
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
+    // 4. CALCULATE LEDGER STATS
+    let workingDays = 0;
+    const joinedDate = currentStaff.joined_date ? parseLocal(currentStaff.joined_date) : new Date();
+    for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
+        const dateStr = getUniversalDate(d);
+        if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) workingDays++;
+    }
+    if (workingDays === 0) workingDays = 1; 
 
-            for (let i = 0; i < firstDayIndex; i++) {
-                calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
-            }
+    const totalChecks = validCheckinDates.size;
+    let percent = Math.round((totalChecks / workingDays) * 100);
+    if (percent > 100) percent = 100;
+    
+    const todayStr2 = getUniversalDate(today);
+    const isHoliday = holidaysArray.includes(todayStr2) || personalHolidaysSet.has(todayStr2);
+    const checkedInToday = validCheckinDates.has(todayStr2);
 
-            const nowStrict = new Date();
-            nowStrict.setHours(0,0,0,0);
+    // 5. CALCULATE TIME WINDOW
+    let displayStart = globalStart;
+    let displayEnd = globalEnd;
+    let exceptionText = "None scheduled";
+    
+    if (exceptionsActive && Array.isArray(exceptions)) {
+        const futureExc = exceptions.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
+        if (futureExc.length > 0) {
+            const next = futureExc[0]; const parts = next.date.split('-');
+            exceptionText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${formatTime12(next.start)} - ${formatTime12(next.end)})`;
+        }
+        
+        const todayException = exceptions.find(ex => ex.date === todayStr2);
+        if (todayException) {
+            displayStart = todayException.start;
+            displayEnd = todayException.end;
+        }
+    } else if (!exceptionsActive) {
+        exceptionText = "Exceptions Paused";
+    }
+    
+    if (customSchedulesActive) {
+        const myCustom = customSchedules.find(c => c.email === currentStaff.email);
+        if (myCustom) {
+            displayStart = myCustom.start;
+            displayEnd = myCustom.end;
+        }
+    }
 
-            for (let day = 1; day <= daysInMonth; day++) {
-                const currentIterationDate = new Date(year, month, day);
-                const dateStrIteration = getUniversalDate(currentIterationDate);
-                const wasPresent = validCheckinDates.has(dateStrIteration);
-                const isPersonalHoliday = personalHolidaysSet.has(dateStrIteration);
-                const isCommonHoliday = holidaysArray.includes(dateStrIteration);
-                
-                let inlineStyle = CAL_STYLES.default;
-                
-                if (currentIterationDate < empJoinedDate) {
-                    inlineStyle = CAL_STYLES.disabled;
-                } else if (isCommonHoliday) {
-                    inlineStyle = CAL_STYLES.holiday;
-                } else if (isPersonalHoliday) {
-                    inlineStyle = CAL_STYLES.personalHoliday;
-                } else if (currentIterationDate > today) {
-                    inlineStyle = CAL_STYLES.default;
-                } else if (wasPresent) { 
-                    inlineStyle = CAL_STYLES.present; 
-                } else { 
-                    inlineStyle = CAL_STYLES.absent; 
-                }
-                
-                calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle}">${day}</div>`);
-            }
-
-            // Inject legend for Personal Off if missing
-            const legendContainers = document.querySelectorAll('#view-records div[style*="justify-content: space-around"]');
-            legendContainers.forEach(container => {
-                container.style.flexWrap = 'wrap';
-                container.style.rowGap = '8px';
-                if (!container.innerHTML.includes("Personal Off")) {
-                    container.insertAdjacentHTML('beforeend', `<span><span style="display:inline-block; width:10px; height:10px; border:2px solid #1a1a1a; background-color:#ffffff; margin-right:4px; border-radius:2px; vertical-align:-1px; box-sizing: border-box;"></span>Personal Off</span>`);
+    // --- 6. TOP 5 HOLIDAY TRACKER ---
+    const holidaysListEl = document.getElementById('staff-upcoming-holidays-list');
+    if (holidaysListEl) {
+        const allFutureHolidays = [];
+        holidaysArray.forEach(d => {
+            if (new Date(d) >= today) allFutureHolidays.push({ date: d, type: 'Common' });
+        });
+        
+        const { data: futurePersonalLogs } = await supabaseClient
+            .from('checkins')
+            .select('date')
+            .eq('user_email', currentStaff.email)
+            .eq('status', 'Holiday/Off');
+            
+        if (futurePersonalLogs) {
+            futurePersonalLogs.forEach(l => {
+                if (new Date(l.date) >= today && !allFutureHolidays.find(f => f.date === l.date)) {
+                    allFutureHolidays.push({ date: l.date, type: 'Special' });
                 }
             });
         }
+        
+        allFutureHolidays.sort((a,b) => new Date(a.date) - new Date(b.date));
+        const nextFive = allFutureHolidays.slice(0, 5);
+        
+        holidaysListEl.innerHTML = "";
+        if (nextFive.length > 0) {
+            nextFive.forEach(h => {
+                const parts = h.date.split('-');
+                const formattedDate = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])}, ${parts[0]}`;
+                
+                if (h.type === 'Special') {
+                    holidaysListEl.insertAdjacentHTML('beforeend', `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #fffbeb; border-left: 3px solid #f59e0b; border-radius: 4px; margin-bottom: 6px;">
+                            <span style="font-size: 13px; color: #1a1a1a; font-weight: 600;">${formattedDate}</span>
+                            <span style="font-size: 10px; font-weight: bold; color: #d97706; background: #fef3c7; padding: 4px 8px; border-radius: 4px; letter-spacing: 0.5px;">★ SPECIAL / OFF</span>
+                        </div>
+                    `);
+                } else {
+                    holidaysListEl.insertAdjacentHTML('beforeend', `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #ffffff; border: 1px solid #eaeaea; border-left: 3px solid #1a1a1a; border-radius: 4px; margin-bottom: 6px;">
+                            <span style="font-size: 13px; color: #555; font-weight: 500;">${formattedDate}</span>
+                            <span style="font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Company Holiday</span>
+                        </div>
+                    `);
+                }
+            });
+        } else {
+            holidaysListEl.innerHTML = `<p style="margin: 0; font-size: 13px; color: #888; font-style: italic;">No upcoming holidays</p>`;
+        }
+    }
 
-    } catch (err) { console.error("Error loading staff ledger:", err); }
+    // --- DIRECT DOM MAPPING & LIVE COUNTDOWN ---
+    try {
+        const isGpsOn = settings && settings.require_gps;
+        updateElementSafe('staff-gps-display', isGpsOn ? "ENABLED" : "DISABLED", isGpsOn ? "#4ade80" : "#888", isGpsOn ? "#dcfce7" : "#e8e8e8");
+
+        const isPinOn = settings && settings.require_pin;
+        updateElementSafe('staff-pin-display', isPinOn ? "ENABLED" : "DISABLED", isPinOn ? "#4ade80" : "#888", isPinOn ? "#dcfce7" : "#e8e8e8");
+
+        updateElementSafe('staff-window-settings-display', `${formatTime12(displayStart)} - ${formatTime12(displayEnd)}`);
+        updateElementSafe('staff-exception-display', exceptionText);
+        
+        updateElementSafe('staff-ledger-name', currentStaff.name || "Staff");
+        updateElementSafe('staff-ledger-role', currentStaff.role || "Unknown Role");
+        updateElementSafe('staff-ledger-joined', currentStaff.joined_date || "N/A");
+        
+        const checksEl = document.getElementById('staff-ledger-checkins');
+        if(checksEl) { checksEl.innerText = `${totalChecks} / ${workingDays}`; checksEl.style.color = "#4ade80"; }
+
+        const avgEl = document.getElementById('staff-ledger-avg');
+        if(avgEl) avgEl.innerText = calculateAvgCheckInTime(safeLogs.filter(l => l.status === 'Present'));
+
+        const percentBox = document.getElementById('staff-ledger-percent');
+        if(percentBox) {
+            percentBox.innerText = `${percent}%`;
+            percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
+        }
+
+        const statusBox = document.getElementById('staff-ledger-status');
+        if (statusBox) {
+            if (isHoliday) { statusBox.innerText = "Holiday/Off"; statusBox.style.color = "#a0a0a0"; }
+            else if (checkedInToday) { statusBox.innerText = "Active"; statusBox.style.color = "#4ade80"; }
+            else { statusBox.innerText = "Absent"; statusBox.style.color = "#ef4444"; }
+        }
+
+        const dashHeader = document.querySelector('.dash-header h2');
+        if (dashHeader && dashHeader.innerText.includes("Good Morning")) {
+            const shortName = currentStaff.name ? currentStaff.name.split(' ')[0] : 'Staff';
+            dashHeader.innerText = `Good Morning, ${shortName}`;
+        }
+        
+        updateElementSafe('status-avatar', currentStaff.name ? currentStaff.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase() : '--');
+
+        // HOME TAB DYNAMIC LOGIC
+        const statusCard = document.getElementById('status-card');
+        const checkInBtn = document.getElementById('check-in-btn');
+        const shiftPanel = document.getElementById('shift-details-panel');
+        const countdownContainer = document.getElementById('home-countdown-container');
+        const countdownTimer = document.getElementById('home-countdown-timer');
+        
+        if (window.staffHomeTimer) clearInterval(window.staffHomeTimer);
+
+        if (statusCard && checkInBtn) {
+            if (isHoliday) {
+                checkInBtn.style.display = "none";
+                if(shiftPanel) shiftPanel.style.display = "none";
+                updateElementSafe('status-text', "Holiday / Off");
+            } else if (checkedInToday) {
+                statusCard.innerHTML = `<div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div><h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>`;
+                statusCard.classList.remove('ghost-theme');
+                statusCard.style.border = '1px solid #e0e0e0';
+                statusCard.style.backgroundColor = '#ffffff';
+                if(shiftPanel) shiftPanel.style.display = "none";
+            } else {
+                updateElementSafe('status-text', "Pending Check-in");
+                checkInBtn.style.display = "block";
+                
+                if (shiftPanel) {
+                    shiftPanel.style.display = 'block';
+                    updateElementSafe('home-window-display', `${formatTime12(displayStart)} - ${formatTime12(displayEnd)}`);
+                    updateElementSafe('home-zone-display', assignedZone);
+                    
+                    const now = new Date();
+                    const parseTimeToDate = (timeString) => {
+                        const [hours, minutes] = timeString.split(':');
+                        const d = new Date(now);
+                        d.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+                        return d;
+                    };
+
+                    const startTarget = parseTimeToDate(displayStart);
+                    const endTarget = parseTimeToDate(displayEnd);
+
+                    window.staffHomeTimer = setInterval(() => {
+                        const current = new Date();
+                        
+                        if (current >= startTarget && current <= endTarget) {
+                            countdownContainer.style.display = 'block';
+                            const diff = endTarget - current;
+                            
+                            const h = Math.floor(diff / (1000 * 60 * 60));
+                            const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                            const s = Math.floor((diff % (1000 * 60)) / 1000);
+                            
+                            countdownTimer.innerText = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                            countdownTimer.style.color = "#1a1a1a";
+                            
+                            checkInBtn.disabled = false;
+                            checkInBtn.style.opacity = '1';
+                            checkInBtn.innerText = "Authenticate & Check In";
+                            
+                        } else if (current < startTarget) {
+                            countdownContainer.style.display = 'none';
+                            checkInBtn.disabled = true;
+                            checkInBtn.style.opacity = '0.5';
+                            checkInBtn.innerText = `Window opens at ${formatTime12(displayStart)}`;
+                        } else {
+                            countdownContainer.style.display = 'none';
+                            checkInBtn.disabled = true;
+                            checkInBtn.style.opacity = '0.5';
+                            checkInBtn.innerText = "Window Closed";
+                            updateElementSafe('status-text', "Absent");
+                            clearInterval(window.staffHomeTimer);
+                        }
+                    }, 1000);
+                }
+            }
+        }
+
+        // --- 7-DAY WEEKLY PULSE MAPPER ---
+        const pulseGrid = document.getElementById('weekly-pulse-grid');
+        const pulseMotivation = document.getElementById('weekly-motivation-msg');
+        if (pulseGrid) {
+            pulseGrid.innerHTML = "";
+            const currentDayOfWeek = today.getDay(); 
+            const startOfWeek = new Date(today);
+            startOfWeek.setDate(today.getDate() - currentDayOfWeek);
+            
+            const dayLetters = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+            let presentCountThisWeek = 0;
+            let missedCountThisWeek = 0;
+            
+            for (let i = 0; i < 7; i++) {
+                const loopDate = new Date(startOfWeek);
+                loopDate.setDate(startOfWeek.getDate() + i);
+                const loopDateStr = getUniversalDate(loopDate);
+                
+                let bgCol = "transparent";
+                let textCol = "#888";
+                let borCol = "#eaeaea";
+                let iconHtml = loopDate.getDate();
+                
+                if (loopDate < joinedDate) {
+                    bgCol = "transparent"; borCol = "#f0f0f0"; textCol = "#ccc";
+                } else if (validCheckinDates.has(loopDateStr)) {
+                    bgCol = "#4ade80"; borCol = "#4ade80"; textCol = "#1a1a1a";
+                    iconHtml = "✓";
+                    presentCountThisWeek++;
+                } else if (holidaysArray.includes(loopDateStr) || personalHolidaysSet.has(loopDateStr)) {
+                    bgCol = "#1a1a1a"; borCol = "#1a1a1a"; textCol = "#ffffff";
+                    iconHtml = "■";
+                } else if (loopDate < today) {
+                    bgCol = "transparent"; borCol = "#ef4444"; textCol = "#ef4444";
+                    iconHtml = "×";
+                    missedCountThisWeek++;
+                } else {
+                    bgCol = "transparent"; borCol = "#eaeaea"; textCol = "#888";
+                }
+                
+                const isTodayCircle = (loopDateStr === getUniversalDate(today)) ? 'border: 2px solid #1a1a1a; transform: scale(1.1); font-weight: 800;' : `border: 1px solid ${borCol};`;
+                
+                pulseGrid.insertAdjacentHTML('beforeend', `
+                    <div style="display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1;">
+                        <span style="font-size: 9px; color: #888; font-weight: 600;">${dayLetters[i]}</span>
+                        <div style="width: 28px; height: 28px; border-radius: 50%; background-color: ${bgCol}; display: flex; justify-content: center; align-items: center; font-size: 11px; font-weight: bold; color: ${textCol}; transition: all 0.2s; ${isTodayCircle}">
+                            ${iconHtml}
+                        </div>
+                    </div>
+                `);
+            }
+
+            if (pulseMotivation) {
+                if (presentCountThisWeek === 0 && missedCountThisWeek === 0) {
+                    pulseMotivation.innerText = "Fresh week! 🚀";
+                    pulseMotivation.style.color = "#888";
+                    pulseMotivation.style.background = "#f0f0f0";
+                } else if (missedCountThisWeek > 0) {
+                    pulseMotivation.innerText = "Bounce back! 💪";
+                    pulseMotivation.style.color = "#ef4444";
+                    pulseMotivation.style.background = "#fef2f2";
+                } else {
+                    pulseMotivation.innerText = `${presentCountThisWeek}-Day Streak 🔥`;
+                    pulseMotivation.style.color = "#4ade80";
+                    pulseMotivation.style.background = "#dcfce7";
+                }
+            }
+        }
+
+    } catch (e) { console.warn("DOM mapping error"); }
+
+    const calendarGrid = document.getElementById('staff-analytics-calendar');
+    if (calendarGrid) {
+        const year = staffAnalyticsDate.getFullYear();
+        const month = staffAnalyticsDate.getMonth();
+
+        const monthTitle = document.getElementById('cal-month-display');
+        if (monthTitle) {
+            let prevDisabled = false;
+            if (year < joinedDate.getFullYear() || (year === joinedDate.getFullYear() && month <= joinedDate.getMonth())) {
+                prevDisabled = true;
+            }
+
+            const prevBtn = document.getElementById('staff-cal-prev');
+            if (prevBtn) {
+                if (prevDisabled) {
+                    prevBtn.disabled = true;
+                    prevBtn.style.opacity = '0.3';
+                    prevBtn.style.cursor = 'not-allowed';
+                } else {
+                    prevBtn.disabled = false;
+                    prevBtn.style.opacity = '1';
+                    prevBtn.style.cursor = 'pointer';
+                }
+            }
+            
+            monthTitle.innerText = `${monthNames[month]} ${year}`;
+        }
+
+        calendarGrid.innerHTML = `
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">M</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">T</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">W</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">T</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">F</div>
+            <div class="cal-day" style="border: none; font-weight: bold; color: #888; display: flex; justify-content: center; align-items: center; aspect-ratio: 1; font-size: 12px;">S</div>
+        `;
+
+        const firstDayIndex = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        for (let i = 0; i < firstDayIndex; i++) {
+            calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
+        }
+
+        const nowStrict = new Date();
+        nowStrict.setHours(0,0,0,0);
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            const currentIterationDate = new Date(year, month, day);
+            const dateStrIteration = getUniversalDate(currentIterationDate);
+            const wasPresent = validCheckinDates.has(dateStrIteration);
+            const isPersonalHoliday = personalHolidaysSet.has(dateStrIteration);
+            const isCommonHoliday = holidaysArray.includes(dateStrIteration);
+            
+            let inlineStyle = CAL_STYLES.default;
+            
+            if (currentIterationDate < joinedDate) {
+                inlineStyle = CAL_STYLES.disabled;
+            } else if (isCommonHoliday) {
+                inlineStyle = CAL_STYLES.holiday;
+            } else if (isPersonalHoliday) {
+                inlineStyle = CAL_STYLES.personalHoliday;
+            } else if (currentIterationDate > today) {
+                inlineStyle = CAL_STYLES.default;
+            } else if (wasPresent) { 
+                inlineStyle = CAL_STYLES.present; 
+            } else { 
+                inlineStyle = CAL_STYLES.absent; 
+            }
+            
+            calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle}">${day}</div>`);
+        }
+
+        const legendContainers = document.querySelectorAll('#view-records div[style*="justify-content: space-around"]');
+        legendContainers.forEach(container => {
+            container.style.flexWrap = 'wrap';
+            container.style.rowGap = '8px';
+            if (!container.innerHTML.includes("Personal Off")) {
+                container.insertAdjacentHTML('beforeend', `<span><span style="display:inline-block; width:10px; height:10px; border:2px solid #1a1a1a; background-color:#ffffff; margin-right:4px; border-radius:2px; vertical-align:-1px; box-sizing: border-box;"></span>Personal Off</span>`);
+            }
+        });
+    }
 }
 
 function changeStaffMonth(offset) {
@@ -2797,7 +2924,6 @@ async function startDailyScanner() {
             }
         }
 
-        // 1. Exceptions evaluated first
         if (exceptionsActive) {
             const todayException = exceptions.find(ex => ex.date === todayDateStr);
             if (todayException) {
@@ -2806,7 +2932,6 @@ async function startDailyScanner() {
             }
         }
 
-        // 2. Custom Schedules evaluated last (Overrides Exceptions)
         if (customSchedulesActive) {
             const myCustom = customSchedules.find(c => c.email === currentStaff.email);
             if (myCustom) {
@@ -2820,7 +2945,7 @@ async function startDailyScanner() {
         const currentTime = `${currentHours}:${currentMinutes}`;
 
         if (currentTime < allowedStart || currentTime > allowedEnd) {
-            openInfoModal("Scanner Locked", `You can only check in between ${allowedStart} and ${allowedEnd}.`);
+            openInfoModal("Scanner Locked", `You can only check in between ${formatTime12(allowedStart)} and ${formatTime12(allowedEnd)}.`);
             return; 
         }
 
@@ -2862,10 +2987,8 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
         try { if (rules.locations) locations = JSON.parse(rules.locations); } catch(e){}
 
         if (locations && locations.length > 0) {
-            // Check if user is explicitly assigned to a custom location
             let userLocation = locations.find(loc => loc.staff && loc.staff.includes(currentStaff.email));
             
-            // If not found, default to Main Campus
             if (!userLocation) userLocation = locations.find(loc => loc.id === 'main') || locations[0];
             
             if (userLocation.id === 'exempt' || userLocation.isExempt) {
@@ -2876,7 +2999,6 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
                 targetRadius = userLocation.radius || 150;
             }
         } else {
-            // Legacy Fallback for backwards compatibility
             targetLat = rules.office_lat;
             targetLng = rules.office_lng;
             targetRadius = rules.office_radius || 150;
@@ -2987,6 +3109,9 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
                         statusCard.style.border = '1px solid #e0e0e0';
                         statusCard.style.backgroundColor = '#ffffff';
                         
+                        const shiftPanel = document.getElementById('shift-details-panel');
+                        if(shiftPanel) shiftPanel.style.display = "none";
+                        
                         loadStaffRecords();
                     });
                 } else {
@@ -3007,7 +3132,6 @@ function bindTimePickerFix() {
     if(t2) t2.onclick = function() { try{ this.showPicker(); }catch(e){} };
 }
 
-// --- RUN WHEN PAGE LOADS ---
 window.addEventListener('DOMContentLoaded', async () => {
     await ensureSupabase();
     
@@ -3036,9 +3160,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     loadStaffDashboard(); 
 });
 
-// ==========================================
-// --- MULTI-LOCATION ENGINE ---
-// ==========================================
 let workspaceLocations = [];
 let activeLocationEditId = null;
 
@@ -3054,7 +3175,6 @@ async function loadLocationsPage() {
             try { workspaceLocations = JSON.parse(data.locations); } catch(e){}
         }
         
-        // Ensure Main Campus always exists
         if (!workspaceLocations.find(l => l.id === 'main')) {
             workspaceLocations.unshift({
                 id: 'main',
@@ -3066,7 +3186,6 @@ async function loadLocationsPage() {
             });
         }
 
-        // Ensure GPS Exempt always exists
         if (!workspaceLocations.find(l => l.id === 'exempt')) {
             workspaceLocations.push({
                 id: 'exempt',
@@ -3164,9 +3283,8 @@ function openLocationMap(id) {
     }, 200);
 }
 
-// Modify the existing confirmMapLocation to handle array saves
 async function confirmMapLocation() {
-    if (!activeLocationEditId) return; // Keep backward compatibility
+    if (!activeLocationEditId) return; 
     
     const center = map.getCenter();
     const radius = document.getElementById('radius-slider').value;
@@ -3174,7 +3292,6 @@ async function confirmMapLocation() {
     saveBtn.innerText = "Saving...";
     saveBtn.disabled = true;
 
-    // Update the specific location in the array
     const locIndex = workspaceLocations.findIndex(l => l.id === activeLocationEditId);
     if (locIndex !== -1) {
         workspaceLocations[locIndex].lat = center.lat;
@@ -3202,7 +3319,6 @@ async function openStaffAssignModal(locId) {
     
     const loc = workspaceLocations.find(l => l.id === locId);
 
-    // GUARD CLAUSE: Prevent assigning if not pinned
     if (locId !== 'exempt' && (!loc.lat || !loc.lng)) {
         openInfoModal("Location Not Pinned", "You must map and pin this location first before adding staff to it.");
         return;
@@ -3221,7 +3337,6 @@ async function openStaffAssignModal(locId) {
         return;
     }
 
-    // Gather all explicitly assigned emails in OTHER locations (not main)
     let explicitlyAssignedElsewhere = [];
     workspaceLocations.forEach(l => {
         if (l.id !== 'main' && l.staff) explicitlyAssignedElsewhere = explicitlyAssignedElsewhere.concat(l.staff);
@@ -3230,7 +3345,6 @@ async function openStaffAssignModal(locId) {
     staff.forEach(user => {
         let isAssigned = false;
         if (locId === 'main') {
-            // For main, they are assigned if they are explicitly in main.staff, OR if they aren't explicitly assigned anywhere else
             isAssigned = (loc.staff && loc.staff.includes(user.email)) || (!explicitlyAssignedElsewhere.includes(user.email));
         } else {
             isAssigned = loc.staff && loc.staff.includes(user.email);
@@ -3252,16 +3366,19 @@ function saveStaffAssignments() {
 
     const locIndex = workspaceLocations.findIndex(l => l.id === activeLocationEditId);
     if (locIndex !== -1) {
-        // Remove these emails from all OTHER custom locations to prevent conflicts
         workspaceLocations.forEach((l, idx) => {
             if (idx !== locIndex) {
                 l.staff = (l.staff || []).filter(email => !selectedEmails.includes(email));
             }
         });
+        
         workspaceLocations[locIndex].staff = selectedEmails;
     }
-    
-    saveSettings();
-    renderLocations();
+
     closeModal('assign-staff-modal');
+    saveSettings();
+    
+    if (document.getElementById('locations-list-container')) {
+        renderLocations();
+    }
 }

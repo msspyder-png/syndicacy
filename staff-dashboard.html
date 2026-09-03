@@ -8,6 +8,22 @@
     
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    
+    <style>
+        @keyframes glow-pulse {
+            0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+            70% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+        }
+        .pulse-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background-color: #f59e0b;
+            border-radius: 50%;
+            animation: glow-pulse 2s infinite;
+        }
+    </style>
 </head>
 <body class="dashboard-body">
 
@@ -20,29 +36,60 @@
             </div>
 
             <!-- MAIN STATUS CARD -->
-            <div class="form-card ghost-theme" id="status-card" style="text-align: center; padding: 40px 20px; transition: all 0.3s; position: relative;">
+            <div class="form-card ghost-theme" id="status-card" style="text-align: center; padding: 30px 20px; transition: all 0.3s; position: relative; margin-bottom: 15px;">
                 <div class="avatar" id="status-avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #e8e8e8; color: #888;">--</div>
                 <h3 style="margin: 0; font-size: 18px; color: #888;" id="status-text">Pending Check-in</h3>
-                
-                <!-- NEW LIVE COUNTDOWN TIMER -->
-                <p style="font-size: 13px; color: #f59e0b; margin-top: 8px; font-weight: 600;" id="staff-countdown-timer">Calculating window...</p>
                 
                 <button class="main-btn" id="check-in-btn" style="width: 100%; margin-top: 25px; padding: 16px; font-size: 15px;">
                     Authenticate & Check In
                 </button>
             </div>
 
-            <!-- NEW WEEKLY PULSE / STREAK -->
-            <div style="margin-top: 20px; padding: 15px; background-color: #ffffff; border: 1px solid #eaeaea; border-radius: 8px;">
-                <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 10px; text-align: left;">This Week</span>
-                <div id="weekly-pulse-grid" style="display: flex; justify-content: space-between; gap: 4px;">
-                    <!-- JS will inject the 7 days here -->
+            <!-- NEW: TODAY'S SHIFT DETAILS PANEL -->
+            <div id="shift-details-panel" class="form-card" style="padding: 16px; margin-bottom: 20px; display: none; text-align: left; background-color: #ffffff;">
+                <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 12px; letter-spacing: 0.5px;">Today's Shift Details</span>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; border-bottom: 1px solid #f0f0f0; padding-bottom: 12px;">
+                    <span style="font-size: 13px; color: #555; display: flex; align-items: center; gap: 6px; font-weight: 500;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        Window
+                    </span>
+                    <span id="home-window-display" style="font-size: 13px; font-weight: 600; color: #1a1a1a;">--:--</span>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 13px; color: #555; display: flex; align-items: center; gap: 6px; font-weight: 500;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                        Assigned Zone
+                    </span>
+                    <span id="home-zone-display" style="font-size: 13px; font-weight: 600; color: #1a1a1a;">--</span>
+                </div>
+
+                <!-- LIVE TIMEOUT COUNTDOWN -->
+                <div id="home-countdown-container" style="margin-top: 16px; padding-top: 12px; border-top: 1px dashed #e0e0e0; text-align: center; display: none;">
+                    <div style="font-size: 11px; color: #d97706; font-weight: 700; margin-bottom: 6px; display: flex; justify-content: center; align-items: center; gap: 6px;">
+                        <span class="pulse-dot"></span>
+                        WINDOW OPEN
+                    </div>
+                    <span style="font-size: 24px; font-family: monospace; font-weight: 700; color: #1a1a1a; letter-spacing: 2px;" id="home-countdown-timer">--:--:--</span>
+                    <div style="font-size: 10px; color: #888; text-transform: uppercase; margin-top: 4px; letter-spacing: 0.5px;">Remaining to Check-In</div>
+                </div>
+            </div>
+
+            <!-- GAMIFIED WEEKLY PULSE -->
+            <div class="form-card" style="margin-bottom: 20px; padding: 16px; background-color: #ffffff;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Weekly Pulse</span>
+                    <span id="weekly-motivation-msg" style="font-size: 11px; font-weight: 700; color: #4ade80; background: #dcfce7; padding: 4px 10px; border-radius: 12px;">--</span>
+                </div>
+                <div id="weekly-pulse-grid" style="display: flex; justify-content: space-between; align-items: center; gap: 4px;">
+                    <!-- JS will inject S M T W T F S -->
                 </div>
             </div>
             
             <!-- EXPANDED UPCOMING HOLIDAYS -->
-            <div style="text-align: left; margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 8px;">
-                <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 10px;">Upcoming Holidays</span>
+            <div class="form-card" style="text-align: left; margin-bottom: 20px; padding: 16px; background-color: #f9f9f9;">
+                <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 12px; letter-spacing: 0.5px;">Upcoming Holidays</span>
                 <div id="staff-upcoming-holidays-list" style="display: flex; flex-direction: column; gap: 8px;">
                     <p style="margin: 0; font-size: 13px; color: #888;">Scanning calendar...</p>
                 </div>
@@ -123,7 +170,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <span style="font-size: 13px; font-weight: 500;">Check-in Window</span>
                     <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 13px; color: #1a1a1a; font-family: monospace;" id="staff-window-display">--:--</span>
+                        <span style="font-size: 13px; color: #1a1a1a; font-family: monospace;" id="staff-window-settings-display">--:--</span>
                         <button class="i-btn" onclick="openStaffModal('Check-in Window', 'Your organization requires you to log your attendance strictly between these hours. Attempts outside this window will be rejected.')">i</button>
                     </div>
                 </div>
