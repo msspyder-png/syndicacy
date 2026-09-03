@@ -72,6 +72,7 @@ const CAL_STYLES = {
     present: "background-color: #4ade80 !important; color: #1a1a1a !important; border: 1px solid #4ade80 !important; font-weight: bold;",
     absent: "background-color: transparent !important; color: #ef4444 !important; border: 1px dashed #ef4444 !important; font-weight: bold;",
     holiday: "background-color: #1a1a1a !important; color: #ffffff !important; border: 1px solid #1a1a1a !important; font-weight: bold;",
+    personalHoliday: "background-color: #ffffff !important; color: #1a1a1a !important; border: 2px solid #1a1a1a !important; font-weight: bold;",
     default: "background-color: #ffffff !important; color: #888 !important; border: 1px solid #eaeaea !important;",
     disabled: "background: repeating-linear-gradient(45deg, #f9f9f9, #f9f9f9 5px, #eaeaea 5px, #eaeaea 10px) !important; color: #ccc !important; pointer-events: none !important; border: 1px solid #eaeaea !important;"
 };
@@ -419,9 +420,9 @@ async function copyInviteLink() {
     if (inviteData) {
         try {
             await navigator.clipboard.writeText(inviteData.link);
-            alert(`Success! 📋\n\nThe secure link for ${inviteData.name} has been copied to your clipboard.\n\nYou can now paste it into WhatsApp, Slack, or iMessage.`);
+            openInfoModal("Link Copied", `Success! The secure link for ${inviteData.name} has been copied to your clipboard.`);
         } catch (err) {
-            prompt("Copy this link manually:", inviteData.link);
+            openPromptModal("Manual Copy", "Copy this link manually:", "text", inviteData.link, function(){});
         }
     }
     
@@ -444,7 +445,7 @@ async function sendInviteLink() {
         
         window.location.href = `mailto:${inviteData.email}?subject=${subject}&body=${body}`;
         
-        alert(`Success! ✉️\n\nThe system has prepared an email draft for ${inviteData.name}.`);
+        openInfoModal("Invite Drafted", `Success! The system has prepared an email draft for ${inviteData.name}.`);
     }
     
     inviteBtn.innerText = originalText;
@@ -515,55 +516,56 @@ async function loadPendingInvites() {
 
 // --- APPROVE THE EMPLOYEE ---
 async function approveInvite(inviteId, employeeName) {
-    if (!confirm(`Are you sure you want to officially approve ${employeeName}'s face scan and add them to the team?`)) return;
-    await ensureSupabase();
+    openConfirmModal("Approve Staff", `Are you sure you want to officially approve ${employeeName}'s face scan and add them to the team?`, async function() {
+        await ensureSupabase();
 
-    if (!supabaseClient) {
-        openInfoModal("Database Error", "Database connection is missing!");
-        return;
-    }
+        if (!supabaseClient) {
+            openInfoModal("Database Error", "Database connection is missing!");
+            return;
+        }
 
-    try {
-        const { data: inviteData, error: fetchError } = await supabaseClient
-            .from('staff_invites')
-            .select('*')
-            .eq('id', inviteId)
-            .single();
-        
-        if (fetchError) throw fetchError;
+        try {
+            const { data: inviteData, error: fetchError } = await supabaseClient
+                .from('staff_invites')
+                .select('*')
+                .eq('id', inviteId)
+                .single();
+            
+            if (fetchError) throw fetchError;
 
-        const tempPassword = "Staff" + Math.floor(1000 + Math.random() * 9000);
-        const today = getUniversalDate();
+            const tempPassword = "Staff" + Math.floor(1000 + Math.random() * 9000);
+            const today = getUniversalDate();
 
-        const { error: insertError } = await supabaseClient
-            .from('users')
-            .insert([{
-                email: inviteData.email,
-                password: tempPassword,
-                role: inviteData.role,
-                joined_date: today,
-                name: inviteData.name,
-                face_data: inviteData.face_data,
-                face_image: inviteData.face_image,
-                company_id: inviteData.company_id // Attach to boss's workspace
-            }]);
+            const { error: insertError } = await supabaseClient
+                .from('users')
+                .insert([{
+                    email: inviteData.email,
+                    password: tempPassword,
+                    role: inviteData.role,
+                    joined_date: today,
+                    name: inviteData.name,
+                    face_data: inviteData.face_data,
+                    face_image: inviteData.face_image,
+                    company_id: inviteData.company_id // Attach to boss's workspace
+                }]);
 
-        if (insertError) throw insertError;
+            if (insertError) throw insertError;
 
-        await supabaseClient
-            .from('staff_invites')
-            .update({ status: 'approved' })
-            .eq('id', inviteId);
+            await supabaseClient
+                .from('staff_invites')
+                .update({ status: 'approved' })
+                .eq('id', inviteId);
 
-        showApprovalSuccessModal(employeeName);
+            showApprovalSuccessModal(employeeName);
 
-        loadPendingInvites();
-        loadTeamDirectory(); 
+            loadPendingInvites();
+            loadTeamDirectory(); 
 
-    } catch (err) {
-        console.error(err);
-        openInfoModal("Error", "Error approving employee: " + err.message);
-    }
+        } catch (err) {
+            console.error(err);
+            openInfoModal("Error", "Error approving employee: " + err.message);
+        }
+    });
 }
 
 // --- CUSTOM SUCCESS POPUP FOR ADD SECTION ---
@@ -594,18 +596,19 @@ function showApprovalSuccessModal(name) {
 
 // --- REJECT / DELETE INVITE ---
 async function deleteInvite(inviteId, employeeName) {
-    if (!confirm(`Are you sure you want to delete the invite for ${employeeName}?`)) return;
-    await ensureSupabase();
-    if (!supabaseClient) return;
+    openConfirmModal("Delete Invite", `Are you sure you want to delete the invite for ${employeeName}?`, async function() {
+        await ensureSupabase();
+        if (!supabaseClient) return;
 
-    try {
-        const { error } = await supabaseClient.from('staff_invites').delete().eq('id', inviteId);
-        if (error) throw error;
-        loadPendingInvites();
-    } catch (err) {
-        console.error(err);
-        openInfoModal("Error", "Error deleting invite: " + err.message);
-    }
+        try {
+            const { error } = await supabaseClient.from('staff_invites').delete().eq('id', inviteId);
+            if (error) throw error;
+            loadPendingInvites();
+        } catch (err) {
+            console.error(err);
+            openInfoModal("Error", "Error deleting invite: " + err.message);
+        }
+    });
 }
 
 // --- EMPLOYEE JOIN PAGE (READING & ENFORCING LINK SECURITY) ---
@@ -1152,8 +1155,10 @@ async function loadIndividualAnalytics() {
             
             if (currentIterationDate < empJoinedDate) {
                 inlineStyle = CAL_STYLES.disabled;
-            } else if (isCommonHoliday || isPersonalHoliday) {
+            } else if (isCommonHoliday) {
                 inlineStyle = CAL_STYLES.holiday;
+            } else if (isPersonalHoliday) {
+                inlineStyle = CAL_STYLES.personalHoliday;
             } else if (currentIterationDate > today) {
                 inlineStyle = CAL_STYLES.default;
             } else if (wasPresent) { 
@@ -1183,6 +1188,17 @@ async function loadIndividualAnalytics() {
             
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle} ${cursorStyle}" ${clickAttr}>${day}</div>`);
         }
+
+        // Inject legend for Personal Off if missing
+        const legendContainers = document.querySelectorAll('.dashboard-content div[style*="justify-content: space-around"]');
+        legendContainers.forEach(container => {
+            container.style.flexWrap = 'wrap';
+            container.style.rowGap = '8px';
+            if (!container.innerHTML.includes("Personal Off")) {
+                container.insertAdjacentHTML('beforeend', `<span><span style="display:inline-block; width:10px; height:10px; border:2px solid #1a1a1a; background-color:#ffffff; margin-right:4px; border-radius:2px; vertical-align:-1px; box-sizing: border-box;"></span>Personal Off</span>`);
+            }
+        });
+
     } catch (err) { console.error(err); }
 }
 
@@ -2414,13 +2430,17 @@ async function loadStaffRecords() {
                 const currentIterationDate = new Date(year, month, day);
                 const dateStrIteration = getUniversalDate(currentIterationDate);
                 const wasPresent = validCheckinDates.has(dateStrIteration);
+                const isPersonalHoliday = personalHolidaysSet.has(dateStrIteration);
+                const isCommonHoliday = holidaysArray.includes(dateStrIteration);
                 
                 let inlineStyle = CAL_STYLES.default;
                 
                 if (currentIterationDate < empJoinedDate) {
                     inlineStyle = CAL_STYLES.disabled;
-                } else if (holidaysArray.includes(dateStrIteration) || personalHolidaysSet.has(dateStrIteration)) {
+                } else if (isCommonHoliday) {
                     inlineStyle = CAL_STYLES.holiday;
+                } else if (isPersonalHoliday) {
+                    inlineStyle = CAL_STYLES.personalHoliday;
                 } else if (currentIterationDate > today) {
                     inlineStyle = CAL_STYLES.default;
                 } else if (wasPresent) { 
@@ -2431,6 +2451,16 @@ async function loadStaffRecords() {
                 
                 calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle}">${day}</div>`);
             }
+
+            // Inject legend for Personal Off if missing
+            const legendContainers = document.querySelectorAll('#view-records div[style*="justify-content: space-around"]');
+            legendContainers.forEach(container => {
+                container.style.flexWrap = 'wrap';
+                container.style.rowGap = '8px';
+                if (!container.innerHTML.includes("Personal Off")) {
+                    container.insertAdjacentHTML('beforeend', `<span><span style="display:inline-block; width:10px; height:10px; border:2px solid #1a1a1a; background-color:#ffffff; margin-right:4px; border-radius:2px; vertical-align:-1px; box-sizing: border-box;"></span>Personal Off</span>`);
+                }
+            });
         }
 
     } catch (err) { console.error("Error loading staff ledger:", err); }
@@ -2467,8 +2497,8 @@ async function startDailyScanner() {
     await ensureSupabase();
     
     if (!currentStaff) {
-        alert("Session Expired. Please log in again.");
-        window.location.href = 'staff.html';
+        openInfoModal("Session Expired", "Please log in again.");
+        setTimeout(() => { window.location.href = 'staff.html'; }, 2000);
         return;
     }
 
@@ -2854,10 +2884,11 @@ function promptNewLocation() {
 }
 
 function deleteLocation(id) {
-    if (!confirm("Remove this location? Assigned staff will default back to Main Campus.")) return;
-    workspaceLocations = workspaceLocations.filter(l => l.id !== id);
-    saveSettings();
-    renderLocations();
+    openConfirmModal("Remove Location", "Remove this location? Assigned staff will default back to Main Campus.", function() {
+        workspaceLocations = workspaceLocations.filter(l => l.id !== id);
+        saveSettings();
+        renderLocations();
+    });
 }
 
 function openLocationMap(id) {
@@ -2930,7 +2961,7 @@ async function openStaffAssignModal(locId) {
     
     openModal('assign-staff-modal');
 
-    const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+    const { data: staff } = await users.select('*').neq('role', 'leader').eq('company_id', leader.company_id);
     
     listContainer.innerHTML = "";
     if (!staff || staff.length === 0) {
