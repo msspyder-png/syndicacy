@@ -207,6 +207,36 @@ window.onclick = function(event) {
     }
 };
 
+// --- TOGGLE UI CONTROLS ---
+function toggleExceptionsUI() {
+    const toggle = document.getElementById('toggle-exceptions');
+    if (!toggle) return;
+    const isActive = toggle.checked;
+    const btn = document.getElementById('add-exception-btn');
+    const list = document.getElementById('exception-list');
+    if(btn) { 
+        btn.disabled = !isActive; 
+        btn.style.opacity = isActive ? '1' : '0.5'; 
+        btn.style.cursor = isActive ? 'pointer' : 'not-allowed';
+    }
+    if(list) list.style.opacity = isActive ? '1' : '0.5';
+}
+
+function toggleCustomTimeUI() {
+    const toggle = document.getElementById('toggle-custom-time');
+    if (!toggle) return;
+    const isActive = toggle.checked;
+    const btn = document.getElementById('add-custom-time-btn');
+    const list = document.getElementById('custom-time-list');
+    if(btn) { 
+        btn.disabled = !isActive; 
+        btn.style.opacity = isActive ? '1' : '0.5'; 
+        btn.style.cursor = isActive ? 'pointer' : 'not-allowed';
+    }
+    if(list) list.style.opacity = isActive ? '1' : '0.5';
+}
+
+
 // --- SMART AUTHENTICATION (DETECTIVE MODE) ---
 async function handleLeaderAuth() {
     await ensureSupabase();
@@ -822,12 +852,29 @@ async function loadTodayAttendance() {
         let globalHolidays = [];
         let customSchedules = [];
         let exceptions = [];
+        let customSchedulesActive = true;
+        let exceptionsActive = true;
         let globalEnd = "10:00";
 
         if (settings) {
             if (settings.holidays) try { globalHolidays = JSON.parse(settings.holidays); } catch(e){}
-            if (settings.custom_schedules) try { customSchedules = JSON.parse(settings.custom_schedules); } catch(e){}
-            if (settings.exceptions) try { exceptions = JSON.parse(settings.exceptions); } catch(e){}
+            
+            if (settings.custom_schedules) {
+                try {
+                    let parsed = JSON.parse(settings.custom_schedules);
+                    if (Array.isArray(parsed)) { customSchedules = parsed; }
+                    else { customSchedulesActive = parsed.active; customSchedules = parsed.data || []; }
+                } catch(e){}
+            }
+            
+            if (settings.exceptions) {
+                try {
+                    let parsed = JSON.parse(settings.exceptions);
+                    if (Array.isArray(parsed)) { exceptions = parsed; }
+                    else { exceptionsActive = parsed.active; exceptions = parsed.data || []; }
+                } catch(e){}
+            }
+
             if (settings.check_in_end) globalEnd = settings.check_in_end;
         }
 
@@ -884,11 +931,17 @@ async function loadTodayAttendance() {
             } else {
                 let allowedEnd = globalEnd;
                 
-                const myCustom = customSchedules.find(c => c.email === staff.email);
-                if (myCustom) allowedEnd = myCustom.end;
+                // Exception evaluated first
+                if (exceptionsActive) {
+                    const todayException = exceptions.find(ex => ex.date === todayStr);
+                    if (todayException) allowedEnd = todayException.end;
+                }
                 
-                const todayException = exceptions.find(ex => ex.date === todayStr);
-                if (todayException) allowedEnd = todayException.end;
+                // Custom evaluated last (Overriding Exception)
+                if (customSchedulesActive) {
+                    const myCustom = customSchedules.find(c => c.email === staff.email);
+                    if (myCustom) allowedEnd = myCustom.end;
+                }
 
                 if (currentTime > allowedEnd) {
                     absentCount++;
@@ -1054,7 +1107,7 @@ async function loadIndividualAnalytics() {
         
         // FIXED TABLE NAME: 'checkins'
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
-        const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
         currentViewedUser = user;
 
@@ -1140,16 +1193,38 @@ async function loadIndividualAnalytics() {
                     } else {
                         let allowedEnd = settings && settings.check_in_end ? settings.check_in_end : "10:00";
                         
-                        if (settings && settings.custom_schedules) {
-                            let customArray = []; try { customArray = JSON.parse(settings.custom_schedules); } catch(e){}
-                            const myCustom = customArray.find(c => c.email === targetEmail);
-                            if (myCustom) allowedEnd = myCustom.end;
+                        let customSchedulesActive = true;
+                        let exceptionsActive = true;
+                        let customSchedulesArray = [];
+                        let exceptionsArray = [];
+                        
+                        if (settings) {
+                            if (settings.custom_schedules) {
+                                try {
+                                    let parsed = JSON.parse(settings.custom_schedules);
+                                    if (Array.isArray(parsed)) customSchedulesArray = parsed;
+                                    else { customSchedulesActive = parsed.active; customSchedulesArray = parsed.data || []; }
+                                } catch(e){}
+                            }
+                            if (settings.exceptions) {
+                                try {
+                                    let parsed = JSON.parse(settings.exceptions);
+                                    if (Array.isArray(parsed)) exceptionsArray = parsed;
+                                    else { exceptionsActive = parsed.active; exceptionsArray = parsed.data || []; }
+                                } catch(e){}
+                            }
                         }
-
-                        if (settings && settings.exceptions) {
-                            let exceptionsArray = []; try { exceptionsArray = JSON.parse(settings.exceptions); } catch(e){}
+                        
+                        // Exception First
+                        if (exceptionsActive) {
                             const todayException = exceptionsArray.find(ex => ex.date === todayStr2);
                             if (todayException) allowedEnd = todayException.end;
+                        }
+
+                        // Custom Last (Override)
+                        if (customSchedulesActive) {
+                            const myCustom = customSchedulesArray.find(c => c.email === targetEmail);
+                            if (myCustom) allowedEnd = myCustom.end;
                         }
 
                         const now = new Date();
@@ -1725,7 +1800,16 @@ async function loadSettings() {
 
             if (data.exceptions) {
                 let savedExceptions = [];
-                try { savedExceptions = JSON.parse(data.exceptions); } catch(e){}
+                let exceptionsActive = true;
+                try { 
+                    let parsed = JSON.parse(data.exceptions);
+                    if (Array.isArray(parsed)) savedExceptions = parsed;
+                    else { exceptionsActive = parsed.active; savedExceptions = parsed.data || []; }
+                } catch(e){}
+                
+                const exToggle = document.getElementById('toggle-exceptions');
+                if (exToggle) { exToggle.checked = exceptionsActive; toggleExceptionsUI(); }
+
                 const list = document.getElementById('exception-list');
                 if (list) {
                     list.innerHTML = ""; 
@@ -1743,11 +1827,20 @@ async function loadSettings() {
                 }
             }
 
+            let customSchedulesActive = true;
             if (data.custom_schedules) {
-                try { customSchedules = JSON.parse(data.custom_schedules); } catch(e){}
+                try { 
+                    let parsed = JSON.parse(data.custom_schedules);
+                    if (Array.isArray(parsed)) customSchedules = parsed;
+                    else { customSchedulesActive = parsed.active; customSchedules = parsed.data || []; }
+                } catch(e){}
             } else {
                 customSchedules = [];
             }
+            
+            const ctToggle = document.getElementById('toggle-custom-time');
+            if (ctToggle) { ctToggle.checked = customSchedulesActive; toggleCustomTimeUI(); }
+            
             renderCustomTimeList();
 
         } else {
@@ -1811,9 +1904,13 @@ async function saveSettings() {
                     });
                 }
             });
-            payload.exceptions = JSON.stringify(exceptionsArray);
+            const isExActive = document.getElementById('toggle-exceptions') ? document.getElementById('toggle-exceptions').checked : true;
+            payload.exceptions = JSON.stringify({ active: isExActive, data: exceptionsArray });
+            
             payload.holidays = JSON.stringify(localHolidays);
-            payload.custom_schedules = JSON.stringify(customSchedules);
+            
+            const isCtActive = document.getElementById('toggle-custom-time') ? document.getElementById('toggle-custom-time').checked : true;
+            payload.custom_schedules = JSON.stringify({ active: isCtActive, data: customSchedules });
         }
 
         // 2. ONLY update GPS Locations data if we are actively viewing the Locations page
@@ -2325,7 +2422,34 @@ async function loadStaffRecords() {
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         
         let holidaysArray = [];
-        try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
+        let customSchedules = [];
+        let exceptions = [];
+        let customSchedulesActive = true;
+        let exceptionsActive = true;
+        let globalEnd = "10:00";
+
+        if (settings) {
+            if (settings.holidays) try { holidaysArray = JSON.parse(settings.holidays); } catch(e){}
+            
+            if (settings.custom_schedules) {
+                try {
+                    let parsed = JSON.parse(settings.custom_schedules);
+                    if (Array.isArray(parsed)) { customSchedules = parsed; }
+                    else { customSchedulesActive = parsed.active; customSchedules = parsed.data || []; }
+                } catch(e){}
+            }
+            
+            if (settings.exceptions) {
+                try {
+                    let parsed = JSON.parse(settings.exceptions);
+                    if (Array.isArray(parsed)) { exceptions = parsed; }
+                    else { exceptionsActive = parsed.active; exceptions = parsed.data || []; }
+                } catch(e){}
+            }
+
+            if (settings.check_in_end) globalEnd = settings.check_in_end;
+        }
+
         if (!Array.isArray(holidaysArray)) holidaysArray = [];
 
         let safeLogs = Array.isArray(logs) ? logs : [];
@@ -2364,13 +2488,21 @@ async function loadStaffRecords() {
         let exceptionText = "None scheduled";
         if (settings && settings.exceptions) {
             let excArray = [];
-            try { excArray = JSON.parse(settings.exceptions); } catch(e){}
-            if (Array.isArray(excArray)) {
+            let isExActive = true;
+            try { 
+                let parsed = JSON.parse(settings.exceptions); 
+                if (Array.isArray(parsed)) excArray = parsed;
+                else { isExActive = parsed.active; excArray = parsed.data || []; }
+            } catch(e){}
+            
+            if (isExActive && Array.isArray(excArray)) {
                 const futureExc = excArray.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
                 if (futureExc.length > 0) {
                     const next = futureExc[0]; const parts = next.date.split('-');
                     exceptionText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${next.start} - ${next.end})`;
                 }
+            } else if (!isExActive) {
+                exceptionText = "Exceptions Paused";
             }
         }
 
@@ -2613,23 +2745,43 @@ async function startDailyScanner() {
         let allowedStart = rules && rules.check_in_start ? rules.check_in_start : "09:00";
         let allowedEnd = rules && rules.check_in_end ? rules.check_in_end : "10:00";
 
-        if (rules && rules.custom_schedules) {
-            let customArray = [];
-            try { customArray = JSON.parse(rules.custom_schedules); } catch(e){}
-            const myCustom = customArray.find(c => c.email === currentStaff.email);
-            if (myCustom) {
-                allowedStart = myCustom.start;
-                allowedEnd = myCustom.end;
+        let customSchedulesActive = true;
+        let exceptionsActive = true;
+        let customSchedules = [];
+        let exceptions = [];
+
+        if (rules) {
+            if (rules.custom_schedules) {
+                try {
+                    let parsed = JSON.parse(rules.custom_schedules);
+                    if (Array.isArray(parsed)) { customSchedules = parsed; }
+                    else { customSchedulesActive = parsed.active; customSchedules = parsed.data || []; }
+                } catch(e){}
+            }
+            if (rules.exceptions) {
+                try {
+                    let parsed = JSON.parse(rules.exceptions);
+                    if (Array.isArray(parsed)) { exceptions = parsed; }
+                    else { exceptionsActive = parsed.active; exceptions = parsed.data || []; }
+                } catch(e){}
             }
         }
 
-        if (rules && rules.exceptions) {
-            let exceptionsArray = [];
-            try { exceptionsArray = JSON.parse(rules.exceptions); } catch(e){}
-            const todayException = exceptionsArray.find(ex => ex.date === todayDateStr);
+        // 1. Exceptions evaluated first
+        if (exceptionsActive) {
+            const todayException = exceptions.find(ex => ex.date === todayDateStr);
             if (todayException) {
                 allowedStart = todayException.start;
                 allowedEnd = todayException.end;
+            }
+        }
+
+        // 2. Custom Schedules evaluated last (Overrides Exceptions)
+        if (customSchedulesActive) {
+            const myCustom = customSchedules.find(c => c.email === currentStaff.email);
+            if (myCustom) {
+                allowedStart = myCustom.start;
+                allowedEnd = myCustom.end;
             }
         }
 

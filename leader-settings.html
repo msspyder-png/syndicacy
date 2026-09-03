@@ -67,21 +67,33 @@
             <div style="display: flex; gap: 20px; border-top: 1px solid #eaeaea; padding-top: 15px; flex-wrap: wrap;">
                 
                 <div style="flex: 1; min-width: 200px;">
-                    <div class="setting-header">
-                        <span style="font-size: 13px; font-weight: 600;">Future Exceptions <span id="exception-count">(0/5)</span></span>
-                        <button class="i-btn" onclick="openInfoModal('Future Exceptions', 'Need a different schedule for an upcoming event? You can set up to 5 custom check-in windows for specific future dates.')">i</button>
+                    <div class="setting-header" style="border-bottom: 1px solid #eaeaea; padding-bottom: 8px; margin-bottom: 10px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 13px; font-weight: 600;">Future Exceptions <span id="exception-count">(0/5)</span></span>
+                            <button class="i-btn" style="width: 16px; height: 16px; font-size: 10px;" onclick="openInfoModal('Future Exceptions', 'Need a different schedule for an upcoming event? Set up to 5 custom windows for specific dates. Turn the switch off to temporarily disable these overrides without deleting them.')">i</button>
+                        </div>
+                        <label class="switch" style="transform: scale(0.7); transform-origin: right; margin: 0;">
+                            <input type="checkbox" id="toggle-exceptions" onchange="toggleExceptionsUI(); saveSettings();" checked>
+                            <span class="slider"></span>
+                        </label>
                     </div>
-                    <div id="exception-list" style="margin-top: 10px;"></div>
-                    <button class="google-btn" style="margin-top: 10px; font-size: 12px;" onclick="addException()">+ Add Exception Date</button>
+                    <div id="exception-list"></div>
+                    <button id="add-exception-btn" class="google-btn" style="margin-top: 10px; font-size: 12px; width: 100%;" onclick="addException()">+ Add Exception Date</button>
                 </div>
 
                 <div style="flex: 1; min-width: 200px;">
-                    <div class="setting-header">
-                        <span style="font-size: 13px; font-weight: 600;">Custom Employee Times</span>
-                        <button class="i-btn" onclick="openInfoModal('Custom Employee Times', 'Set permanent custom check-in windows for specific employees (like shift workers). This overrides the standard global time.')">i</button>
+                    <div class="setting-header" style="border-bottom: 1px solid #eaeaea; padding-bottom: 8px; margin-bottom: 10px;">
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 13px; font-weight: 600;">Custom Staff Times</span>
+                            <button class="i-btn" style="width: 16px; height: 16px; font-size: 10px;" onclick="openInfoModal('Custom Employee Times', 'Set permanent check-in windows for specific employees (like shift workers). This overrides global and exception times. Turn the switch off to pause these custom shifts without losing your data.')">i</button>
+                        </div>
+                        <label class="switch" style="transform: scale(0.7); transform-origin: right; margin: 0;">
+                            <input type="checkbox" id="toggle-custom-time" onchange="toggleCustomTimeUI(); saveSettings();" checked>
+                            <span class="slider"></span>
+                        </label>
                     </div>
-                    <div id="custom-time-list" style="margin-top: 10px;"></div>
-                    <button class="google-btn" style="margin-top: 10px; font-size: 12px;" onclick="openCustomTimeModal()">+ Add Custom Schedule</button>
+                    <div id="custom-time-list"></div>
+                    <button id="add-custom-time-btn" class="google-btn" style="margin-top: 10px; font-size: 12px; width: 100%;" onclick="openCustomTimeModal()">+ Add Custom Schedule</button>
                 </div>
 
             </div>
@@ -189,7 +201,7 @@
             <span style="display: block; font-size: 10px; margin-top: 4px;">Records</span>
         </a>
         <a href="leader-settings.html" class="nav-item active">
-            <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0l2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0l2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             <span>Settings</span>
         </a>
     </nav>
