@@ -6,7 +6,6 @@
     <title>Staff Portal - SYNDICACY</title>
     <link rel="stylesheet" href="style.css">
     
-    <!-- THESE WERE MISSING! The portal will now connect to the cloud -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
@@ -20,19 +19,33 @@
                 <p class="subtitle">SYNDICACY Workspace</p>
             </div>
 
-            <div class="form-card ghost-theme" id="status-card" style="text-align: center; padding: 40px 20px; transition: all 0.3s;">
+            <!-- MAIN STATUS CARD -->
+            <div class="form-card ghost-theme" id="status-card" style="text-align: center; padding: 40px 20px; transition: all 0.3s; position: relative;">
                 <div class="avatar" id="status-avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #e8e8e8; color: #888;">--</div>
                 <h3 style="margin: 0; font-size: 18px; color: #888;" id="status-text">Pending Check-in</h3>
-                <p style="font-size: 12px; color: #888; margin-top: 5px;">Awaiting verification</p>
                 
-                <button class="main-btn" id="check-in-btn" style="width: 100%; margin-top: 35px; padding: 16px; font-size: 15px;">
+                <!-- NEW LIVE COUNTDOWN TIMER -->
+                <p style="font-size: 13px; color: #f59e0b; margin-top: 8px; font-weight: 600;" id="staff-countdown-timer">Calculating window...</p>
+                
+                <button class="main-btn" id="check-in-btn" style="width: 100%; margin-top: 25px; padding: 16px; font-size: 15px;">
                     Authenticate & Check In
                 </button>
             </div>
+
+            <!-- NEW WEEKLY PULSE / STREAK -->
+            <div style="margin-top: 20px; padding: 15px; background-color: #ffffff; border: 1px solid #eaeaea; border-radius: 8px;">
+                <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 10px; text-align: left;">This Week</span>
+                <div id="weekly-pulse-grid" style="display: flex; justify-content: space-between; gap: 4px;">
+                    <!-- JS will inject the 7 days here -->
+                </div>
+            </div>
             
-            <div style="text-align: left; margin-top: 25px; padding: 15px; background-color: #f9f9f9; border-radius: 8px;">
-                <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: 600;">Next Holiday</span>
-                <p style="margin: 5px 0 0 0; font-size: 14px; color: #1a1a1a; font-weight: 500;" id="staff-next-holiday">Scanning calendar...</p>
+            <!-- EXPANDED UPCOMING HOLIDAYS -->
+            <div style="text-align: left; margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 8px;">
+                <span style="font-size: 11px; color: #888; text-transform: uppercase; font-weight: 600; display: block; margin-bottom: 10px;">Upcoming Holidays</span>
+                <div id="staff-upcoming-holidays-list" style="display: flex; flex-direction: column; gap: 8px;">
+                    <p style="margin: 0; font-size: 13px; color: #888;">Scanning calendar...</p>
+                </div>
             </div>
         </div>
 
@@ -149,12 +162,12 @@
             <button class="google-btn" style="width: 100%; color: #dc2626; border-color: #fca5a5; background-color: #fef2f2;" id="secure-logout-btn">Log Out securely</button>
         </div>
 
-    <div id="staff-modal" class="modal-bg">
+    <div id="staff-modal" class="modal-bg" style="z-index: 10006;">
         <div class="modal-box animated-modal">
             <span class="close" onclick="document.getElementById('staff-modal').style.display='none'">×</span>
             <h3 class="section-title" id="staff-modal-title" style="text-align: center; margin-bottom: 15px;">Info</h3>
             <p id="staff-modal-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px;">Description.</p>
-            <button class="main-btn form-btn" style="width: 100%;" onclick="document.getElementById('staff-modal').style.display='none'">Understood</button>
+            <button class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="document.getElementById('staff-modal').style.display='none'">Understood</button>
         </div>
     </div>
 
@@ -170,7 +183,7 @@
         </a>
 
         <a href="javascript:void(0);" class="nav-item" id="nav-settings" onclick="switchStaffTab('settings')">
-            <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0l2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <svg viewBox="0 0 24 24" class="nav-icon"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0l2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             <span>Workspace</span>
         </a>
     </nav>
