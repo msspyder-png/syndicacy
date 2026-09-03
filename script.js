@@ -89,15 +89,34 @@ function closeModal(id) {
 }
 
 function openInfoModal(title, desc) {
+    let modalEl = document.getElementById('info-modal');
+    
+    // Auto-inject the clean UI modal into the page if it doesn't exist
+    if (!modalEl) {
+        const modalHtml = `
+            <div id="info-modal" class="modal-bg" style="z-index: 10005; display: none;">
+                <div class="modal-box animated-modal" style="width: 90%; max-width: 320px;">
+                    <span class="close" onclick="closeInfoModal()">×</span>
+                    <h3 class="section-title" id="info-title" style="text-align: center; margin-bottom: 15px;">Information</h3>
+                    <p id="info-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; text-align: center;">Description goes here.</p>
+                    <button class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white; margin: 0;" onclick="closeInfoModal()">Understood</button>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('info-modal');
+    }
+
     const titleEl = document.getElementById('info-title');
     const descEl = document.getElementById('info-desc');
-    const modalEl = document.getElementById('info-modal');
+    
     if (titleEl && descEl && modalEl) {
         titleEl.innerText = title;
         descEl.innerText = desc;
         modalEl.style.display = 'flex';
     }
 }
+
 function closeInfoModal() {
     const modalEl = document.getElementById('info-modal');
     if (modalEl) modalEl.style.display = 'none';
@@ -196,12 +215,12 @@ async function handleLeaderAuth() {
         const enterButton = document.querySelector('.form-btn'); 
 
         if (emailInput === "" || passInput === "") {
-            alert("Please enter both an email and a password!");
+            openInfoModal("Missing Details", "Please enter both an email and a password!");
             return;
         }
 
         if (!supabaseClient) {
-            alert("CRITICAL ERROR: Supabase cloud connection failed to load.");
+            openInfoModal("Connection Error", "CRITICAL ERROR: Supabase cloud connection failed to load.");
             return;
         }
 
@@ -232,7 +251,7 @@ async function handleLeaderAuth() {
                 sessionStorage.setItem('loggedInLeader', JSON.stringify(user));
                 window.location.href = 'leader-dashboard.html';
             } else {
-                alert("Incorrect password for this email account.");
+                openInfoModal("Access Denied", "Incorrect password for this email account.");
                 enterButton.disabled = false;
                 enterButton.innerText = "Enter";
                 enterButton.style.backgroundColor = "#1a1a1a"; 
@@ -252,14 +271,14 @@ async function handleLeaderAuth() {
             .then(function() {
                 window.location.href = 'leader-otp.html';
             }, function(err) {
-                alert("Failed to send OTP email.");
+                openInfoModal("Email Error", "Failed to send OTP email.");
                 enterButton.disabled = false;
                 enterButton.innerText = "Enter";
                 enterButton.style.backgroundColor = "#1a1a1a"; 
             });
         }
     } catch (criticalError) {
-        alert("APP CRASHED! Error: " + criticalError.message);
+        openInfoModal("System Crash", "APP CRASHED! Error: " + criticalError.message);
         document.querySelector('.form-btn').disabled = false;
         document.querySelector('.form-btn').innerText = "Enter";
         document.querySelector('.form-btn').style.backgroundColor = "#1a1a1a"; 
@@ -299,10 +318,10 @@ async function verifyOTP() {
             sessionStorage.setItem('loggedInLeader', JSON.stringify(data[0]));
             window.location.href = 'leader-dashboard.html'; 
         } else {
-            alert("Incorrect OTP. Please try again.");
+            openInfoModal("Verification Failed", "Incorrect OTP. Please try again.");
         }
     } catch (criticalError) {
-        alert("APP CRASHED during OTP! Error: " + criticalError.message);
+        openInfoModal("System Crash", "APP CRASHED during OTP! Error: " + criticalError.message);
     }
 }
 
@@ -339,7 +358,7 @@ function filterDirectory() {
 async function generateInvite() {
     await ensureSupabase();
     const leader = getLeader();
-    if (!leader) { alert("Session expired. Please log in again."); return null; }
+    if (!leader) { openInfoModal("Session Expired", "Please log in again."); return null; }
 
     const nameEl = document.getElementById('staff-name');
     const emailEl = document.getElementById('staff-email');
@@ -352,12 +371,12 @@ async function generateInvite() {
     let role = roleSelectEl.value === 'other' ? document.getElementById('custom-role').value.trim() : roleSelectEl.value;
     
     if (!name || !email || !role || roleSelectEl.value === "") {
-        alert("Please complete all fields."); 
+        openInfoModal("Missing Info", "Please complete all fields."); 
         return null;
     }
     
     if (!supabaseClient) { 
-        alert("Database connection is not ready."); 
+        openInfoModal("Connection Error", "Database connection is not ready."); 
         return null; 
     }
 
@@ -383,7 +402,7 @@ async function generateInvite() {
         return { link: generatedLink, name: name, email: email, role: role };
         
     } catch (error) {
-        alert("Error creating invite: " + error.message);
+        openInfoModal("Error", "Error creating invite: " + error.message);
         return null;
     }
 }
@@ -500,7 +519,7 @@ async function approveInvite(inviteId, employeeName) {
     await ensureSupabase();
 
     if (!supabaseClient) {
-        alert("Database connection is missing!");
+        openInfoModal("Database Error", "Database connection is missing!");
         return;
     }
 
@@ -543,7 +562,7 @@ async function approveInvite(inviteId, employeeName) {
 
     } catch (err) {
         console.error(err);
-        alert("Error approving employee: " + err.message);
+        openInfoModal("Error", "Error approving employee: " + err.message);
     }
 }
 
@@ -585,7 +604,7 @@ async function deleteInvite(inviteId, employeeName) {
         loadPendingInvites();
     } catch (err) {
         console.error(err);
-        alert("Error deleting invite: " + err.message);
+        openInfoModal("Error", "Error deleting invite: " + err.message);
     }
 }
 
@@ -700,7 +719,7 @@ async function startFaceScan() {
             }, 100);
         };
     } catch (err) {
-        alert("Camera Error: Check permissions.");
+        openInfoModal("Camera Error", "Please check your browser permissions.");
         aiStatus.innerText = "ERROR: Could not access camera.";
         aiStatus.style.color = "red";
     }
@@ -725,7 +744,7 @@ async function captureFace() {
         const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
 
         if (!detection) {
-            alert("No face detected clearly! Please look straight at the camera.");
+            openInfoModal("Scan Failed", "No face detected clearly! Please look straight at the camera.");
             if (captureBtn) { captureBtn.disabled = false; captureBtn.innerText = "Scan My Face"; }
             aiStatus.innerText = "WAITING FOR FACE...";
             return;
@@ -768,7 +787,7 @@ async function captureFace() {
         `;
     } catch (err) {
         console.error(err);
-        alert("Error saving biometric data.");
+        openInfoModal("Error", "Error saving biometric data.");
         if (captureBtn) { captureBtn.disabled = false; captureBtn.innerText = "Scan My Face"; }
     }
 }
@@ -1217,7 +1236,7 @@ async function togglePersonalHoliday(dateStr, action) {
         loadIndividualAnalytics();
     } catch (err) {
         console.error(err);
-        alert("Failed to update holiday: " + err.message);
+        openInfoModal("Error", "Failed to update holiday: " + err.message);
     }
 }
 
@@ -1805,7 +1824,7 @@ function saveCustomTime() {
     const end = document.getElementById('custom-time-end').value;
 
     if (!select.value || !start || !end) {
-        alert("Please select an employee and set both times.");
+        openInfoModal("Missing Info", "Please select an employee and set both times.");
         return;
     }
 
@@ -2032,7 +2051,7 @@ function handleGPSToggle() {
 
 function openMapModal() {
     if (!leafletLoaded || typeof L === 'undefined') {
-        alert("Loading map engine... Please try again in 2 seconds.");
+        openInfoModal("Loading", "Loading map engine... Please try again in 2 seconds.");
         return;
     }
     document.getElementById('gps-map-modal').style.display = 'flex';
@@ -2902,7 +2921,7 @@ async function openStaffAssignModal(locId) {
 
     // GUARD CLAUSE: Prevent assigning if not pinned
     if (locId !== 'exempt' && (!loc.lat || !loc.lng)) {
-        alert("You must map and pin this location first before adding staff to it.");
+        openInfoModal("Location Not Pinned", "You must map and pin this location first before adding staff to it.");
         return;
     }
 
