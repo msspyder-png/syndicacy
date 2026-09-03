@@ -1573,6 +1573,7 @@ function initializeSettingsCalendar() {
     }
 
     const nowStrict = new Date();
+    // Normalize to start of day to avoid timezone hour shifts
     nowStrict.setHours(0,0,0,0);
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -1992,7 +1993,10 @@ async function openCustomTimeModal(editEmail = null) {
         if (staff && staff.length > 0) {
             select.innerHTML = '<option value="" disabled selected>Select an employee</option>';
             staff.forEach(s => {
-                select.innerHTML += `<option value="${s.email}">${s.name} (${s.role})</option>`;
+                const isAlreadyAssigned = customSchedules.some(c => c.email === s.email);
+                if (!isAlreadyAssigned || s.email === editEmail) {
+                    select.innerHTML += `<option value="${s.email}">${s.name} (${s.role})</option>`;
+                }
             });
             
             if (typeof editEmail === 'string') {
@@ -2119,6 +2123,16 @@ async function loadTodayPIN() {
                 } else {
                     pinDisplay.innerText = pinValue;
                 }
+                
+                if (window.pinTrackerInterval) clearInterval(window.pinTrackerInterval);
+                window.pinTrackerInterval = setInterval(() => {
+                    const checkToday = getUniversalDate();
+                    const checkSaved = localStorage.getItem('last_pin_date_' + leader.company_id);
+                    if (checkToday !== checkSaved) {
+                        generateNewPIN();
+                    }
+                }, 60000);
+
             } else {
                 activeState.style.display = "none";
                 disabledState.style.display = "block";
