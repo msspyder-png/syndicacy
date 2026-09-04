@@ -1089,7 +1089,6 @@ async function loadIndividualAnalytics() {
         currentViewedUser = user;
 
         const today = new Date();
-        today.setHours(0,0,0,0);
         const todayStr2 = getUniversalDate(today);
 
         let holidaysArray = [];
@@ -1161,8 +1160,7 @@ async function loadIndividualAnalytics() {
             if (log.status === 'Holiday/Off') {
                 personalHolidaysSet.add(log.date);
             } else if (log.status === 'Present') {
-                const logDate = parseLocal(log.date);
-                if (logDate <= today) validCheckinDates.add(log.date);
+                if (log.date <= todayStr2) validCheckinDates.add(log.date);
             }
         });
 
@@ -1232,7 +1230,8 @@ async function loadIndividualAnalytics() {
         const month = analyticsDate.getMonth();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         
-        const empJoinedDate = user && user.joined_date ? parseLocal(user.joined_date) : new Date();
+        const empJoinedDate = user && user.joined_date ? parseLocal(user.joined_date) : new Date(2000,0,1);
+        const empJoinedStr = getUniversalDate(empJoinedDate);
 
         const monthTitleEl = document.getElementById('calendar-month-title');
         if (monthTitleEl) {
@@ -1266,9 +1265,6 @@ async function loadIndividualAnalytics() {
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
         }
 
-        const nowStrict = new Date();
-        nowStrict.setHours(0,0,0,0);
-
         for (let day = 1; day <= daysInMonth; day++) {
             const currentIterationDate = new Date(year, month, day);
             const dateStrIteration = getUniversalDate(currentIterationDate);
@@ -1276,12 +1272,12 @@ async function loadIndividualAnalytics() {
             const wasPresent = validCheckinDates.has(dateStrIteration);
             const isPersonalHoliday = personalHolidaysSet.has(dateStrIteration);
             const isCommonHoliday = holidaysArray.includes(dateStrIteration);
-            const isPast = currentIterationDate < nowStrict;
-            const isToday = dateStrIteration === getUniversalDate(nowStrict);
+            const isPast = dateStrIteration < todayStr2;
+            const isToday = dateStrIteration === todayStr2;
             
             let inlineStyle = CAL_STYLES.default;
             
-            if (currentIterationDate < empJoinedDate) {
+            if (dateStrIteration < empJoinedStr) {
                 inlineStyle = CAL_STYLES.disabled;
             } else if (isCommonHoliday) {
                 inlineStyle = CAL_STYLES.holiday;
@@ -1302,7 +1298,7 @@ async function loadIndividualAnalytics() {
             let cursorStyle = "cursor: default;";
             let clickAttr = "";
 
-            if (currentIterationDate >= empJoinedDate) {
+            if (dateStrIteration >= empJoinedStr) {
                 if (isCommonHoliday) {
                     cursorStyle = "cursor: pointer;";
                     clickAttr = `onclick="handleEmployeeCalendarClick('${dateStrIteration}', true, false, ${isPast}, ${isToday}, ${wasPresent})"`;
@@ -1320,6 +1316,7 @@ async function loadIndividualAnalytics() {
             
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle} ${cursorStyle}" ${clickAttr}>${day}</div>`);
         }
+
     } catch (err) { console.error(err); }
 }
 
@@ -1530,6 +1527,7 @@ function initializeSettingsCalendar() {
     const leader = getLeader();
     let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(2000, 0, 1);
     joinedDate.setHours(0,0,0,0);
+    const joinedStr = getUniversalDate(joinedDate);
 
     const year = settingsDate.getFullYear();
     const month = settingsDate.getMonth();
@@ -1583,9 +1581,7 @@ function initializeSettingsCalendar() {
         calendar.insertAdjacentHTML('beforeend', `<div class="cal-day" style="border: none; background: transparent; aspect-ratio: 1;"></div>`);
     }
 
-    const nowStrict = new Date();
-    // Normalize to start of day to avoid timezone hour shifts
-    nowStrict.setHours(0,0,0,0);
+    const todayStrGlobal = getUniversalDate(new Date());
 
     for (let i = 1; i <= daysInMonth; i++) {
         let dayDiv = document.createElement('div');
@@ -1603,12 +1599,11 @@ function initializeSettingsCalendar() {
         dayDiv.style.fontSize = '12px';
         dayDiv.style.borderRadius = '4px';
         
-        const isToday = (dateStr === getUniversalDate(nowStrict));
-        
-        const isPastDay = currentIterationDate < nowStrict;
+        const isToday = (dateStr === todayStrGlobal);
+        const isPastDay = (dateStr < todayStrGlobal);
         const isHoliday = localHolidays.includes(dateStr);
 
-        if (currentIterationDate < joinedDate) {
+        if (dateStr < joinedStr) {
             dayDiv.style.cssText += CAL_STYLES.disabled;
         } else {
             if (isHoliday) {
@@ -1650,6 +1645,7 @@ function changeSettingsMonth(offset) {
 function markAllSundays() {
     const btn = document.getElementById('btn-toggle-sundays');
     const now = new Date();
+    const todayStrGlobal = getUniversalDate(now);
     const leader = getLeader();
     let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
     joinedDate.setHours(0,0,0,0);
@@ -1662,7 +1658,10 @@ function markAllSundays() {
     for (let d = new Date(joinedDate); d <= endDate; d.setDate(d.getDate() + 1)) {
         if (d.getDay() === 0) {
             const dateStr = getUniversalDate(d);
-            const isToday = (dateStr === getUniversalDate(now));
+            
+            if (dateStr < todayStrGlobal) continue; // SPARE PAST SUNDAYS
+
+            const isToday = (dateStr === todayStrGlobal);
             if (isToday && window.todayCheckinsCount > 0) continue; 
             
             if (sundaysToggled && !localHolidays.includes(dateStr)) {
@@ -1680,6 +1679,7 @@ function markAllSundays() {
 function markSecondSaturdays() {
     const btn = document.getElementById('btn-toggle-saturdays');
     const now = new Date();
+    const todayStrGlobal = getUniversalDate(now);
     const leader = getLeader();
     let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
     joinedDate.setHours(0,0,0,0);
@@ -1701,7 +1701,10 @@ function markSecondSaturdays() {
                     if (satCount === 2) {
                         if (d >= joinedDate) {
                             const dateStr = getUniversalDate(d);
-                            const isToday = (dateStr === getUniversalDate(now));
+                            
+                            if (dateStr < todayStrGlobal) break; // SPARE PAST 2nd SATURDAYS
+
+                            const isToday = (dateStr === todayStrGlobal);
                             if (isToday && window.todayCheckinsCount > 0) break; 
 
                             if (saturdaysToggled && !localHolidays.includes(dateStr)) {
