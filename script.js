@@ -1659,7 +1659,7 @@ function markAllSundays() {
         if (d.getDay() === 0) {
             const dateStr = getUniversalDate(d);
             
-            if (dateStr < todayStrGlobal) continue; // SPARE PAST SUNDAYS
+            if (dateStr < todayStrGlobal) continue; 
 
             const isToday = (dateStr === todayStrGlobal);
             if (isToday && window.todayCheckinsCount > 0) continue; 
@@ -1702,7 +1702,7 @@ function markSecondSaturdays() {
                         if (d >= joinedDate) {
                             const dateStr = getUniversalDate(d);
                             
-                            if (dateStr < todayStrGlobal) break; // SPARE PAST 2nd SATURDAYS
+                            if (dateStr < todayStrGlobal) break; 
 
                             const isToday = (dateStr === todayStrGlobal);
                             if (isToday && window.todayCheckinsCount > 0) break; 
@@ -1740,7 +1740,7 @@ async function loadSettings() {
 
     try {
         const todayStr = getUniversalDate();
-        const { count } = await supabaseClient.from('checkins').select('*', { count: 'exact', head: true }).eq('company_id', leader.company_id).eq('date', todayStr);
+        const { count } = await supabaseClient.from('checkins').select('*', { count: 'exact', head: true }).eq('company_id', leader.company_id).eq('date', todayStr).eq('status', 'Present');
         window.todayCheckinsCount = count || 0;
     } catch(e) { window.todayCheckinsCount = 0; }
 
@@ -1783,18 +1783,26 @@ async function loadSettings() {
                 const list = document.getElementById('exception-list');
                 if (list) {
                     list.innerHTML = ""; 
-                    savedExceptions.forEach(exc => {
-                        addException(); 
-                        const rows = list.children;
-                        const lastRow = rows[rows.length - 1];
-                        const inputs = lastRow.querySelectorAll('input');
-                        if(inputs.length >= 3) {
-                            inputs[0].value = exc.date;
-                            inputs[1].value = exc.start;
-                            inputs[2].value = exc.end;
-                        }
-                    });
+                    
+                    if (savedExceptions.length === 0) {
+                        list.innerHTML = `<p id="no-exception-msg" style="font-size: 11px; color: #888;">No upcoming exceptions set.</p>`;
+                    } else {
+                        savedExceptions.forEach(exc => {
+                            addException(); 
+                            const rows = list.children;
+                            const lastRow = rows[rows.length - 1];
+                            const inputs = lastRow.querySelectorAll('input');
+                            if(inputs.length >= 3) {
+                                inputs[0].value = exc.date;
+                                inputs[1].value = exc.start;
+                                inputs[2].value = exc.end;
+                            }
+                        });
+                    }
                 }
+            } else {
+                const list = document.getElementById('exception-list');
+                if (list) list.innerHTML = `<p id="no-exception-msg" style="font-size: 11px; color: #888;">No upcoming exceptions set.</p>`;
             }
 
             let customSchedulesActive = true;
@@ -1887,6 +1895,7 @@ async function saveSettings() {
                                 inputs[2].value = exc.end;
                             }
                         });
+                        if(oldExceptions.length === 0 && list) list.innerHTML = `<p id="no-exception-msg" style="font-size: 11px; color: #888;">No upcoming exceptions set.</p>`;
                     } catch(e){}
                 }
                 
@@ -1963,7 +1972,10 @@ async function saveSettings() {
 
 function addException() {
     const list = document.getElementById('exception-list');
+    const noMsg = document.getElementById('no-exception-msg');
     if (!list) return;
+
+    if (noMsg) noMsg.remove();
 
     if (list.children.length >= 5) {
         openInfoModal("Limit Reached", "You can only set up to 5 future exception dates.");
@@ -1990,7 +2002,11 @@ function updateExceptionCount() {
     const list = document.getElementById('exception-list');
     const countSpan = document.getElementById('exception-count');
     if (list && countSpan) {
-        countSpan.innerText = `(${list.children.length}/5)`;
+        const count = list.children.length;
+        countSpan.innerText = `(${count}/5)`;
+        if (count === 0 && !document.getElementById('no-exception-msg')) {
+            list.innerHTML = `<p id="no-exception-msg" style="font-size: 11px; color: #888;">No upcoming exceptions set.</p>`;
+        }
     }
 }
 
