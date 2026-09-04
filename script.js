@@ -83,7 +83,7 @@ const CAL_STYLES = {
 const textStatusMap = {
     'present': { text: "Present", color: "#4ade80" },
     'company_holiday': { text: "Company Holiday", color: "#888888" },
-    'personal_holiday': { text: "Personal Holiday", color: "#1a1a1a" },
+    'personal_holiday': { text: "Personal Holiday", color: "#ffffff" },
     'absent': { text: "Absent", color: "#ef4444" },
     'pending': { text: "Pending", color: "#f59e0b" },
     'not_started': { text: "Not Started", color: "#3b82f6" },
@@ -899,7 +899,11 @@ async function loadTodayAttendance() {
         }
 
         if (globalHolidays.includes(todayStr)) {
-            if (globalHolidayMsg) globalHolidayMsg.style.display = 'block';
+            if (globalHolidayMsg) {
+                globalHolidayMsg.style.display = 'block';
+                const h3 = globalHolidayMsg.querySelector('h3');
+                if(h3) h3.innerText = "Company Holiday";
+            }
             document.querySelectorAll('.status-section').forEach(el => el.style.display = 'none');
             return;
         }
@@ -1638,10 +1642,10 @@ function initializeSettingsCalendar() {
             dayDiv.style.cssText += CAL_STYLES.disabled;
         } else {
             if (isHoliday) {
-                dayDiv.style.cssText += CAL_STYLES.holiday;
+                dayDiv.style.cssText += CAL_STYLES.company_holiday;
                 dayDiv.dataset.isholiday = "true";
             } else {
-                dayDiv.style.cssText += CAL_STYLES.default;
+                dayDiv.style.cssText += CAL_STYLES.future;
                 dayDiv.dataset.isholiday = "false";
             }
 
@@ -1652,11 +1656,11 @@ function initializeSettingsCalendar() {
                 dayDiv.style.cursor = 'pointer';
                 dayDiv.onclick = function() {
                     if (this.dataset.isholiday === "true") {
-                        this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.default;
+                        this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.future;
                         this.dataset.isholiday = "false";
                         localHolidays = localHolidays.filter(d => d !== dateStr);
                     } else {
-                        this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.holiday;
+                        this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.company_holiday;
                         this.dataset.isholiday = "true";
                         if (!localHolidays.includes(dateStr)) localHolidays.push(dateStr);
                     }
@@ -2574,7 +2578,6 @@ async function loadStaffRecords() {
     if (percent > 100) percent = 100;
     
     const todayStr2 = getUniversalDate(today);
-    const checkedInToday = validCheckinDates.has(todayStr2);
 
     let displayStart = globalStart;
     let displayEnd = globalEnd;
@@ -2810,27 +2813,26 @@ async function loadStaffRecords() {
                 
                 let statusKey = getDayStatus(loopDate, validCheckinDates, personalHolidaysSet, holidaysArray, loopStart, loopEnd);
                 
-                let bgCol = "transparent";
-                let textCol = "#888";
-                let borCol = "#eaeaea";
-                let iconHtml = loopDate.getDate();
-                
+                let bgCol, borCol, textCol, iconHtml;
                 if (loopDate < joinedDate) {
-                    bgCol = "transparent"; borCol = "#f0f0f0"; textCol = "#ccc";
-                } else if (statusKey === 'present') {
-                    bgCol = "#4ade80"; borCol = "#4ade80"; textCol = "#1a1a1a";
-                    iconHtml = "✓";
-                } else if (statusKey === 'company_holiday') {
-                    bgCol = "#1a1a1a"; borCol = "#1a1a1a"; textCol = "#ffffff";
-                } else if (statusKey === 'personal_holiday') {
-                    bgCol = "#ffffff"; borCol = "#1a1a1a"; textCol = "#1a1a1a";
-                } else if (statusKey === 'absent') {
-                    bgCol = "transparent"; borCol = "#ef4444"; textCol = "#ef4444";
-                    iconHtml = "×";
-                } else if (statusKey === 'pending') {
-                    bgCol = "#fef3c7"; borCol = "#f59e0b"; textCol = "#d97706";
+                    bgCol = "transparent"; borCol = "#f0f0f0"; textCol = "#ccc"; iconHtml = loopDate.getDate();
                 } else {
-                    bgCol = "transparent"; borCol = "#eaeaea"; textCol = "#888";
+                    switch(statusKey) {
+                        case 'present':
+                            bgCol = "#4ade80"; borCol = "#4ade80"; textCol = "#1a1a1a"; iconHtml = "✓"; break;
+                        case 'absent':
+                            bgCol = "transparent"; borCol = "#ef4444"; textCol = "#ef4444"; iconHtml = "×"; break;
+                        case 'pending':
+                            bgCol = "#fef3c7"; borCol = "#f59e0b"; textCol = "#d97706"; iconHtml = loopDate.getDate(); break;
+                        case 'not_started':
+                            bgCol = "#eff6ff"; borCol = "#93c5fd"; textCol = "#3b82f6"; iconHtml = loopDate.getDate(); break;
+                        case 'company_holiday':
+                            bgCol = "#1a1a1a"; borCol = "#1a1a1a"; textCol = "#ffffff"; iconHtml = loopDate.getDate(); break;
+                        case 'personal_holiday':
+                            bgCol = "#ffffff"; borCol = "#1a1a1a"; textCol = "#1a1a1a"; iconHtml = loopDate.getDate(); break;
+                        default:
+                            bgCol = "transparent"; borCol = "#eaeaea"; textCol = "#888"; iconHtml = loopDate.getDate(); break;
+                    }
                 }
                 
                 const isTodayCircle = (loopDateStr === getUniversalDate(today)) ? `border: 2px solid ${borCol !== '#eaeaea' ? borCol : '#1a1a1a'}; transform: scale(1.1); font-weight: 800;` : `border: 1px solid ${borCol};`;
@@ -2848,25 +2850,25 @@ async function loadStaffRecords() {
             if (pulseMotivation) {
                 let currentStreak = 0;
                 let tempDate = new Date(today);
+                
+                const now2 = new Date();
+                const cTime = String(now2.getHours()).padStart(2, '0') + ':' + String(now2.getMinutes()).padStart(2, '0');
 
                 while (tempDate >= joinedDate) {
-                    let loopStart = globalStart;
-                    let loopEnd = globalEnd;
-                    if (exceptionsActive && Array.isArray(exceptions)) {
-                        const ex = exceptions.find(e => e.date === getUniversalDate(tempDate));
-                        if (ex) { loopStart = ex.start; loopEnd = ex.end; }
-                    }
-                    if (customSchedulesActive && Array.isArray(customSchedules)) {
-                        const myCustom = customSchedules.find(c => c.email === currentStaff.email);
-                        if (myCustom) { loopStart = myCustom.start; loopEnd = myCustom.end; }
-                    }
+                    const dStr = getUniversalDate(tempDate);
+                    const isHol = holidaysArray.includes(dStr) || personalHolidaysSet.has(dStr);
+                    const isPresent = validCheckinDates.has(dStr);
                     
-                    let loopStatus = getDayStatus(tempDate, validCheckinDates, personalHolidaysSet, holidaysArray, loopStart, loopEnd);
-                    
-                    if (loopStatus === 'present') {
+                    if (isPresent) {
                         currentStreak++;
-                    } else if (loopStatus === 'absent') {
-                        break; 
+                    } else if (!isHol) {
+                        if (tempDate.getTime() === today.getTime()) {
+                            if (cTime > displayEnd) {
+                                break; 
+                            }
+                        } else {
+                            break; 
+                        }
                     }
                     tempDate.setDate(tempDate.getDate() - 1);
                     tempDate.setHours(0,0,0,0);
@@ -2947,16 +2949,19 @@ async function loadStaffRecords() {
                 if (ex) { loopStart = ex.start; loopEnd = ex.end; }
             }
             if (customSchedulesActive && Array.isArray(customSchedules)) {
-                const myCustom = customSchedules.find(c => c.email === targetEmail);
+                const myCustom = customSchedules.find(c => c.email === currentStaff.email);
                 if (myCustom) { loopStart = myCustom.start; loopEnd = myCustom.end; }
             }
             
             let statusKey = getDayStatus(currentIterationDate, validCheckinDates, personalHolidaysSet, holidaysArray, loopStart, loopEnd);
             let inlineStyle = CAL_STYLES[statusKey] || CAL_STYLES.future;
             
-            if (currentIterationDate < empJoinedDate) inlineStyle = CAL_STYLES.disabled;
+            if (currentIterationDate < joinedDate) inlineStyle = CAL_STYLES.disabled;
 
-            calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle}">${day}</div>`);
+            let cursorStyle = "cursor: default;";
+            let clickAttr = "";
+            
+            calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle} ${cursorStyle}" ${clickAttr}>${day}</div>`);
         }
     }
 }
