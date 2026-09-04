@@ -1043,11 +1043,12 @@ async function loadTeamLedger() {
             let percentColor = displayPercent >= 80 ? '#4ade80' : (displayPercent >= 50 ? '#f59e0b' : '#ef4444');
 
             const checkedInToday = presentLogs.some(log => log.date === todayStr);
-            const isHolidayToday = holidaysArray.includes(todayStr) || personalHolidaysSet.has(todayStr);
 
             let statusHtml;
-            if (isHolidayToday) {
-                statusHtml = `<span style="color:#888; font-weight:bold;">Holiday</span>`;
+            if (holidaysArray.includes(todayStr)) {
+                statusHtml = `<span style="color:#888; font-weight:bold;">Org Off</span>`;
+            } else if (personalHolidaysSet.has(todayStr)) {
+                statusHtml = `<span style="color:#888; font-weight:bold;">Personal Off</span>`;
             } else if (checkedInToday) {
                 statusHtml = `<span style="color:#4ade80; font-weight:bold;">Active</span>`;
             } else {
@@ -1201,8 +1202,11 @@ async function loadIndividualAnalytics() {
                     let todayStatus = "";
                     let todayColor = ""; 
 
-                    if (holidaysArray.includes(todayStr2) || personalHolidaysSet.has(todayStr2)) {
-                        todayStatus = "Holiday / Off";
+                    if (holidaysArray.includes(todayStr2)) {
+                        todayStatus = "Organization Off";
+                        todayColor = "#a0a0a0"; 
+                    } else if (personalHolidaysSet.has(todayStr2)) {
+                        todayStatus = "Personal Off";
                         todayColor = "#a0a0a0"; 
                     } else if (checkedInToday) {
                         todayStatus = "Present";
@@ -1321,7 +1325,7 @@ async function loadIndividualAnalytics() {
 
 function handleEmployeeCalendarClick(dateStr, isCommonHoliday, isPersonalHoliday, isPast, isToday, wasPresent) {
     if (isCommonHoliday) {
-        openInfoModal('Common Holiday', 'This day is a common holiday for all employees. To change this, please go to the Settings tab.');
+        openInfoModal('Organization Holiday', 'This day is an organization holiday for all employees. To change this, please go to the Settings tab.');
         return;
     }
 
@@ -1524,7 +1528,7 @@ function initializeSettingsCalendar() {
     if (!calendar) return; 
 
     const leader = getLeader();
-    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(2000, 0, 1);
+    let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(2000, 0, 1);
     joinedDate.setHours(0,0,0,0);
 
     const year = settingsDate.getFullYear();
@@ -1580,6 +1584,7 @@ function initializeSettingsCalendar() {
     }
 
     const nowStrict = new Date();
+    // Normalize to start of day to avoid timezone hour shifts
     nowStrict.setHours(0,0,0,0);
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -1646,7 +1651,7 @@ function markAllSundays() {
     const btn = document.getElementById('btn-toggle-sundays');
     const now = new Date();
     const leader = getLeader();
-    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
+    let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
     joinedDate.setHours(0,0,0,0);
     
     const maxYear = (now.getMonth() === 11 && now.getDate() >= 25) ? now.getFullYear() + 1 : now.getFullYear();
@@ -1676,7 +1681,7 @@ function markSecondSaturdays() {
     const btn = document.getElementById('btn-toggle-saturdays');
     const now = new Date();
     const leader = getLeader();
-    let joinedDate = leader && leader.joined_date ? new Date(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
+    let joinedDate = leader && leader.joined_date ? parseLocal(leader.joined_date) : new Date(now.getFullYear(), 0, 1);
     joinedDate.setHours(0,0,0,0);
     
     const maxYear = (now.getMonth() === 11 && now.getDate() >= 25) ? now.getFullYear() + 1 : now.getFullYear();
@@ -2561,7 +2566,7 @@ async function loadStaffRecords() {
     } else {
         exceptionText = "None scheduled";
         if (exceptionsActive && Array.isArray(exceptions)) {
-            const futureExc = exceptions.filter(ex => new Date(ex.date) >= today).sort((a,b) => new Date(a.date) - new Date(b.date));
+            const futureExc = exceptions.filter(ex => parseLocal(ex.date) >= today).sort((a,b) => parseLocal(a.date) - parseLocal(b.date));
             if (futureExc.length > 0) {
                 const next = futureExc[0]; const parts = next.date.split('-');
                 exceptionText = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])} (${formatTime12(next.start)} - ${formatTime12(next.end)})`;
@@ -2581,7 +2586,7 @@ async function loadStaffRecords() {
     if (holidaysListEl) {
         const allFutureHolidays = [];
         holidaysArray.forEach(d => {
-            if (new Date(d) >= today) allFutureHolidays.push({ date: d, type: 'Common' });
+            if (parseLocal(d) >= today) allFutureHolidays.push({ date: d, type: 'Common' });
         });
         
         const { data: futurePersonalLogs } = await supabaseClient
@@ -2592,13 +2597,13 @@ async function loadStaffRecords() {
             
         if (futurePersonalLogs) {
             futurePersonalLogs.forEach(l => {
-                if (new Date(l.date) >= today && !allFutureHolidays.find(f => f.date === l.date)) {
+                if (parseLocal(l.date) >= today && !allFutureHolidays.find(f => f.date === l.date)) {
                     allFutureHolidays.push({ date: l.date, type: 'Special' });
                 }
             });
         }
         
-        allFutureHolidays.sort((a,b) => new Date(a.date) - new Date(b.date));
+        allFutureHolidays.sort((a,b) => parseLocal(a.date) - parseLocal(b.date));
         const nextFive = allFutureHolidays.slice(0, 5);
         
         holidaysListEl.innerHTML = "";
@@ -2618,7 +2623,7 @@ async function loadStaffRecords() {
                     holidaysListEl.insertAdjacentHTML('beforeend', `
                         <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #ffffff; border: 1px solid #eaeaea; border-left: 3px solid #1a1a1a; border-radius: 4px; margin-bottom: 6px;">
                             <span style="font-size: 13px; color: #555; font-weight: 500;">${formattedDate}</span>
-                            <span style="font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Company Holiday</span>
+                            <span style="font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px;">Organization Holiday</span>
                         </div>
                     `);
                 }
@@ -2659,11 +2664,19 @@ async function loadStaffRecords() {
             const now2 = new Date();
             const cTime = String(now2.getHours()).padStart(2, '0') + ':' + String(now2.getMinutes()).padStart(2, '0');
 
-            if (isHoliday) { statusBox.innerText = "Holiday/Off"; statusBox.style.color = "#a0a0a0"; }
-            else if (checkedInToday) { statusBox.innerText = "Present"; statusBox.style.color = "#4ade80"; }
-            else if (cTime < displayStart) { statusBox.innerText = "Check-in window not started"; statusBox.style.color = "#94a3b8"; }
-            else if (cTime > displayEnd) { statusBox.innerText = "Absent"; statusBox.style.color = "#ef4444"; }
-            else { statusBox.innerText = "Pending"; statusBox.style.color = "#f59e0b"; }
+            if (holidaysArray.includes(todayStr2)) { 
+                statusBox.innerText = "Organization Off"; statusBox.style.color = "#a0a0a0"; 
+            } else if (personalHolidaysSet.has(todayStr2)) { 
+                statusBox.innerText = "Personal Off"; statusBox.style.color = "#a0a0a0"; 
+            } else if (checkedInToday) { 
+                statusBox.innerText = "Present"; statusBox.style.color = "#4ade80"; 
+            } else if (cTime < displayStart) { 
+                statusBox.innerText = "Check-in window not started"; statusBox.style.color = "#94a3b8"; 
+            } else if (cTime > displayEnd) { 
+                statusBox.innerText = "Absent"; statusBox.style.color = "#ef4444"; 
+            } else { 
+                statusBox.innerText = "Pending"; statusBox.style.color = "#f59e0b"; 
+            }
         }
 
         const dashHeader = document.getElementById('greeting-title');
@@ -2692,7 +2705,11 @@ async function loadStaffRecords() {
             if (isHoliday) {
                 checkInBtn.style.display = "none";
                 if(shiftPanel) shiftPanel.style.display = "none";
-                updateElementSafe('status-text', "Holiday / Off");
+                if (holidaysArray.includes(todayStr2)) {
+                    updateElementSafe('status-text', "Organization Off");
+                } else {
+                    updateElementSafe('status-text', "Personal Off");
+                }
             } else if (checkedInToday) {
                 statusCard.innerHTML = `<div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div><h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>`;
                 statusCard.classList.remove('ghost-theme');
@@ -2777,15 +2794,15 @@ async function loadStaffRecords() {
                 
                 if (loopDate < joinedDate) {
                     bgCol = "transparent"; borCol = "#f0f0f0"; textCol = "#ccc";
+                } else if (validCheckinDates.has(loopDateStr)) {
+                    bgCol = "#4ade80"; borCol = "#4ade80"; textCol = "#1a1a1a";
+                    iconHtml = "✓";
                 } else if (holidaysArray.includes(loopDateStr)) {
                     bgCol = "#1a1a1a"; borCol = "#1a1a1a"; textCol = "#ffffff";
                     iconHtml = loopDate.getDate();
                 } else if (personalHolidaysSet.has(loopDateStr)) {
                     bgCol = "#ffffff"; borCol = "#1a1a1a"; textCol = "#1a1a1a";
                     iconHtml = loopDate.getDate();
-                } else if (validCheckinDates.has(loopDateStr)) {
-                    bgCol = "#4ade80"; borCol = "#4ade80"; textCol = "#1a1a1a";
-                    iconHtml = "✓";
                 } else if (loopDateStr === getUniversalDate(today)) {
                     const now3 = new Date();
                     const cTime = String(now3.getHours()).padStart(2, '0') + ':' + String(now3.getMinutes()).padStart(2, '0');
