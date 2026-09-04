@@ -68,14 +68,48 @@ function updateElementSafe(id, text, color, bgColor) {
     } catch(e) {}
 }
 
+// --- 6-TIER ATTENDANCE STATUS ENGINE ---
 const CAL_STYLES = {
     present: "background-color: #4ade80 !important; color: #1a1a1a !important; border: 1px solid #4ade80 !important; font-weight: bold;",
+    pending: "background-color: #fef3c7 !important; color: #d97706 !important; border: 1px solid #f59e0b !important; font-weight: bold;",
+    not_started: "background-color: #eff6ff !important; color: #3b82f6 !important; border: 1px dashed #93c5fd !important; font-weight: bold;",
     absent: "background-color: transparent !important; color: #ef4444 !important; border: 1px dashed #ef4444 !important; font-weight: bold;",
-    holiday: "background-color: #1a1a1a !important; color: #ffffff !important; border: 1px solid #1a1a1a !important; font-weight: bold;",
-    personalHoliday: "background-color: #ffffff !important; color: #1a1a1a !important; border: 2px solid #1a1a1a !important; font-weight: bold;",
-    default: "background-color: #ffffff !important; color: #888 !important; border: 1px solid #eaeaea !important;",
+    company_holiday: "background-color: #1a1a1a !important; color: #ffffff !important; border: 1px solid #1a1a1a !important; font-weight: bold;",
+    personal_holiday: "background-color: #ffffff !important; color: #1a1a1a !important; border: 2px solid #1a1a1a !important; font-weight: bold;",
+    future: "background-color: transparent !important; color: #888 !important; border: 1px solid #eaeaea !important;",
     disabled: "background: repeating-linear-gradient(45deg, #f9f9f9, #f9f9f9 5px, #eaeaea 5px, #eaeaea 10px) !important; color: #ccc !important; pointer-events: none !important; border: 1px solid #eaeaea !important;"
 };
+
+const textStatusMap = {
+    'present': { text: "Present", color: "#4ade80" },
+    'company_holiday': { text: "Company Holiday", color: "#888888" },
+    'personal_holiday': { text: "Personal Holiday", color: "#1a1a1a" },
+    'absent': { text: "Absent", color: "#ef4444" },
+    'pending': { text: "Pending", color: "#f59e0b" },
+    'not_started': { text: "Not Started", color: "#3b82f6" },
+    'future': { text: "--", color: "#888888" }
+};
+
+function getDayStatus(dateObj, validCheckins, personalHols, companyHols, windowStart, windowEnd) {
+    const dateStr = getUniversalDate(dateObj);
+    const now = new Date();
+    const todayStr = getUniversalDate(now);
+    
+    if (validCheckins.has(dateStr)) return 'present';
+    if (companyHols.includes(dateStr)) return 'company_holiday';
+    if (personalHols.has(dateStr)) return 'personal_holiday';
+    
+    if (dateStr > todayStr) return 'future';
+    if (dateStr < todayStr) return 'absent';
+    
+    const currentHours = String(now.getHours()).padStart(2, '0');
+    const currentMinutes = String(now.getMinutes()).padStart(2, '0');
+    const currentTime = `${currentHours}:${currentMinutes}`;
+    
+    if (currentTime < windowStart) return 'not_started';
+    if (currentTime > windowEnd) return 'absent';
+    return 'pending';
+}
 
 // --- POPUP / MODAL CONTROLS ---
 function openModal(id) {
@@ -839,6 +873,7 @@ async function loadTodayAttendance() {
         let customSchedulesActive = true;
         let exceptionsActive = true;
         let globalEnd = "10:00";
+        let globalStart = "09:00";
 
         if (settings) {
             if (settings.holidays) try { globalHolidays = JSON.parse(settings.holidays); } catch(e){}
@@ -860,6 +895,7 @@ async function loadTodayAttendance() {
             }
 
             if (settings.check_in_end) globalEnd = settings.check_in_end;
+            if (settings.check_in_start) globalStart = settings.check_in_start;
         }
 
         if (globalHolidays.includes(todayStr)) {
@@ -886,63 +922,78 @@ async function loadTodayAttendance() {
         const currentMinutes = String(now.getMinutes()).padStart(2, '0');
         const currentTime = `${currentHours}:${currentMinutes}`;
 
+        let validCheckinDates = new Set();
+        let personalHolidaysSet = new Set();
+        attendanceLogs.forEach(log => {
+            if (log.status === 'Holiday/Off') personalHolidaysSet.add(log.user_email);
+            if (log.status === 'Present') validCheckinDates.add(log.user_email);
+        });
+
         (staffMembers || []).forEach(staff => {
             const log = (attendanceLogs || []).find(a => a.user_email === staff.email);
             const initial = staff.name ? staff.name.charAt(0).toUpperCase() : '?';
             const shortName = staff.name ? staff.name.split(' ')[0] : 'Staff';
+            
+            let uStart = globalStart;
+            let uEnd = globalEnd;
+            if (exceptionsActive && Array.isArray(exceptions)) {
+                const ex = exceptions.find(e => e.date === todayStr);
+                if (ex) { uStart = ex.start; uEnd = ex.end; }
+            }
+            if (customSchedulesActive && Array.isArray(customSchedules)) {
+                const myCustom = customSchedules.find(c => c.email === staff.email);
+                if (myCustom) { uStart = myCustom.start; uEnd = myCustom.end; }
+            }
+            
+            let isPresent = validCheckinDates.has(staff.email);
+            let isPersonal = personalHolidaysSet.has(staff.email);
+            
+            let status = 'pending';
+            if (isPresent) status = 'present';
+            else if (isPersonal) status = 'personal_holiday';
+            else if (currentTime < uStart) status = 'not_started';
+            else if (currentTime > uEnd) status = 'absent';
+            else status = 'pending';
 
-            if (log && log.status === 'Holiday/Off') {
+            if (status === 'personal_holiday') {
                 offCount++;
                 if (offList) {
                     offList.insertAdjacentHTML('beforeend', `
-                        <div class="member-card" style="background-color: #1a1a1a; border: 1px solid #1a1a1a; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
-                            <div class="avatar" style="background: #ffffff; color: #1a1a1a;">${initial}</div>
-                            <span class="name" style="color: #ffffff;">${shortName}</span>
-                            <span style="font-size: 9px; color: #aaa; font-weight: 500; margin-top: 2px;">Exempt</span>
+                        <div class="member-card" style="background-color: #ffffff; border: 2px solid #1a1a1a; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                            <div class="avatar" style="background: #1a1a1a; color: #ffffff;">${initial}</div>
+                            <span class="name" style="color: #1a1a1a;">${shortName}</span>
+                            <span style="font-size: 9px; color: #1a1a1a; font-weight: bold; margin-top: 2px;">Exempt</span>
                         </div>
                     `);
                 }
-            } else if (log && log.status === 'Present') {
+            } else if (status === 'present') {
                 activeCount++;
                 activeList.insertAdjacentHTML('beforeend', `
                     <div class="member-card present">
                         <div class="avatar" style="background: #1a1a1a; color: white;">${initial}</div>
                         <span class="name">${shortName}</span>
-                        <span style="font-size: 9px; color: #888; font-weight: 500; margin-top: 2px;">${log.time}</span>
+                        <span style="font-size: 9px; color: #888; font-weight: 500; margin-top: 2px;">${log ? log.time : ''}</span>
                     </div>
                 `);
-            } else {
-                let allowedEnd = globalEnd;
-                
-                if (exceptionsActive) {
-                    const todayException = exceptions.find(ex => ex.date === todayStr);
-                    if (todayException) allowedEnd = todayException.end;
-                }
-                
-                if (customSchedulesActive) {
-                    const myCustom = customSchedules.find(c => c.email === staff.email);
-                    if (myCustom) allowedEnd = myCustom.end;
-                }
-
-                if (currentTime > allowedEnd) {
-                    absentCount++;
-                    if (absentList) {
-                        absentList.insertAdjacentHTML('beforeend', `
-                            <div class="member-card" style="background-color: #fef2f2; border: 1px dashed #ef4444;">
-                                <div class="avatar" style="background: #fca5a5; color: #7f1d1d;">${initial}</div>
-                                <span class="name" style="color: #ef4444;">${shortName}</span>
-                            </div>
-                        `);
-                    }
-                } else {
-                    pendingCount++;
-                    pendingList.insertAdjacentHTML('beforeend', `
-                        <div class="member-card absent">
-                            <div class="avatar" style="background: #f0f0f0; color: #333;">${initial}</div>
-                            <span class="name">${shortName}</span>
+            } else if (status === 'absent') {
+                absentCount++;
+                if (absentList) {
+                    absentList.insertAdjacentHTML('beforeend', `
+                        <div class="member-card" style="background-color: #fef2f2; border: 1px dashed #ef4444;">
+                            <div class="avatar" style="background: #fca5a5; color: #7f1d1d;">${initial}</div>
+                            <span class="name" style="color: #ef4444;">${shortName}</span>
                         </div>
                     `);
                 }
+            } else {
+                pendingCount++;
+                pendingList.insertAdjacentHTML('beforeend', `
+                    <div class="member-card absent">
+                        <div class="avatar" style="background: #f0f0f0; color: #333;">${initial}</div>
+                        <span class="name">${shortName}</span>
+                        ${status === 'not_started' ? '<span style="font-size: 9px; color: #3b82f6; font-weight: 600; margin-top: 2px;">Starts ' + formatTime12(uStart) + '</span>' : ''}
+                    </div>
+                `);
             }
         });
 
@@ -993,10 +1044,38 @@ async function loadTeamLedger() {
     try {
         const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         const { data: attendance } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
-        const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
         let holidaysArray = [];
-        try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
+        let customSchedules = [];
+        let exceptions = [];
+        let customSchedulesActive = true;
+        let exceptionsActive = true;
+        let globalStart = "09:00";
+        let globalEnd = "10:00";
+
+        if (settings) {
+            if (settings.holidays) {
+                try { holidaysArray = JSON.parse(settings.holidays); } catch(e){}
+                if (!Array.isArray(holidaysArray)) holidaysArray = [];
+            }
+            if (settings.custom_schedules) {
+                try {
+                    let parsed = JSON.parse(settings.custom_schedules);
+                    if (Array.isArray(parsed)) customSchedules = parsed;
+                    else { customSchedulesActive = parsed.active; customSchedules = parsed.data || []; }
+                } catch(e){}
+            }
+            if (settings.exceptions) {
+                try {
+                    let parsed = JSON.parse(settings.exceptions);
+                    if (Array.isArray(parsed)) exceptions = parsed;
+                    else { exceptionsActive = parsed.active; exceptions = parsed.data || []; }
+                } catch(e){}
+            }
+            if (settings.check_in_start) globalStart = settings.check_in_start;
+            if (settings.check_in_end) globalEnd = settings.check_in_end;
+        }
 
         tableBody.innerHTML = ""; 
 
@@ -1040,17 +1119,20 @@ async function loadTeamLedger() {
             let avgTimeStr = calculateAvgCheckInTime(presentLogs);
             let percentColor = displayPercent >= 80 ? '#4ade80' : (displayPercent >= 50 ? '#f59e0b' : '#ef4444');
 
-            const checkedInToday = presentLogs.some(log => log.date === todayStr);
-            const isHolidayToday = holidaysArray.includes(todayStr) || personalHolidaysSet.has(todayStr);
-
-            let statusHtml;
-            if (isHolidayToday) {
-                statusHtml = `<span style="color:#888; font-weight:bold;">Holiday</span>`;
-            } else if (checkedInToday) {
-                statusHtml = `<span style="color:#4ade80; font-weight:bold;">Active</span>`;
-            } else {
-                statusHtml = `<span style="color:#f59e0b; font-weight:bold;">Pending</span>`;
+            let uStart = globalStart;
+            let uEnd = globalEnd;
+            if (exceptionsActive && Array.isArray(exceptions)) {
+                const todayEx = exceptions.find(ex => ex.date === todayStr);
+                if (todayEx) { uStart = todayEx.start; uEnd = todayEx.end; }
             }
+            if (customSchedulesActive && Array.isArray(customSchedules)) {
+                const myCustom = customSchedules.find(c => c.email === user.email);
+                if (myCustom) { uStart = myCustom.start; uEnd = myCustom.end; }
+            }
+
+            let todayStatusKey = getDayStatus(today, validCheckinDates, personalHolidaysSet, holidaysArray, uStart, uEnd);
+            let stObj = textStatusMap[todayStatusKey] || textStatusMap['future'];
+            let statusHtml = `<span style="color:${stObj.color}; font-weight:bold;">${stObj.text}</span>`;
 
             tableBody.insertAdjacentHTML('beforeend', `
                 <tr style="border-bottom: 1px solid #eaeaea; cursor: pointer;" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'" onmouseover="this.style.backgroundColor='#f9f9f9'" onmouseout="this.style.backgroundColor='transparent'">
@@ -1086,8 +1168,35 @@ async function loadIndividualAnalytics() {
         currentViewedUser = user;
 
         let holidaysArray = [];
-        try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
-        if (!Array.isArray(holidaysArray)) holidaysArray = [];
+        let customSchedulesArray = [];
+        let exceptionsArray = [];
+        let customSchedulesActive = true;
+        let exceptionsActive = true;
+        let globalStart = "09:00";
+        let globalEnd = "10:00";
+
+        if (settings) {
+            if (settings.holidays) {
+                try { holidaysArray = JSON.parse(settings.holidays); } catch(e){}
+                if (!Array.isArray(holidaysArray)) holidaysArray = [];
+            }
+            if (settings.custom_schedules) {
+                try {
+                    let parsed = JSON.parse(settings.custom_schedules);
+                    if (Array.isArray(parsed)) customSchedulesArray = parsed;
+                    else { customSchedulesActive = parsed.active; customSchedulesArray = parsed.data || []; }
+                } catch(e){}
+            }
+            if (settings.exceptions) {
+                try {
+                    let parsed = JSON.parse(settings.exceptions);
+                    if (Array.isArray(parsed)) exceptionsArray = parsed;
+                    else { exceptionsActive = parsed.active; exceptionsArray = parsed.data || []; }
+                } catch(e){}
+            }
+            if (settings.check_in_start) globalStart = settings.check_in_start;
+            if (settings.check_in_end) globalEnd = settings.check_in_end;
+        }
 
         document.getElementById('analytics-header').style.display = 'block';
         document.getElementById('credentials-card').style.display = 'block';
@@ -1102,6 +1211,7 @@ async function loadIndividualAnalytics() {
 
         const today = new Date();
         today.setHours(0,0,0,0);
+        const todayStr2 = getUniversalDate(today);
         
         let safeLogs = Array.isArray(logs) ? logs : [];
         let validCheckinDates = new Set();
@@ -1117,13 +1227,11 @@ async function loadIndividualAnalytics() {
         });
 
         let workingDays = 0; 
-        if (user && user.joined_date) {
-            const joinedDate = parseLocal(user.joined_date);
-            for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
-                const dateStr = getUniversalDate(d);
-                if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) {
-                    workingDays++;
-                }
+        const empJoinedDate = user && user.joined_date ? parseLocal(user.joined_date) : new Date();
+        for (let d = new Date(empJoinedDate); d <= today; d.setDate(d.getDate() + 1)) {
+            const dateStr = getUniversalDate(d);
+            if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) {
+                workingDays++;
             }
         }
         
@@ -1138,9 +1246,6 @@ async function loadIndividualAnalytics() {
         
         updateElementSafe('attendance-percent-box', `${percent}%`, percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444'));
 
-        const todayStr2 = getUniversalDate(today);
-        const checkedInToday = validCheckinDates.has(todayStr2);
-
         try {
             const labels = document.querySelectorAll('.stat-label');
             let statusLabelEl = Array.from(labels).find(el => el.innerText.trim().toUpperCase() === 'SYSTEM STATUS');
@@ -1150,63 +1255,22 @@ async function loadIndividualAnalytics() {
                 const statusValueEl = statusLabelEl.nextElementSibling;
                 
                 if (statusValueEl) {
-                    let todayStatus = "Not Yet";
-                    let todayColor = "#f59e0b"; 
-
-                    if (holidaysArray.includes(todayStr2) || personalHolidaysSet.has(todayStr2)) {
-                        todayStatus = "Holiday / Off";
-                        todayColor = "#a0a0a0"; 
-                    } else if (checkedInToday) {
-                        todayStatus = "Present";
-                        todayColor = "#4ade80"; 
-                    } else {
-                        let allowedEnd = settings && settings.check_in_end ? settings.check_in_end : "10:00";
-                        
-                        let customSchedulesActive = true;
-                        let exceptionsActive = true;
-                        let customSchedulesArray = [];
-                        let exceptionsArray = [];
-                        
-                        if (settings) {
-                            if (settings.custom_schedules) {
-                                try {
-                                    let parsed = JSON.parse(settings.custom_schedules);
-                                    if (Array.isArray(parsed)) customSchedulesArray = parsed;
-                                    else { customSchedulesActive = parsed.active; customSchedulesArray = parsed.data || []; }
-                                } catch(e){}
-                            }
-                            if (settings.exceptions) {
-                                try {
-                                    let parsed = JSON.parse(settings.exceptions);
-                                    if (Array.isArray(parsed)) exceptionsArray = parsed;
-                                    else { exceptionsActive = parsed.active; exceptionsArray = parsed.data || []; }
-                                } catch(e){}
-                            }
-                        }
-                        
-                        if (exceptionsActive) {
-                            const todayException = exceptionsArray.find(ex => ex.date === todayStr2);
-                            if (todayException) allowedEnd = todayException.end;
-                        }
-
-                        if (customSchedulesActive) {
-                            const myCustom = customSchedulesArray.find(c => c.email === targetEmail);
-                            if (myCustom) allowedEnd = myCustom.end;
-                        }
-
-                        const now = new Date();
-                        const currentHours = String(now.getHours()).padStart(2, '0');
-                        const currentMinutes = String(now.getMinutes()).padStart(2, '0');
-                        const currentTime = `${currentHours}:${currentMinutes}`;
-
-                        if (currentTime > allowedEnd) {
-                            todayStatus = "Absent";
-                            todayColor = "#ef4444"; 
-                        }
+                    let uStart = globalStart;
+                    let uEnd = globalEnd;
+                    if (exceptionsActive && Array.isArray(exceptionsArray)) {
+                        const todayException = exceptionsArray.find(ex => ex.date === todayStr2);
+                        if (todayException) { uStart = todayException.start; uEnd = todayException.end; }
                     }
-
-                    statusValueEl.innerText = todayStatus;
-                    statusValueEl.style.color = todayColor;
+                    if (customSchedulesActive && Array.isArray(customSchedulesArray)) {
+                        const myCustom = customSchedulesArray.find(c => c.email === targetEmail);
+                        if (myCustom) { uStart = myCustom.start; uEnd = myCustom.end; }
+                    }
+                    
+                    let todayStatusKey = getDayStatus(today, validCheckinDates, personalHolidaysSet, holidaysArray, uStart, uEnd);
+                    let stObj = textStatusMap[todayStatusKey] || textStatusMap['future'];
+                    
+                    statusValueEl.innerText = stObj.text;
+                    statusValueEl.style.color = stObj.color;
                 }
             }
         } catch(e) { console.warn("Could not update system status UI"); }
@@ -1214,8 +1278,6 @@ async function loadIndividualAnalytics() {
         const year = analyticsDate.getFullYear();
         const month = analyticsDate.getMonth();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-        
-        const empJoinedDate = user && user.joined_date ? parseLocal(user.joined_date) : new Date();
 
         const monthTitleEl = document.getElementById('calendar-month-title');
         if (monthTitleEl) {
@@ -1256,69 +1318,45 @@ async function loadIndividualAnalytics() {
             const currentIterationDate = new Date(year, month, day);
             const dateStrIteration = getUniversalDate(currentIterationDate);
             
-            const wasPresent = validCheckinDates.has(dateStrIteration);
-            const isPersonalHoliday = personalHolidaysSet.has(dateStrIteration);
-            const isCommonHoliday = holidaysArray.includes(dateStrIteration);
-            const isPast = currentIterationDate < nowStrict;
-            const isToday = dateStrIteration === getUniversalDate(nowStrict);
-            
-            let inlineStyle = CAL_STYLES.default;
-            
-            if (currentIterationDate < empJoinedDate) {
-                inlineStyle = CAL_STYLES.disabled;
-            } else if (isCommonHoliday) {
-                inlineStyle = CAL_STYLES.holiday;
-            } else if (isPersonalHoliday) {
-                inlineStyle = CAL_STYLES.personalHoliday;
-            } else if (currentIterationDate > today) {
-                inlineStyle = CAL_STYLES.default;
-            } else if (wasPresent) { 
-                inlineStyle = CAL_STYLES.present; 
-            } else { 
-                inlineStyle = CAL_STYLES.absent; 
+            let loopStart = globalStart;
+            let loopEnd = globalEnd;
+            if (exceptionsActive && Array.isArray(exceptionsArray)) {
+                const ex = exceptionsArray.find(e => e.date === dateStrIteration);
+                if (ex) { loopStart = ex.start; loopEnd = ex.end; }
             }
+            if (customSchedulesActive && Array.isArray(customSchedulesArray)) {
+                const myCustom = customSchedulesArray.find(c => c.email === targetEmail);
+                if (myCustom) { loopStart = myCustom.start; loopEnd = myCustom.end; }
+            }
+            
+            let statusKey = getDayStatus(currentIterationDate, validCheckinDates, personalHolidaysSet, holidaysArray, loopStart, loopEnd);
+            let inlineStyle = CAL_STYLES[statusKey] || CAL_STYLES.future;
+            if (currentIterationDate < empJoinedDate) inlineStyle = CAL_STYLES.disabled;
 
             let cursorStyle = "cursor: default;";
             let clickAttr = "";
 
             if (currentIterationDate >= empJoinedDate) {
-                if (isCommonHoliday) {
+                if (statusKey === 'company_holiday') {
                     cursorStyle = "cursor: pointer;";
-                    clickAttr = `onclick="handleEmployeeCalendarClick('${dateStrIteration}', true, false, ${isPast}, ${isToday}, ${wasPresent})"`;
-                } else if (isPast) {
-                    cursorStyle = "cursor: default;";
-                    clickAttr = "";
-                } else if (isToday && wasPresent) {
-                    cursorStyle = "cursor: default;";
-                    clickAttr = "";
-                } else {
+                    clickAttr = `onclick="handleEmployeeCalendarClick('${dateStrIteration}', true, false, false, false, false)"`;
+                } else if (statusKey === 'present' || statusKey === 'absent' || statusKey === 'not_started' || statusKey === 'pending') {
                     cursorStyle = "cursor: pointer;";
-                    clickAttr = `onclick="handleEmployeeCalendarClick('${dateStrIteration}', false, ${isPersonalHoliday}, ${isPast}, ${isToday}, ${wasPresent})"`;
+                    clickAttr = `onclick="handleEmployeeCalendarClick('${dateStrIteration}', false, false, false, false, false)"`;
+                } else if (statusKey === 'personal_holiday') {
+                    cursorStyle = "cursor: pointer;";
+                    clickAttr = `onclick="handleEmployeeCalendarClick('${dateStrIteration}', false, true, false, false, false)"`;
                 }
             }
             
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle} ${cursorStyle}" ${clickAttr}>${day}</div>`);
         }
-
-        const legendContainers = document.querySelectorAll('.dashboard-content div[style*="justify-content: space-around"]');
-        legendContainers.forEach(container => {
-            container.style.flexWrap = 'wrap';
-            container.style.rowGap = '8px';
-            if (!container.innerHTML.includes("Personal Off")) {
-                container.insertAdjacentHTML('beforeend', `<span><span style="display:inline-block; width:10px; height:10px; border:2px solid #1a1a1a; background-color:#ffffff; margin-right:4px; border-radius:2px; vertical-align:-1px; box-sizing: border-box;"></span>Personal Off</span>`);
-            }
-        });
-
     } catch (err) { console.error(err); }
 }
 
 function handleEmployeeCalendarClick(dateStr, isCommonHoliday, isPersonalHoliday, isPast, isToday, wasPresent) {
     if (isCommonHoliday) {
-        openInfoModal('Common Holiday', 'This day is a common holiday for all employees. To change this, please go to the Settings tab.');
-        return;
-    }
-
-    if (isPast || (isToday && wasPresent)) {
+        openInfoModal('Company Holiday', 'This day is a company holiday for all employees. To change this, please go to the Settings tab.');
         return;
     }
 
@@ -1573,7 +1611,6 @@ function initializeSettingsCalendar() {
     }
 
     const nowStrict = new Date();
-    // Normalize to start of day to avoid timezone hour shifts
     nowStrict.setHours(0,0,0,0);
 
     for (let i = 1; i <= daysInMonth; i++) {
@@ -2537,7 +2574,6 @@ async function loadStaffRecords() {
     if (percent > 100) percent = 100;
     
     const todayStr2 = getUniversalDate(today);
-    const isHoliday = holidaysArray.includes(todayStr2) || personalHolidaysSet.has(todayStr2);
     const checkedInToday = validCheckinDates.has(todayStr2);
 
     let displayStart = globalStart;
@@ -2648,11 +2684,13 @@ async function loadStaffRecords() {
             percentBox.style.color = percent >= 80 ? '#4ade80' : (percent >= 50 ? '#f59e0b' : '#ef4444');
         }
 
+        let todayStatusKey = getDayStatus(today, validCheckinDates, personalHolidaysSet, holidaysArray, displayStart, displayEnd);
+        let stObj = textStatusMap[todayStatusKey] || textStatusMap['future'];
+        
         const statusBox = document.getElementById('staff-ledger-status');
         if (statusBox) {
-            if (isHoliday) { statusBox.innerText = "Holiday/Off"; statusBox.style.color = "#a0a0a0"; }
-            else if (checkedInToday) { statusBox.innerText = "Active"; statusBox.style.color = "#4ade80"; }
-            else { statusBox.innerText = "Absent"; statusBox.style.color = "#ef4444"; }
+            statusBox.innerText = stObj.text;
+            statusBox.style.color = stObj.color;
         }
 
         const dashHeader = document.getElementById('greeting-title');
@@ -2678,11 +2716,11 @@ async function loadStaffRecords() {
         if (window.staffHomeTimer) clearInterval(window.staffHomeTimer);
 
         if (statusCard && checkInBtn) {
-            if (isHoliday) {
+            if (todayStatusKey === 'company_holiday' || todayStatusKey === 'personal_holiday') {
                 checkInBtn.style.display = "none";
                 if(shiftPanel) shiftPanel.style.display = "none";
-                updateElementSafe('status-text', "Holiday / Off");
-            } else if (checkedInToday) {
+                updateElementSafe('status-text', stObj.text);
+            } else if (todayStatusKey === 'present') {
                 statusCard.innerHTML = `<div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div><h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>`;
                 statusCard.classList.remove('ghost-theme');
                 statusCard.style.border = '1px solid #e0e0e0';
@@ -2759,6 +2797,19 @@ async function loadStaffRecords() {
                 loopDate.setDate(startOfWeek.getDate() + i);
                 const loopDateStr = getUniversalDate(loopDate);
                 
+                let loopStart = globalStart;
+                let loopEnd = globalEnd;
+                if (exceptionsActive && Array.isArray(exceptions)) {
+                    const ex = exceptions.find(e => e.date === loopDateStr);
+                    if (ex) { loopStart = ex.start; loopEnd = ex.end; }
+                }
+                if (customSchedulesActive && Array.isArray(customSchedules)) {
+                    const myCustom = customSchedules.find(c => c.email === currentStaff.email);
+                    if (myCustom) { loopStart = myCustom.start; loopEnd = myCustom.end; }
+                }
+                
+                let statusKey = getDayStatus(loopDate, validCheckinDates, personalHolidaysSet, holidaysArray, loopStart, loopEnd);
+                
                 let bgCol = "transparent";
                 let textCol = "#888";
                 let borCol = "#eaeaea";
@@ -2766,18 +2817,18 @@ async function loadStaffRecords() {
                 
                 if (loopDate < joinedDate) {
                     bgCol = "transparent"; borCol = "#f0f0f0"; textCol = "#ccc";
-                } else if (validCheckinDates.has(loopDateStr)) {
+                } else if (statusKey === 'present') {
                     bgCol = "#4ade80"; borCol = "#4ade80"; textCol = "#1a1a1a";
                     iconHtml = "✓";
-                } else if (holidaysArray.includes(loopDateStr)) {
+                } else if (statusKey === 'company_holiday') {
                     bgCol = "#1a1a1a"; borCol = "#1a1a1a"; textCol = "#ffffff";
-                    iconHtml = loopDate.getDate();
-                } else if (personalHolidaysSet.has(loopDateStr)) {
+                } else if (statusKey === 'personal_holiday') {
                     bgCol = "#ffffff"; borCol = "#1a1a1a"; textCol = "#1a1a1a";
-                    iconHtml = loopDate.getDate();
-                } else if (loopDate < today) {
+                } else if (statusKey === 'absent') {
                     bgCol = "transparent"; borCol = "#ef4444"; textCol = "#ef4444";
                     iconHtml = "×";
+                } else if (statusKey === 'pending') {
+                    bgCol = "#fef3c7"; borCol = "#f59e0b"; textCol = "#d97706";
                 } else {
                     bgCol = "transparent"; borCol = "#eaeaea"; textCol = "#888";
                 }
@@ -2797,25 +2848,25 @@ async function loadStaffRecords() {
             if (pulseMotivation) {
                 let currentStreak = 0;
                 let tempDate = new Date(today);
-                
-                const now2 = new Date();
-                const cTime = String(now2.getHours()).padStart(2, '0') + ':' + String(now2.getMinutes()).padStart(2, '0');
 
                 while (tempDate >= joinedDate) {
-                    const dStr = getUniversalDate(tempDate);
-                    const isHol = holidaysArray.includes(dStr) || personalHolidaysSet.has(dStr);
-                    const isPresent = validCheckinDates.has(dStr);
+                    let loopStart = globalStart;
+                    let loopEnd = globalEnd;
+                    if (exceptionsActive && Array.isArray(exceptions)) {
+                        const ex = exceptions.find(e => e.date === getUniversalDate(tempDate));
+                        if (ex) { loopStart = ex.start; loopEnd = ex.end; }
+                    }
+                    if (customSchedulesActive && Array.isArray(customSchedules)) {
+                        const myCustom = customSchedules.find(c => c.email === currentStaff.email);
+                        if (myCustom) { loopStart = myCustom.start; loopEnd = myCustom.end; }
+                    }
                     
-                    if (isPresent) {
+                    let loopStatus = getDayStatus(tempDate, validCheckinDates, personalHolidaysSet, holidaysArray, loopStart, loopEnd);
+                    
+                    if (loopStatus === 'present') {
                         currentStreak++;
-                    } else if (!isHol) {
-                        if (tempDate.getTime() === today.getTime()) {
-                            if (cTime > displayEnd) {
-                                break; 
-                            }
-                        } else {
-                            break; 
-                        }
+                    } else if (loopStatus === 'absent') {
+                        break; 
                     }
                     tempDate.setDate(tempDate.getDate() - 1);
                     tempDate.setHours(0,0,0,0);
@@ -2888,37 +2939,25 @@ async function loadStaffRecords() {
         for (let day = 1; day <= daysInMonth; day++) {
             const currentIterationDate = new Date(year, month, day);
             const dateStrIteration = getUniversalDate(currentIterationDate);
-            const wasPresent = validCheckinDates.has(dateStrIteration);
-            const isPersonalHoliday = personalHolidaysSet.has(dateStrIteration);
-            const isCommonHoliday = holidaysArray.includes(dateStrIteration);
             
-            let inlineStyle = CAL_STYLES.default;
-            
-            if (currentIterationDate < joinedDate) {
-                inlineStyle = CAL_STYLES.disabled;
-            } else if (isCommonHoliday) {
-                inlineStyle = CAL_STYLES.holiday;
-            } else if (isPersonalHoliday) {
-                inlineStyle = CAL_STYLES.personalHoliday;
-            } else if (currentIterationDate > today) {
-                inlineStyle = CAL_STYLES.default;
-            } else if (wasPresent) { 
-                inlineStyle = CAL_STYLES.present; 
-            } else { 
-                inlineStyle = CAL_STYLES.absent; 
+            let loopStart = globalStart;
+            let loopEnd = globalEnd;
+            if (exceptionsActive && Array.isArray(exceptions)) {
+                const ex = exceptions.find(e => e.date === dateStrIteration);
+                if (ex) { loopStart = ex.start; loopEnd = ex.end; }
+            }
+            if (customSchedulesActive && Array.isArray(customSchedules)) {
+                const myCustom = customSchedules.find(c => c.email === targetEmail);
+                if (myCustom) { loopStart = myCustom.start; loopEnd = myCustom.end; }
             }
             
+            let statusKey = getDayStatus(currentIterationDate, validCheckinDates, personalHolidaysSet, holidaysArray, loopStart, loopEnd);
+            let inlineStyle = CAL_STYLES[statusKey] || CAL_STYLES.future;
+            
+            if (currentIterationDate < empJoinedDate) inlineStyle = CAL_STYLES.disabled;
+
             calendarGrid.insertAdjacentHTML('beforeend', `<div class="cal-day" style="aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; ${inlineStyle}">${day}</div>`);
         }
-
-        const legendContainers = document.querySelectorAll('#view-records div[style*="justify-content: space-around"]');
-        legendContainers.forEach(container => {
-            container.style.flexWrap = 'wrap';
-            container.style.rowGap = '8px';
-            if (!container.innerHTML.includes("Personal Off")) {
-                container.insertAdjacentHTML('beforeend', `<span><span style="display:inline-block; width:10px; height:10px; border:2px solid #1a1a1a; background-color:#ffffff; margin-right:4px; border-radius:2px; vertical-align:-1px; box-sizing: border-box;"></span>Personal Off</span>`);
-            }
-        });
     }
 }
 
@@ -2991,7 +3030,7 @@ async function startDailyScanner() {
             let holidayArray = [];
             try { holidayArray = JSON.parse(rules.holidays); } catch(e){}
             if (holidayArray.includes(todayDateStr)) {
-                openInfoModal("Scanner Locked", "Today has been declared an official Holiday by your organization.");
+                openInfoModal("Scanner Locked", "Today has been declared an official Company Holiday.");
                 return;
             }
         }
