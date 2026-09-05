@@ -99,6 +99,48 @@
             </div>
         </div>
 
+        <!-- NEW SHIFT TRACKING CARD -->
+        <div class="form-card" style="text-align: left;">
+            <div class="setting-header" style="border-bottom: 1px solid #eaeaea; padding-bottom: 10px; margin-bottom: 15px;">
+                <h3 class="code-heading">Shift Tracking</h3>
+                <button class="i-btn" onclick="openInfoModal('Shift Tracking', 'Configure rules for exiting the workplace and handling late arrivals.')">i</button>
+            </div>
+
+            <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 14px; font-weight: 600;">Require Check-out</span>
+                        <button class="i-btn" style="width: 16px; height: 16px; font-size: 10px;" onclick="openInfoModal('Check-out Tracking', 'This does not affect employee attendance rules or percentages. If an employee forgets to check out, nothing negative happens. This simply logs their exit time to calculate total working hours for your master table.')">i</button>
+                    </div>
+                    <p style="font-size: 11px; color: #888; margin: 4px 0 0 0;">Calculate daily working hours</p>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="require-checkout" onchange="saveSettings()">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed #eaeaea; padding-top: 15px;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 14px; font-weight: 600;">Late Arrivals</span>
+                    </div>
+                    <p style="font-size: 11px; color: #888; margin: 4px 0 0 0;">Grace period after window closes</p>
+                </div>
+                <!-- Custom Beautiful Web Dropdown -->
+                <div style="position: relative; width: 130px;">
+                    <select id="late-arrival-hours" class="input-field" style="width: 100%; padding: 8px 12px; font-size: 13px; font-weight: 500; appearance: none; -webkit-appearance: none; background: #f9f9f9 url('data:image/svg+xml;utf8,<svg fill=%22%23888%22 height=%2220%22 viewBox=%220 0 24 24%22 width=%2220%22 xmlns=%22http://www.w3.org/2000/svg%22><path d=%22M7 10l5 5 5-5z%22/></svg>') no-repeat right 8px center; border: 1px solid #eaeaea; border-radius: 6px; cursor: pointer; color: #1a1a1a;" onchange="saveSettings()">
+                        <option value="0">Disabled</option>
+                        <option value="1">Up to 1 hr</option>
+                        <option value="2">Up to 2 hrs</option>
+                        <option value="3">Up to 3 hrs</option>
+                        <option value="4">Up to 4 hrs</option>
+                        <option value="5">Up to 5 hrs</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
         <div class="form-card" style="text-align: left;">
             <div class="setting-header" style="border-bottom: 1px solid #eaeaea; padding-bottom: 10px; margin-bottom: 15px;">
                 <h3 class="code-heading">Security Protocols</h3>
@@ -141,39 +183,6 @@
                     <span class="slider"></span>
                 </label>
             </div>
-
-            <!-- NEW CHECK-OUT AND LATE ARRIVAL ROWS -->
-            <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #eaeaea;">
-                <div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 14px; font-weight: 600;">Require Check-out</span>
-                        <button class="i-btn" style="width: 16px; height: 16px; font-size: 10px;" onclick="openInfoModal('Check-out Tracking', 'This does not affect employee attendance rules or percentages. If an employee forgets to check out, nothing negative happens. This simply logs their exit time to calculate total working hours for your master table.')">i</button>
-                    </div>
-                    <p style="font-size: 11px; color: #888; margin: 4px 0 0 0;">Calculate daily working hours</p>
-                </div>
-                <label class="switch">
-                    <input type="checkbox" id="require-checkout" onchange="saveSettings()">
-                    <span class="slider"></span>
-                </label>
-            </div>
-
-            <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
-                <div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 14px; font-weight: 600;">Late Arrivals</span>
-                    </div>
-                    <p style="font-size: 11px; color: #888; margin: 4px 0 0 0;">Grace period after window closes</p>
-                </div>
-                <select id="late-arrival-hours" class="input-field select-field" style="width: 120px; padding: 6px; font-size: 12px;" onchange="saveSettings()">
-                    <option value="0">Disabled</option>
-                    <option value="1">Up to 1 hr</option>
-                    <option value="2">Up to 2 hrs</option>
-                    <option value="3">Up to 3 hrs</option>
-                    <option value="4">Up to 4 hrs</option>
-                    <option value="5">Up to 5 hrs</option>
-                </select>
-            </div>
-            
         </div>
 
     </div>
