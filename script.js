@@ -162,6 +162,7 @@ function openConfirmModal(title, desc, onConfirm) {
             closeConfirmModal();
         });
         
+        modalEl.style.zIndex = '10006'; 
         modalEl.style.display = 'flex';
     }
 }
@@ -974,7 +975,6 @@ async function loadTodayAttendance() {
                     if (myCustom) allowedEnd = myCustom.end;
                 }
 
-                // Append late hours to allowed end time
                 let finalAllowedEnd = allowedEnd;
                 if (lateSettingOn && settings.late_arrival_hours) {
                     let [h, m] = allowedEnd.split(':');
@@ -1840,7 +1840,14 @@ async function loadSettings() {
             if(chk) chk.checked = data.require_checkout;
             
             const late = document.getElementById('late-arrival-hours');
-            if(late) late.value = data.late_arrival_hours || 0;
+            if(late) {
+                late.value = data.late_arrival_hours || 0;
+                const lateText = document.getElementById('late-dropdown-text');
+                if (lateText) {
+                    const texts = {0: 'Disabled', 1: 'Up to 1 hr', 2: 'Up to 2 hrs', 3: 'Up to 3 hrs', 4: 'Up to 4 hrs', 5: 'Up to 5 hrs'};
+                    lateText.innerText = texts[data.late_arrival_hours || 0] || 'Disabled';
+                }
+            }
             
             if (data.office_lat && data.office_lng) {
                 mapSavedLat = data.office_lat;
@@ -3194,9 +3201,9 @@ async function startDailyScanner() {
             .eq('user_email', currentStaff.email)
             .eq('company_id', safeCompanyId)
             .eq('date', todayDateStr)
-            .maybeSingle();
+            .limit(1);
 
-        if (existingLog) {
+        if (existingLog && existingLog.length > 0) {
             openInfoModal("Action Denied", "You have already checked in today.");
             return;
         }
@@ -3706,10 +3713,11 @@ function saveStaffAssignments() {
     }
 }
 
-// --- NEW HELPERS FOR CHECKOUT TIMER ---
+// --- NEW HELPERS FOR CHECKOUT TIMER AND LOGIC ---
 window.checkoutInterval = null;
 function startCheckoutTimer(checkInTimeStr) {
     if (window.checkoutInterval) clearInterval(window.checkoutInterval);
+    if (!checkInTimeStr) return;
     const timeMatch = checkInTimeStr.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/);
     if (!timeMatch) return;
     
@@ -3741,12 +3749,61 @@ function startCheckoutTimer(checkInTimeStr) {
 
 async function handleCheckout() {
     await ensureSupabase();
+    const btn = document.querySelector('button[onclick="handleCheckout()"]');
+    if(btn) { btn.innerText = "Verifying Location..."; btn.disabled = true; }
+
+    const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
+    const { data: rules } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
+
+    if (rules && rules.require_gps) {
+        let targetLat, targetLng, targetRadius, isExempt = false;
+        let locations = [];
+        try { if (rules.locations) locations = JSON.parse(rules.locations); } catch(e){}
+
+        if (locations && locations.length > 0) {
+            let userLocation = locations.find(loc => loc.staff && loc.staff.includes(currentStaff.email));
+            if (!userLocation) userLocation = locations.find(loc => loc.id === 'main') || locations[0];
+            if (userLocation.id === 'exempt' || userLocation.isExempt) {
+                isExempt = true;
+            } else {
+                targetLat = userLocation.lat;
+                targetLng = userLocation.lng;
+                targetRadius = userLocation.radius || 150;
+            }
+        } else {
+            targetLat = rules.office_lat;
+            targetLng = rules.office_lng;
+            targetRadius = rules.office_radius || 150;
+        }
+
+        if (!isExempt) {
+            if (!targetLat || !targetLng) {
+                openInfoModal("Manager Error", "Office GPS location not pinned.");
+                if(btn) { btn.innerText = "End Shift & Check Out"; btn.disabled = false; }
+                return;
+            }
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+                });
+                const dist = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, targetLat, targetLng);
+                if (dist > targetRadius) {
+                    openInfoModal("Geofence Violation", `You are too far to check out (${Math.round(dist)}m away). Must be within ${targetRadius}m.`);
+                    if(btn) { btn.innerText = "End Shift & Check Out"; btn.disabled = false; }
+                    return;
+                }
+            } catch (err) {
+                openInfoModal("GPS Error", "Enable location permissions to check out.");
+                if(btn) { btn.innerText = "End Shift & Check Out"; btn.disabled = false; }
+                return;
+            }
+        }
+    }
+
+    if(btn) btn.innerText = "Processing...";
     const todayDateStr = getUniversalDate();
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    const btn = document.querySelector('button[onclick="handleCheckout()"]');
-    if(btn) { btn.innerText = "Processing..."; btn.disabled = true; }
 
     const { error } = await supabaseClient.from('checkins').update({ checkout_time: timeStr })
         .eq('user_email', currentStaff.email).eq('date', todayDateStr);
