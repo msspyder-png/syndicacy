@@ -157,7 +157,37 @@
             <button class="main-btn form-btn" style="width: 100%;" onclick="closeInfoModal()">Understood</button>
         </div>
     </div>
+<!-- Add this under the 3-Step Dynamic Access row -->
+<div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding-top: 15px; border-top: 1px dashed #eaeaea;">
+    <div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 600;">Require Check-out</span>
+            <button class="i-btn" style="width: 16px; height: 16px; font-size: 10px;" onclick="openInfoModal('Check-out Tracking', 'This does not affect employee attendance rules or percentages. If an employee forgets to check out, nothing negative happens. This simply logs their exit time to calculate total working hours for your master table.')">i</button>
+        </div>
+        <p style="font-size: 11px; color: #888; margin: 4px 0 0 0;">Calculate daily working hours</p>
+    </div>
+    <label class="switch">
+        <input type="checkbox" id="require-checkout" onchange="saveSettings()">
+        <span class="slider"></span>
+    </label>
+</div>
 
+<div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
+    <div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 14px; font-weight: 600;">Late Arrivals</span>
+        </div>
+        <p style="font-size: 11px; color: #888; margin: 4px 0 0 0;">Grace period after window closes</p>
+    </div>
+    <select id="late-arrival-hours" class="input-field select-field" style="width: 120px; padding: 6px; font-size: 12px;" onchange="saveSettings()">
+        <option value="0">Disabled</option>
+        <option value="1">Up to 1 hr</option>
+        <option value="2">Up to 2 hrs</option>
+        <option value="3">Up to 3 hrs</option>
+        <option value="4">Up to 4 hrs</option>
+        <option value="5">Up to 5 hrs</option>
+    </select>
+</div>
     <!-- CUSTOM EMPLOYEE TIME MODAL -->
     <div id="custom-time-modal" class="modal-bg">
         <div class="modal-box animated-modal" style="max-width: 350px;">
