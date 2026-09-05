@@ -87,12 +87,16 @@
                 <span><span style="color: #1a1a1a; font-size: 14px;">■</span> Organization Off</span>
                 <span><span style="display:inline-block; width:10px; height:10px; border:2px solid #1a1a1a; background-color:#ffffff; margin-right:4px; border-radius:2px; vertical-align:-1px; box-sizing: border-box;"></span>Personal Off</span>
                 <span><span style="color: #e0e0e0; font-size: 14px;">□</span> Future</span>
+                <span><span style="color: #a855f7; font-size: 14px;">■</span> Late Arrival</span>
             </div>
+
+            <!-- VIEW DETAILED TABLE BUTTON -->
+            <button class="google-btn" style="width: 100%; border-style: dashed; margin-top: 15px;" onclick="window.location.href='record-individual-table.html?email=' + new URLSearchParams(window.location.search).get('email')">
+                📄 View Detailed Historical Table
+            </button>
         </div>
     </div>
-<button class="google-btn" style="width: 100%; border-style: dashed; margin-top: 15px;" onclick="window.location.href='record-individual-table.html?email=' + new URLSearchParams(window.location.search).get('email')">
-    📄 View Detailed Historical Table
-</button>
+
     <!-- CONFIRM MODAL -->
     <div id="confirm-modal" class="modal-bg" style="z-index: 10000;">
         <div class="modal-box animated-modal" style="width: 90%; max-width: 320px;">
