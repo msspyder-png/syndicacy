@@ -126,9 +126,28 @@ function closeInfoModal() {
 }
 
 function openConfirmModal(title, desc, onConfirm) {
+    let modalEl = document.getElementById('confirm-modal');
+    
+    if (!modalEl) {
+        const modalHtml = `
+            <div id="confirm-modal" class="modal-bg" style="z-index: 10006; display: none;">
+                <div class="modal-box animated-modal" style="width: 90%; max-width: 320px;">
+                    <span class="close" onclick="closeConfirmModal()">×</span>
+                    <h3 class="section-title" id="confirm-title" style="text-align: center; margin-bottom: 15px;">Confirm</h3>
+                    <p id="confirm-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; text-align: center;">Are you sure?</p>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="google-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px;" onclick="closeConfirmModal()">Cancel</button>
+                        <button class="main-btn form-btn" id="confirm-action-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;">Yes</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('confirm-modal');
+    }
+
     const titleEl = document.getElementById('confirm-title');
     const descEl = document.getElementById('confirm-desc');
-    const modalEl = document.getElementById('confirm-modal');
     const confirmBtn = document.getElementById('confirm-action-btn');
     
     if (titleEl && descEl && modalEl && confirmBtn) {
@@ -143,10 +162,10 @@ function openConfirmModal(title, desc, onConfirm) {
             closeConfirmModal();
         });
         
-        modalEl.style.zIndex = '10006'; 
         modalEl.style.display = 'flex';
     }
 }
+
 function closeConfirmModal() {
     const modalEl = document.getElementById('confirm-modal');
     if (modalEl) modalEl.style.display = 'none';
@@ -527,7 +546,7 @@ async function loadPendingInvites() {
                         <span class="staff-role">${invite.role}</span>
                         <span style="font-size: 10px; color: ${statusColor}; font-weight: bold; margin-top: 4px; display: block;">${statusText}</span>
                     </div>
-                    <div style="display: flex; gap: 5px; align-items: center;">
+                    <div style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap; justify-content: flex-end; margin-top: 5px;">
                         ${btnHtml}
                     </div>
                 </div>
@@ -817,6 +836,8 @@ async function loadTodayAttendance() {
     const pendingList = document.getElementById('pending-today-list');
     const absentList = document.getElementById('absent-today-list');
     const offList = document.getElementById('off-today-list');
+    const lateList = document.getElementById('late-today-list');
+    const checkoutList = document.getElementById('checkout-today-list');
     const globalHolidayMsg = document.getElementById('global-holiday-msg');
     
     const leader = getLeader();
@@ -841,6 +862,9 @@ async function loadTodayAttendance() {
         let customSchedulesActive = true;
         let exceptionsActive = true;
         let globalEnd = "10:00";
+
+        const requireCheckout = settings && settings.require_checkout;
+        const lateSettingOn = settings && settings.late_arrival_hours > 0;
 
         if (settings) {
             if (settings.holidays) try { globalHolidays = JSON.parse(settings.holidays); } catch(e){}
@@ -877,11 +901,15 @@ async function loadTodayAttendance() {
         pendingList.innerHTML = "";
         if (absentList) absentList.innerHTML = "";
         if (offList) offList.innerHTML = "";
+        if (lateList) lateList.innerHTML = "";
+        if (checkoutList) checkoutList.innerHTML = "";
 
         let activeCount = 0;
         let pendingCount = 0;
         let absentCount = 0;
         let offCount = 0;
+        let lateCount = 0;
+        let checkoutCount = 0;
 
         const now = new Date();
         const currentHours = String(now.getHours()).padStart(2, '0');
@@ -905,14 +933,34 @@ async function loadTodayAttendance() {
                     `);
                 }
             } else if (log && log.status === 'Present') {
-                activeCount++;
-                activeList.insertAdjacentHTML('beforeend', `
-                    <div class="member-card present">
-                        <div class="avatar" style="background: #1a1a1a; color: white;">${initial}</div>
-                        <span class="name">${shortName}</span>
-                        <span style="font-size: 9px; color: #888; font-weight: 500; margin-top: 2px;">${log.time}</span>
-                    </div>
-                `);
+                if (log.checkout_time) {
+                    checkoutCount++;
+                    if(checkoutList) checkoutList.insertAdjacentHTML('beforeend', `
+                        <div class="member-card" style="background-color: #eff6ff; border: 1px solid #bfdbfe;">
+                            <div class="avatar" style="background: #3b82f6; color: white;">${initial}</div>
+                            <span class="name" style="color: #1e3a8a;">${shortName}</span>
+                            <span style="font-size: 9px; color: #3b82f6; font-weight: 500; margin-top: 2px;">Out: ${log.checkout_time}</span>
+                        </div>
+                    `);
+                } else if (log.is_late) {
+                    lateCount++;
+                    if(lateList) lateList.insertAdjacentHTML('beforeend', `
+                        <div class="member-card" style="background-color: #f3e8ff; border: 1px solid #d8b4fe;">
+                            <div class="avatar" style="background: #a855f7; color: white;">${initial}</div>
+                            <span class="name" style="color: #6b21a8;">${shortName}</span>
+                            <span style="font-size: 9px; color: #a855f7; font-weight: 500; margin-top: 2px;">In: ${log.time}</span>
+                        </div>
+                    `);
+                } else {
+                    activeCount++;
+                    activeList.insertAdjacentHTML('beforeend', `
+                        <div class="member-card present">
+                            <div class="avatar" style="background: #1a1a1a; color: white;">${initial}</div>
+                            <span class="name">${shortName}</span>
+                            <span style="font-size: 9px; color: #888; font-weight: 500; margin-top: 2px;">${log.time}</span>
+                        </div>
+                    `);
+                }
             } else {
                 let allowedEnd = globalEnd;
                 
@@ -926,7 +974,15 @@ async function loadTodayAttendance() {
                     if (myCustom) allowedEnd = myCustom.end;
                 }
 
-                if (currentTime > allowedEnd) {
+                // Append late hours to allowed end time
+                let finalAllowedEnd = allowedEnd;
+                if (lateSettingOn && settings.late_arrival_hours) {
+                    let [h, m] = allowedEnd.split(':');
+                    h = (parseInt(h) + parseInt(settings.late_arrival_hours)).toString().padStart(2, '0');
+                    finalAllowedEnd = `${h}:${m}`;
+                }
+
+                if (currentTime > finalAllowedEnd) {
                     absentCount++;
                     if (absentList) {
                         absentList.insertAdjacentHTML('beforeend', `
@@ -952,6 +1008,8 @@ async function loadTodayAttendance() {
         if (pendingCount === 0) pendingList.innerHTML = `<p style="font-size: 12px; color: #888; grid-column: 1 / -1;">Everyone has checked in or passed their window.</p>`;
         if (absentList && absentCount === 0) absentList.innerHTML = `<p style="font-size: 12px; color: #888; grid-column: 1 / -1;">No absentees.</p>`;
         if (offList && offCount === 0) offList.innerHTML = `<p style="font-size: 12px; color: #888; grid-column: 1 / -1;">No staff on personal leave today.</p>`;
+        if (lateList && lateCount === 0) lateList.innerHTML = lateSettingOn ? `<p style="font-size: 12px; color: #888; grid-column: 1 / -1;">No late arrivals today.</p>` : `<p style="font-size: 12px; color: #ccc; grid-column: 1 / -1;">Late arrivals not enabled in settings.</p>`;
+        if (checkoutList && checkoutCount === 0) checkoutList.innerHTML = requireCheckout ? `<p style="font-size: 12px; color: #888; grid-column: 1 / -1;">No one has checked out yet.</p>` : `<p style="font-size: 12px; color: #ccc; grid-column: 1 / -1;">Checkout tracking not enabled in settings.</p>`;
 
     } catch (err) {
         console.error(err);
@@ -1097,6 +1155,7 @@ async function loadIndividualAnalytics() {
 
         let allowedStart = settings && settings.check_in_start ? settings.check_in_start : "09:00";
         let allowedEnd = settings && settings.check_in_end ? settings.check_in_end : "10:00";
+        let lateHours = settings && settings.late_arrival_hours ? parseInt(settings.late_arrival_hours) : 0;
         
         let customSchedulesActive = true;
         let exceptionsActive = true;
@@ -1134,6 +1193,13 @@ async function loadIndividualAnalytics() {
                 allowedStart = myCustom.start;
                 allowedEnd = myCustom.end;
             }
+        }
+        
+        let finalAllowedEnd = allowedEnd;
+        if (lateHours > 0) {
+            let [h, m] = allowedEnd.split(':');
+            h = (parseInt(h) + lateHours).toString().padStart(2, '0');
+            finalAllowedEnd = `${h}:${m}`;
         }
 
         const nowStrictTime = new Date();
@@ -1199,6 +1265,7 @@ async function loadIndividualAnalytics() {
                 if (statusValueEl) {
                     let todayStatus = "";
                     let todayColor = ""; 
+                    let todayLogInfo = safeLogs.find(l => l.date === todayStr2);
 
                     if (holidaysArray.includes(todayStr2)) {
                         todayStatus = "Organization Off";
@@ -1207,12 +1274,20 @@ async function loadIndividualAnalytics() {
                         todayStatus = "Personal Off";
                         todayColor = "#a0a0a0"; 
                     } else if (checkedInToday) {
-                        todayStatus = "Present";
-                        todayColor = "#4ade80"; 
+                        if (todayLogInfo && todayLogInfo.checkout_time) {
+                            todayStatus = "Checked Out";
+                            todayColor = "#3b82f6";
+                        } else if (todayLogInfo && todayLogInfo.is_late) {
+                            todayStatus = "Late Check-in";
+                            todayColor = "#a855f7"; 
+                        } else {
+                            todayStatus = "Present";
+                            todayColor = "#4ade80"; 
+                        }
                     } else if (currentTime < allowedStart) {
                         todayStatus = "Check-in window not started";
                         todayColor = "#94a3b8"; 
-                    } else if (currentTime > allowedEnd) {
+                    } else if (currentTime > finalAllowedEnd) {
                         todayStatus = "Absent";
                         todayColor = "#ef4444"; 
                     } else {
@@ -1269,6 +1344,7 @@ async function loadIndividualAnalytics() {
             const currentIterationDate = new Date(year, month, day);
             const dateStrIteration = getUniversalDate(currentIterationDate);
             
+            const iterLog = safeLogs.find(l => l.date === dateStrIteration);
             const wasPresent = validCheckinDates.has(dateStrIteration);
             const isPersonalHoliday = personalHolidaysSet.has(dateStrIteration);
             const isCommonHoliday = holidaysArray.includes(dateStrIteration);
@@ -1284,10 +1360,14 @@ async function loadIndividualAnalytics() {
             } else if (isPersonalHoliday) {
                 inlineStyle = CAL_STYLES.personalHoliday;
             } else if (wasPresent) { 
-                inlineStyle = CAL_STYLES.present; 
+                if (iterLog && iterLog.is_late) {
+                    inlineStyle = "background-color: #f3e8ff !important; color: #a855f7 !important; border-color: #d8b4fe !important; font-weight: bold;";
+                } else {
+                    inlineStyle = CAL_STYLES.present; 
+                }
             } else if (isToday) {
                 if (currentTime < allowedStart) inlineStyle = CAL_STYLES.notStarted;
-                else if (currentTime > allowedEnd) inlineStyle = CAL_STYLES.absent;
+                else if (currentTime > finalAllowedEnd) inlineStyle = CAL_STYLES.absent;
                 else inlineStyle = CAL_STYLES.pending;
             } else if (isPast) {
                 inlineStyle = CAL_STYLES.absent; 
@@ -1659,7 +1739,7 @@ function markAllSundays() {
         if (d.getDay() === 0) {
             const dateStr = getUniversalDate(d);
             
-            if (dateStr < todayStrGlobal) continue; 
+            if (dateStr < todayStrGlobal) continue; // SPARE PAST SUNDAYS
 
             const isToday = (dateStr === todayStrGlobal);
             if (isToday && window.todayCheckinsCount > 0) continue; 
@@ -1702,7 +1782,7 @@ function markSecondSaturdays() {
                         if (d >= joinedDate) {
                             const dateStr = getUniversalDate(d);
                             
-                            if (dateStr < todayStrGlobal) break; 
+                            if (dateStr < todayStrGlobal) break; // SPARE PAST 2nd SATURDAYS
 
                             const isToday = (dateStr === todayStrGlobal);
                             if (isToday && window.todayCheckinsCount > 0) break; 
@@ -1740,7 +1820,7 @@ async function loadSettings() {
 
     try {
         const todayStr = getUniversalDate();
-        const { count } = await supabaseClient.from('checkins').select('*', { count: 'exact', head: true }).eq('company_id', leader.company_id).eq('date', todayStr).eq('status', 'Present');
+        const { count } = await supabaseClient.from('checkins').select('*', { count: 'exact', head: true }).eq('company_id', leader.company_id).eq('date', todayStr);
         window.todayCheckinsCount = count || 0;
     } catch(e) { window.todayCheckinsCount = 0; }
 
@@ -1755,6 +1835,12 @@ async function loadSettings() {
             document.getElementById('require-pin').checked = data.require_pin;
             const locBtn = document.getElementById('manage-locations-btn');
             if (locBtn) locBtn.style.display = data.require_gps ? 'block' : 'none';
+            
+            const chk = document.getElementById('require-checkout');
+            if(chk) chk.checked = data.require_checkout;
+            
+            const late = document.getElementById('late-arrival-hours');
+            if(late) late.value = data.late_arrival_hours || 0;
             
             if (data.office_lat && data.office_lng) {
                 mapSavedLat = data.office_lat;
@@ -1783,26 +1869,18 @@ async function loadSettings() {
                 const list = document.getElementById('exception-list');
                 if (list) {
                     list.innerHTML = ""; 
-                    
-                    if (savedExceptions.length === 0) {
-                        list.innerHTML = `<p id="no-exception-msg" style="font-size: 11px; color: #888;">No upcoming exceptions set.</p>`;
-                    } else {
-                        savedExceptions.forEach(exc => {
-                            addException(); 
-                            const rows = list.children;
-                            const lastRow = rows[rows.length - 1];
-                            const inputs = lastRow.querySelectorAll('input');
-                            if(inputs.length >= 3) {
-                                inputs[0].value = exc.date;
-                                inputs[1].value = exc.start;
-                                inputs[2].value = exc.end;
-                            }
-                        });
-                    }
+                    savedExceptions.forEach(exc => {
+                        addException(); 
+                        const rows = list.children;
+                        const lastRow = rows[rows.length - 1];
+                        const inputs = lastRow.querySelectorAll('input');
+                        if(inputs.length >= 3) {
+                            inputs[0].value = exc.date;
+                            inputs[1].value = exc.start;
+                            inputs[2].value = exc.end;
+                        }
+                    });
                 }
-            } else {
-                const list = document.getElementById('exception-list');
-                if (list) list.innerHTML = `<p id="no-exception-msg" style="font-size: 11px; color: #888;">No upcoming exceptions set.</p>`;
             }
 
             let customSchedulesActive = true;
@@ -1895,7 +1973,6 @@ async function saveSettings() {
                                 inputs[2].value = exc.end;
                             }
                         });
-                        if(oldExceptions.length === 0 && list) list.innerHTML = `<p id="no-exception-msg" style="font-size: 11px; color: #888;">No upcoming exceptions set.</p>`;
                     } catch(e){}
                 }
                 
@@ -1922,6 +1999,11 @@ async function saveSettings() {
             payload.check_in_end = document.getElementById('check-in-end').value;
             payload.require_gps = document.getElementById('require-gps').checked;
             payload.require_pin = document.getElementById('require-pin').checked;
+            
+            if (document.getElementById('require-checkout')) {
+                payload.require_checkout = document.getElementById('require-checkout').checked;
+                payload.late_arrival_hours = parseInt(document.getElementById('late-arrival-hours').value);
+            }
             
             let exceptionsArray = [];
             document.querySelectorAll('#exception-list div').forEach(row => {
@@ -1972,10 +2054,7 @@ async function saveSettings() {
 
 function addException() {
     const list = document.getElementById('exception-list');
-    const noMsg = document.getElementById('no-exception-msg');
     if (!list) return;
-
-    if (noMsg) noMsg.remove();
 
     if (list.children.length >= 5) {
         openInfoModal("Limit Reached", "You can only set up to 5 future exception dates.");
@@ -2002,11 +2081,7 @@ function updateExceptionCount() {
     const list = document.getElementById('exception-list');
     const countSpan = document.getElementById('exception-count');
     if (list && countSpan) {
-        const count = list.children.length;
-        countSpan.innerText = `(${count}/5)`;
-        if (count === 0 && !document.getElementById('no-exception-msg')) {
-            list.innerHTML = `<p id="no-exception-msg" style="font-size: 11px; color: #888;">No upcoming exceptions set.</p>`;
-        }
+        countSpan.innerText = `(${list.children.length}/5)`;
     }
 }
 
@@ -2633,9 +2708,9 @@ async function loadStaffRecords() {
                 
                 if (h.type === 'Special') {
                     holidaysListEl.insertAdjacentHTML('beforeend', `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #fffbeb; border-left: 3px solid #f59e0b; border-radius: 4px; margin-bottom: 6px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: #ffffff; border: 1px solid #eaeaea; border-left: 3px solid #1a1a1a; border-radius: 4px; margin-bottom: 6px;">
                             <span style="font-size: 13px; color: #1a1a1a; font-weight: 600;">${formattedDate}</span>
-                            <span style="font-size: 10px; font-weight: bold; color: #d97706; background: #fef3c7; padding: 4px 8px; border-radius: 4px; letter-spacing: 0.5px;">★ SPECIAL / OFF</span>
+                            <span style="font-size: 10px; font-weight: bold; color: #1a1a1a; background: #ffffff; border: 1px solid #1a1a1a; padding: 3px 8px; border-radius: 4px; letter-spacing: 0.5px;">PERSONAL OFF</span>
                         </div>
                     `);
                 } else {
@@ -2654,7 +2729,11 @@ async function loadStaffRecords() {
 
     try {
         const isGpsOn = settings && settings.require_gps;
-        updateElementSafe('staff-gps-display', isGpsOn ? "ENABLED" : "DISABLED", isGpsOn ? "#4ade80" : "#888", isGpsOn ? "#dcfce7" : "#e8e8e8");
+        if (isGpsExempt) {
+            updateElementSafe('staff-gps-display', "EXEMPT", "#3b82f6", "#eff6ff");
+        } else {
+            updateElementSafe('staff-gps-display', isGpsOn ? "ENABLED" : "DISABLED", isGpsOn ? "#4ade80" : "#888", isGpsOn ? "#dcfce7" : "#e8e8e8");
+        }
 
         const isPinOn = settings && settings.require_pin;
         updateElementSafe('staff-pin-display', isPinOn ? "ENABLED" : "DISABLED", isPinOn ? "#4ade80" : "#888", isPinOn ? "#dcfce7" : "#e8e8e8");
@@ -2682,6 +2761,14 @@ async function loadStaffRecords() {
         if (statusBox) {
             const now2 = new Date();
             const cTime = String(now2.getHours()).padStart(2, '0') + ':' + String(now2.getMinutes()).padStart(2, '0');
+            
+            let lateHours = settings && settings.late_arrival_hours ? parseInt(settings.late_arrival_hours) : 0;
+            let finalAllowedEnd = displayEnd;
+            if (lateHours > 0) {
+                let [h, m] = displayEnd.split(':');
+                h = (parseInt(h) + lateHours).toString().padStart(2, '0');
+                finalAllowedEnd = `${h}:${m}`;
+            }
 
             if (holidaysArray.includes(todayStr2)) { 
                 statusBox.innerText = "Organization Off"; statusBox.style.color = "#a0a0a0"; 
@@ -2691,7 +2778,7 @@ async function loadStaffRecords() {
                 statusBox.innerText = "Present"; statusBox.style.color = "#4ade80"; 
             } else if (cTime < displayStart) { 
                 statusBox.innerText = "Check-in window not started"; statusBox.style.color = "#94a3b8"; 
-            } else if (cTime > displayEnd) { 
+            } else if (cTime > finalAllowedEnd) { 
                 statusBox.innerText = "Absent"; statusBox.style.color = "#ef4444"; 
             } else { 
                 statusBox.innerText = "Pending"; statusBox.style.color = "#f59e0b"; 
@@ -2721,6 +2808,12 @@ async function loadStaffRecords() {
         if (window.staffHomeTimer) clearInterval(window.staffHomeTimer);
 
         if (statusCard && checkInBtn) {
+            let todayLog = safeLogs.find(l => l.date === todayStr2);
+            const isLate = todayLog && todayLog.is_late;
+            const hasCheckedOut = todayLog && todayLog.checkout_time;
+            const requireCheckout = settings && settings.require_checkout;
+            const lateHours = (settings && settings.late_arrival_hours) ? parseInt(settings.late_arrival_hours) : 0;
+
             if (isHoliday) {
                 checkInBtn.style.display = "none";
                 if(shiftPanel) shiftPanel.style.display = "none";
@@ -2730,7 +2823,24 @@ async function loadStaffRecords() {
                     updateElementSafe('status-text', "Personal Off");
                 }
             } else if (checkedInToday) {
-                statusCard.innerHTML = `<div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div><h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>`;
+                if (hasCheckedOut) {
+                    statusCard.innerHTML = `
+                        <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #3b82f6; color: #ffffff;">✓</div>
+                        <h3 style="margin: 0; font-size: 18px; color: #1e3a8a;">Checked Out</h3>
+                        <p style="font-size: 12px; color: #888; margin-top: 5px;">Shift completed.</p>
+                    `;
+                } else if (requireCheckout) {
+                    statusCard.innerHTML = `
+                        <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
+                        <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">${isLate ? 'Late Check-in' : 'Checked In'}</h3>
+                        <button class="main-btn" onclick="handleCheckout()" style="width: 100%; margin-top: 25px; padding: 16px; font-size: 15px; background-color: #ef4444;">End Shift & Check Out</button>
+                        <p id="checkout-timer-display" style="font-size: 11px; color: #888; margin-top: 15px; font-family: monospace;"></p>
+                    `;
+                    startCheckoutTimer(todayLog.time);
+                } else {
+                    statusCard.innerHTML = `<div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div><h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">${isLate ? 'Late Check-in' : 'Checked In'}</h3>`;
+                }
+                
                 statusCard.classList.remove('ghost-theme');
                 statusCard.style.border = '1px solid #e0e0e0';
                 statusCard.style.backgroundColor = '#ffffff';
@@ -2754,6 +2864,8 @@ async function loadStaffRecords() {
 
                     const startTarget = parseTimeToDate(displayStart);
                     const endTarget = parseTimeToDate(displayEnd);
+                    const endTargetLate = new Date(endTarget);
+                    endTargetLate.setHours(endTargetLate.getHours() + lateHours);
 
                     window.staffHomeTimer = setInterval(() => {
                         const current = new Date();
@@ -2772,6 +2884,18 @@ async function loadStaffRecords() {
                             checkInBtn.disabled = false;
                             checkInBtn.style.opacity = '1';
                             checkInBtn.innerText = "Authenticate & Check In";
+                            checkInBtn.style.backgroundColor = "#1a1a1a";
+                            window.isCheckingInLate = false;
+                            
+                        } else if (current > endTarget && current <= endTargetLate) {
+                            countdownContainer.style.display = 'block';
+                            countdownTimer.innerText = "LATE";
+                            countdownTimer.style.color = "#a855f7";
+                            checkInBtn.disabled = false;
+                            checkInBtn.style.opacity = '1';
+                            checkInBtn.innerText = "Late Arrival Check-In";
+                            checkInBtn.style.backgroundColor = "#a855f7";
+                            window.isCheckingInLate = true;
                             
                         } else if (current < startTarget) {
                             countdownContainer.style.display = 'none';
@@ -2805,6 +2929,7 @@ async function loadStaffRecords() {
                 const loopDate = new Date(startOfWeek);
                 loopDate.setDate(startOfWeek.getDate() + i);
                 const loopDateStr = getUniversalDate(loopDate);
+                const iterLog = safeLogs.find(l => l.date === loopDateStr);
                 
                 let bgCol = "transparent";
                 let textCol = "#888";
@@ -2814,7 +2939,11 @@ async function loadStaffRecords() {
                 if (loopDate < joinedDate) {
                     bgCol = "transparent"; borCol = "#f0f0f0"; textCol = "#ccc";
                 } else if (validCheckinDates.has(loopDateStr)) {
-                    bgCol = "#4ade80"; borCol = "#4ade80"; textCol = "#1a1a1a";
+                    if (iterLog && iterLog.is_late) {
+                        bgCol = "#f3e8ff"; borCol = "#d8b4fe"; textCol = "#a855f7";
+                    } else {
+                        bgCol = "#4ade80"; borCol = "#4ade80"; textCol = "#1a1a1a";
+                    }
                     iconHtml = "✓";
                 } else if (holidaysArray.includes(loopDateStr)) {
                     bgCol = "#1a1a1a"; borCol = "#1a1a1a"; textCol = "#ffffff";
@@ -2825,9 +2954,18 @@ async function loadStaffRecords() {
                 } else if (loopDateStr === getUniversalDate(today)) {
                     const now3 = new Date();
                     const cTime = String(now3.getHours()).padStart(2, '0') + ':' + String(now3.getMinutes()).padStart(2, '0');
+                    
+                    let lateHours = settings && settings.late_arrival_hours ? parseInt(settings.late_arrival_hours) : 0;
+                    let finalAllowedEnd = displayEnd;
+                    if (lateHours > 0) {
+                        let [h, m] = displayEnd.split(':');
+                        h = (parseInt(h) + lateHours).toString().padStart(2, '0');
+                        finalAllowedEnd = `${h}:${m}`;
+                    }
+
                     if (cTime < displayStart) {
                         bgCol = "#f8fafc"; borCol = "#cbd5e1"; textCol = "#94a3b8";
-                    } else if (cTime > displayEnd) {
+                    } else if (cTime > finalAllowedEnd) {
                         bgCol = "transparent"; borCol = "#ef4444"; textCol = "#ef4444"; iconHtml = "×";
                     } else {
                         bgCol = "#fef3c7"; borCol = "#f59e0b"; textCol = "#d97706";
@@ -2857,6 +2995,14 @@ async function loadStaffRecords() {
                 
                 const now2 = new Date();
                 const cTime = String(now2.getHours()).padStart(2, '0') + ':' + String(now2.getMinutes()).padStart(2, '0');
+                
+                let lateHours = settings && settings.late_arrival_hours ? parseInt(settings.late_arrival_hours) : 0;
+                let finalAllowedEnd = displayEnd;
+                if (lateHours > 0) {
+                    let [h, m] = displayEnd.split(':');
+                    h = (parseInt(h) + lateHours).toString().padStart(2, '0');
+                    finalAllowedEnd = `${h}:${m}`;
+                }
 
                 while (tempDate >= joinedDate) {
                     const dStr = getUniversalDate(tempDate);
@@ -2867,7 +3013,7 @@ async function loadStaffRecords() {
                         currentStreak++;
                     } else if (!isHol) {
                         if (tempDate.getTime() === today.getTime()) {
-                            if (cTime > displayEnd) {
+                            if (cTime > finalAllowedEnd) {
                                 break; 
                             }
                         } else {
@@ -2945,6 +3091,8 @@ async function loadStaffRecords() {
         for (let day = 1; day <= daysInMonth; day++) {
             const currentIterationDate = new Date(year, month, day);
             const dateStrIteration = getUniversalDate(currentIterationDate);
+            
+            const iterLog = safeLogs.find(l => l.date === dateStrIteration);
             const wasPresent = validCheckinDates.has(dateStrIteration);
             const isPersonalHoliday = personalHolidaysSet.has(dateStrIteration);
             const isCommonHoliday = holidaysArray.includes(dateStrIteration);
@@ -2960,12 +3108,25 @@ async function loadStaffRecords() {
             } else if (isPersonalHoliday) {
                 inlineStyle = CAL_STYLES.personalHoliday;
             } else if (wasPresent) { 
-                inlineStyle = CAL_STYLES.present; 
+                if (iterLog && iterLog.is_late) {
+                    inlineStyle = "background-color: #f3e8ff !important; color: #a855f7 !important; border-color: #d8b4fe !important; font-weight: bold;";
+                } else {
+                    inlineStyle = CAL_STYLES.present; 
+                }
             } else if (isToday) {
                 const nowTime = new Date();
                 const cTime = String(nowTime.getHours()).padStart(2, '0') + ':' + String(nowTime.getMinutes()).padStart(2, '0');
+                
+                let lateHours = settings && settings.late_arrival_hours ? parseInt(settings.late_arrival_hours) : 0;
+                let finalAllowedEnd = displayEnd;
+                if (lateHours > 0) {
+                    let [h, m] = displayEnd.split(':');
+                    h = (parseInt(h) + lateHours).toString().padStart(2, '0');
+                    finalAllowedEnd = `${h}:${m}`;
+                }
+
                 if (cTime < displayStart) inlineStyle = CAL_STYLES.notStarted;
-                else if (cTime > displayEnd) inlineStyle = CAL_STYLES.absent;
+                else if (cTime > finalAllowedEnd) inlineStyle = CAL_STYLES.absent;
                 else inlineStyle = CAL_STYLES.pending;
             } else if (isPast) { 
                 inlineStyle = CAL_STYLES.absent; 
@@ -3054,6 +3215,7 @@ async function startDailyScanner() {
 
         let allowedStart = rules && rules.check_in_start ? rules.check_in_start : "09:00";
         let allowedEnd = rules && rules.check_in_end ? rules.check_in_end : "10:00";
+        let lateHours = rules && rules.late_arrival_hours ? parseInt(rules.late_arrival_hours) : 0;
 
         let customSchedulesActive = true;
         let exceptionsActive = true;
@@ -3096,9 +3258,16 @@ async function startDailyScanner() {
         const currentHours = String(now.getHours()).padStart(2, '0');
         const currentMinutes = String(now.getMinutes()).padStart(2, '0');
         const currentTime = `${currentHours}:${currentMinutes}`;
+        
+        let finalAllowedEnd = allowedEnd;
+        if (lateHours > 0) {
+            let [h, m] = allowedEnd.split(':');
+            h = (parseInt(h) + lateHours).toString().padStart(2, '0');
+            finalAllowedEnd = `${h}:${m}`;
+        }
 
-        if (currentTime < allowedStart || currentTime > allowedEnd) {
-            openInfoModal("Scanner Locked", `You can only check in between ${formatTime12(allowedStart)} and ${formatTime12(allowedEnd)}.`);
+        if (currentTime < allowedStart || currentTime > finalAllowedEnd) {
+            openInfoModal("Scanner Locked", `You can only check in between ${formatTime12(allowedStart)} and ${formatTime12(finalAllowedEnd)}.`);
             return; 
         }
 
@@ -3246,6 +3415,7 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
                         date: todayDateStr,
                         time: timeStr,
                         status: 'Present',
+                        is_late: window.isCheckingInLate === true,
                         company_id: safeCompanyId 
                     }]).then(({ error }) => {
                         if (error) {
@@ -3533,5 +3703,58 @@ function saveStaffAssignments() {
     
     if (document.getElementById('locations-list-container')) {
         renderLocations();
+    }
+}
+
+// --- NEW HELPERS FOR CHECKOUT TIMER ---
+window.checkoutInterval = null;
+function startCheckoutTimer(checkInTimeStr) {
+    if (window.checkoutInterval) clearInterval(window.checkoutInterval);
+    const timeMatch = checkInTimeStr.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/);
+    if (!timeMatch) return;
+    
+    let h = parseInt(timeMatch[1]);
+    const m = parseInt(timeMatch[2]);
+    const ampm = timeMatch[3] ? timeMatch[3].toUpperCase() : null;
+    if (ampm === 'PM' && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    
+    const checkInDate = new Date();
+    checkInDate.setHours(h, m, 0, 0);
+    const expiryDate = new Date(checkInDate.getTime() + (13 * 60 * 60 * 1000));
+    
+    const displayEl = document.getElementById('checkout-timer-display');
+    
+    window.checkoutInterval = setInterval(() => {
+        const now = new Date();
+        if (now >= expiryDate) {
+            clearInterval(window.checkoutInterval);
+            if(displayEl) displayEl.innerText = "Checkout window expired.";
+            return;
+        }
+        const diff = expiryDate - now;
+        const hh = Math.floor(diff / (1000 * 60 * 60));
+        const mm = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        if(displayEl) displayEl.innerText = `Auto-expires in ${hh}h ${mm}m`;
+    }, 1000);
+}
+
+async function handleCheckout() {
+    await ensureSupabase();
+    const todayDateStr = getUniversalDate();
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const btn = document.querySelector('button[onclick="handleCheckout()"]');
+    if(btn) { btn.innerText = "Processing..."; btn.disabled = true; }
+
+    const { error } = await supabaseClient.from('checkins').update({ checkout_time: timeStr })
+        .eq('user_email', currentStaff.email).eq('date', todayDateStr);
+    
+    if (error) {
+        openInfoModal("Error", "Could not check out.");
+        if(btn) { btn.innerText = "End Shift & Check Out"; btn.disabled = false; }
+    } else {
+        loadStaffRecords();
     }
 }
