@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historical Ledger - SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="dashboard-body" style="background-color: #fcfcfc;">
+
+    <div class="dashboard-content" style="max-width: 800px; margin: 0 auto; padding-top: 20px;">
+        <div style="text-align: left; margin-bottom: 20px;">
+            <a href="javascript:window.history.back()" style="color: #888; text-decoration: none; font-size: 14px;">← Back to Analytics</a>
+        </div>
+
+        <div class="dash-header" style="text-align: left; margin-bottom: 30px;">
+            <h2 class="title" style="font-size: 24px; margin-bottom: 5px;" id="history-name-title">Loading...</h2>
+            <p class="subtitle" style="margin-top: 0;">Complete historical ledger</p>
+        </div>
+
+        <div style="background-color: #ffffff; border: 1px solid #eaeaea; border-radius: 8px; overflow-x: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; white-space: nowrap;">
+                <thead>
+                    <tr style="background-color: #f9f9f9; border-bottom: 2px solid #eaeaea;">
+                        <th style="padding: 15px; color: #888; font-weight: 600;">Date</th>
+                        <th style="padding: 15px; color: #888; font-weight: 600;">Day</th>
+                        <th style="padding: 15px; color: #888; font-weight: 600;">Status</th>
+                        <th style="padding: 15px; color: #888; font-weight: 600;">Check-in</th>
+                        <th style="padding: 15px; color: #888; font-weight: 600;">Check-out</th>
+                    </tr>
+                </thead>
+                <tbody id="historical-table-body">
+                    <tr><td colspan="5" style="padding: 20px; text-align: center; color: #888;">Fetching records...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="script.js?v=1020"></script>
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            if (typeof generateHistoricalTable === 'function') {
+                generateHistoricalTable();
+            }
+        });
+    </script>
+</body>
+</html>
