@@ -111,4 +111,46 @@
 
     <script src="script.js?v=1018"></script>
 </body>
+</html>            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 class="section-title" style="margin: 0;" id="calendar-month-title">Current Month</h3>
+            </div>
+            
+            <div class="calendar-grid" id="analytics-calendar"></div>
+
+            <div style="margin-top: 15px; font-size: 11px; color: #888; text-align: center; font-style: italic;">
+                Tap a valid date to toggle a personal holiday
+            </div>
+            
+            <div style="margin-top: 20px; font-size: 11px; color: #888; display: flex; justify-content: space-around; flex-wrap: wrap; row-gap: 8px;">
+                <span><span style="color: #4ade80; font-size: 14px;">■</span> Present</span>
+                <span><span style="color: #ef4444; font-size: 14px;">■</span> Absent</span>
+                <span><span style="color: #f59e0b; font-size: 14px;">■</span> Pending</span>
+                <span><span style="color: #94a3b8; font-size: 14px;">■</span> Not Started</span>
+                <span><span style="color: #1a1a1a; font-size: 14px;">■</span> Organization Off</span>
+                <span><span style="display:inline-block; width:10px; height:10px; border:2px solid #1a1a1a; background-color:#ffffff; margin-right:4px; border-radius:2px; vertical-align:-1px; box-sizing: border-box;"></span>Personal Off</span>
+                <span><span style="color: #a855f7; font-size: 14px;">■</span> Late Arrival</span>
+            </div>
+
+            <!-- VIEW DETAILED TABLE BUTTON -->
+            <button class="google-btn" style="width: 100%; border-style: dashed; margin-top: 15px;" onclick="window.location.href='record-individual-table.html?email=' + new URLSearchParams(window.location.search).get('email')">
+                📄 View Detailed Historical Table
+            </button>
+        </div>
+    </div>
+
+    <!-- CONFIRM MODAL -->
+    <div id="confirm-modal" class="modal-bg" style="z-index: 10000;">
+        <div class="modal-box animated-modal" style="width: 90%; max-width: 320px;">
+            <span class="close" onclick="closeConfirmModal()">×</span>
+            <h3 class="section-title" id="confirm-title" style="text-align: center; margin-bottom: 15px;">Confirm</h3>
+            <p id="confirm-desc" style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px; text-align: center;">Are you sure?</p>
+            <div style="display: flex; gap: 10px;">
+                <button class="google-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px;" onclick="closeConfirmModal()">Cancel</button>
+                <button class="main-btn form-btn" id="confirm-action-btn" style="width: 50%; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js?v=1018"></script>
+</body>
 </html>
