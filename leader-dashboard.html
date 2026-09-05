@@ -17,14 +17,14 @@
         </div>
 
         <!-- GLOBAL HOLIDAY STATE -->
-        <div id="global-holiday-msg" style="display: none; text-align: center; padding: 60px 20px;">
+        <div class="form-card" id="global-holiday-msg" style="display: none; text-align: center; padding: 60px 20px; margin-bottom: 20px;">
             <div style="font-size: 48px; margin-bottom: 15px;">🏝️</div>
             <h3 style="font-size: 20px; margin-bottom: 10px; color: #1a1a1a;">Office Closed</h3>
             <p style="font-size: 14px; color: #888; line-height: 1.5; max-width: 280px; margin: 0 auto;">The organization is officially closed today. No check-ins are required or expected from staff.</p>
         </div>
 
         <!-- ACTIVE TODAY -->
-        <div class="status-section">
+        <div class="form-card status-section" style="padding: 20px; margin-bottom: 20px;">
             <h3 class="section-title">Active Today</h3>
             <div class="member-grid" id="active-today-list">
                 <!-- JavaScript will automatically load active staff here -->
@@ -32,7 +32,7 @@
         </div>
 
         <!-- LATE ARRIVALS -->
-        <div class="status-section">
+        <div class="form-card status-section" style="padding: 20px; margin-bottom: 20px;">
             <h3 class="section-title" style="color: #a855f7; border-bottom-color: #d8b4fe;">Late Arrivals</h3>
             <div class="member-grid" id="late-today-list">
                 <!-- JavaScript will automatically load late staff here -->
@@ -40,7 +40,7 @@
         </div>
 
         <!-- CHECKED OUT -->
-        <div class="status-section">
+        <div class="form-card status-section" style="padding: 20px; margin-bottom: 20px;">
             <h3 class="section-title" style="color: #3b82f6; border-bottom-color: #bfdbfe;">Checked Out</h3>
             <div class="member-grid" id="checkout-today-list">
                 <!-- JavaScript will automatically load checked out staff here -->
@@ -48,7 +48,7 @@
         </div>
 
         <!-- PENDING CHECK-INS -->
-        <div class="status-section">
+        <div class="form-card status-section" style="padding: 20px; margin-bottom: 20px;">
             <h3 class="section-title">Pending Check-ins</h3>
             <div class="member-grid" id="pending-today-list">
                 <!-- JavaScript will automatically load pending staff here -->
@@ -56,7 +56,7 @@
         </div>
 
         <!-- ABSENT TODAY -->
-        <div class="status-section">
+        <div class="form-card status-section" style="padding: 20px; margin-bottom: 20px;">
             <h3 class="section-title" style="color: #ef4444; border-bottom-color: #fecaca;">Absent Today</h3>
             <div class="member-grid" id="absent-today-list">
                 <!-- JavaScript will automatically load absent staff here -->
@@ -64,7 +64,7 @@
         </div>
 
         <!-- ON LEAVE / OFF -->
-        <div class="status-section">
+        <div class="form-card status-section" style="padding: 20px; margin-bottom: 20px;">
             <h3 class="section-title" style="color: #888;">On Leave / Off Today</h3>
             <div class="member-grid" id="off-today-list">
                 <!-- JavaScript will automatically load exempt/holiday staff here -->
@@ -95,7 +95,7 @@
         </a>
         
         <a href="leader-settings.html" class="nav-item" style="text-decoration: none; color: #888; text-align: center;">
-            <svg viewBox="0 0 24 24" class="nav-icon" style="width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 2;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0l2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            <svg viewBox="0 0 24 24" class="nav-icon" style="width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 2;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0l2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             <span style="display: block; font-size: 10px; margin-top: 4px;">Settings</span>
         </a>
         
