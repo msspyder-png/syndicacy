@@ -3815,22 +3815,11 @@ async function handleCheckout() {
         loadStaffRecords();
     }
 }
-// --- HISTORICAL TABLE TOGGLE & RENDER ---
-async function toggleHistoricalTable() {
-    const container = document.getElementById('historical-table-container');
-    const btn = document.getElementById('toggle-history-btn');
-
-    if (container.style.display === 'block') {
-        container.style.display = 'none';
-        btn.innerHTML = '📄 View Detailed Historical Table';
-        return;
-    }
-
-    container.style.display = 'block';
-    btn.innerHTML = '📄 Hide Historical Table';
-    
+// --- DEDICATED HISTORICAL TABLE LOGIC ---
+async function generateHistoricalTable() {
     const tableBody = document.getElementById('historical-table-body');
-    tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px; color:#888;">Scanning historical ledger...</td></tr>';
+    const nameTitle = document.getElementById('history-name-title');
+    if (!tableBody) return;
 
     await ensureSupabase();
     const leader = getLeader();
@@ -3842,6 +3831,10 @@ async function toggleHistoricalTable() {
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
         const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
+        if (nameTitle && user) {
+            nameTitle.innerText = user.name;
+        }
+
         let holidaysArray = [];
         let customSchedulesArray = [];
         let exceptionsArray = [];
@@ -3849,12 +3842,14 @@ async function toggleHistoricalTable() {
         let exceptionsActive = true;
         let globalStart = "09:00";
         let globalEnd = "10:00";
+        let lateHours = 0;
 
         if (settings) {
             if (settings.holidays) try { holidaysArray = JSON.parse(settings.holidays); } catch(e){}
             if (!Array.isArray(holidaysArray)) holidaysArray = [];
             if (settings.check_in_start) globalStart = settings.check_in_start;
             if (settings.check_in_end) globalEnd = settings.check_in_end;
+            if (settings.late_arrival_hours) lateHours = parseInt(settings.late_arrival_hours);
             
             if (settings.custom_schedules) {
                 try {
@@ -3880,7 +3875,7 @@ async function toggleHistoricalTable() {
                 if (log.status === 'Holiday/Off') {
                     personalHolidaysSet.add(log.date);
                 } else if (log.status === 'Present') {
-                    presentLogsMap.set(log.date, log.time);
+                    presentLogsMap.set(log.date, { in: log.time, out: log.checkout_time, isLate: log.is_late });
                 }
             });
         }
@@ -3892,9 +3887,9 @@ async function toggleHistoricalTable() {
 
         tableBody.innerHTML = '';
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         let hasRecords = false;
 
-        // Loop backwards from Today to Joined Date
         for (let d = new Date(today); d >= joinedDate; d.setDate(d.getDate() - 1)) {
             hasRecords = true;
             const dateStr = getUniversalDate(d);
@@ -3913,14 +3908,22 @@ async function toggleHistoricalTable() {
                 if (cust) { allowedStart = cust.start; allowedEnd = cust.end; }
             }
 
+            let finalAllowedEnd = allowedEnd;
+            if (lateHours > 0) {
+                let [h, m] = allowedEnd.split(':');
+                h = (parseInt(h) + lateHours).toString().padStart(2, '0');
+                finalAllowedEnd = `${h}:${m}`;
+            }
+
             const wasPresent = presentLogsMap.has(dateStr);
-            const checkInTime = wasPresent ? presentLogsMap.get(dateStr) : null;
+            const logData = wasPresent ? presentLogsMap.get(dateStr) : null;
             const isPersonalHoliday = personalHolidaysSet.has(dateStr);
             const isCommonHoliday = holidaysArray.includes(dateStr);
 
             let rowStatus = "Pending";
             let statusColor = "#f59e0b";
-            let timeDisplay = "--:--";
+            let checkInDisplay = "--:--";
+            let checkOutDisplay = "--:--";
 
             if (isCommonHoliday) {
                 rowStatus = "Organization Off";
@@ -3929,26 +3932,15 @@ async function toggleHistoricalTable() {
                 rowStatus = "Personal Off";
                 statusColor = "#888";
             } else if (wasPresent) {
-                let isLate = false;
-                const match = checkInTime.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/);
-                if (match) {
-                    let h = parseInt(match[1]);
-                    let m = parseInt(match[2]);
-                    let ampm = match[3] ? match[3].toUpperCase() : null;
-                    if (ampm === 'PM' && h < 12) h += 12;
-                    if (ampm === 'AM' && h === 12) h = 0;
-                    const cTime24 = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-                    if (cTime24 > allowedStart) isLate = true; 
-                }
-                
-                if (isLate) {
+                if (logData.isLate) {
                     rowStatus = "Late Arrival";
-                    statusColor = "#a855f7"; // Purple map from legend
+                    statusColor = "#a855f7"; 
                 } else {
                     rowStatus = "Present";
                     statusColor = "#4ade80";
                 }
-                timeDisplay = checkInTime;
+                checkInDisplay = logData.in;
+                checkOutDisplay = logData.out || "<span style='color:#ccc; font-style:italic;'>Did not check out</span>";
             } else if (isPast) {
                 rowStatus = "Absent";
                 statusColor = "#ef4444";
@@ -3958,7 +3950,7 @@ async function toggleHistoricalTable() {
                 if (cTime < allowedStart) {
                     rowStatus = "Not Started";
                     statusColor = "#94a3b8";
-                } else if (cTime > allowedEnd) {
+                } else if (cTime > finalAllowedEnd) {
                     rowStatus = "Absent";
                     statusColor = "#ef4444";
                 }
@@ -3966,25 +3958,28 @@ async function toggleHistoricalTable() {
 
             const parts = dateStr.split('-');
             const displayDate = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])}, ${parts[0]}`;
+            const displayDay = dayNames[d.getDay()];
 
             tableBody.insertAdjacentHTML('beforeend', `
-                <tr style="border-bottom: 1px solid #eaeaea;">
-                    <td style="padding: 12px 15px; font-weight: 500; color: #1a1a1a;">${displayDate}</td>
-                    <td style="padding: 12px 15px; font-weight: bold; color: ${statusColor};">
+                <tr style="border-bottom: 1px solid #eaeaea; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f9f9f9'" onmouseout="this.style.backgroundColor='transparent'">
+                    <td style="padding: 15px; color: #1a1a1a;">${displayDate}</td>
+                    <td style="padding: 15px; color: #1a1a1a; font-weight: 500;">${displayDay}</td>
+                    <td style="padding: 15px; font-weight: bold; color: ${statusColor};">
                         <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:${statusColor}; margin-right:6px;"></span>
                         ${rowStatus}
                     </td>
-                    <td style="padding: 12px 15px; text-align: right; color: #555; font-family: monospace; font-size: 13px;">${timeDisplay}</td>
+                    <td style="padding: 15px; color: #555; font-family: monospace; font-size: 14px;">${checkInDisplay}</td>
+                    <td style="padding: 15px; color: #555; font-family: monospace; font-size: 14px;">${checkOutDisplay}</td>
                 </tr>
             `);
         }
 
         if (!hasRecords) {
-            tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px; color:#888;">No historical records found.</td></tr>';
+            tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#888;">No historical records found.</td></tr>';
         }
 
     } catch (err) {
         console.error(err);
-        tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; padding:20px; color:red;">Failed to load data.</td></tr>';
+        tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:red;">Failed to load data.</td></tr>';
     }
 }
