@@ -3822,14 +3822,26 @@ async function generateHistoricalTable() {
     if (!tableBody) return;
 
     await ensureSupabase();
+    
+    // Auth Check: Allow either Leader OR Staff to view this table
     const leader = getLeader();
+    const sessionStaff = sessionStorage.getItem('loggedInStaff') ? JSON.parse(sessionStorage.getItem('loggedInStaff')) : null;
+    
     const targetEmail = new URLSearchParams(window.location.search).get('email');
-    if (!targetEmail || !leader) return;
+    if (!targetEmail || (!leader && !sessionStaff)) return;
+    
+    // Ensure staff can only view their OWN records
+    if (sessionStaff && targetEmail !== sessionStaff.email) {
+        tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:red;">Access Denied.</td></tr>';
+        return;
+    }
+    
+    const validCompanyId = leader ? leader.company_id : sessionStaff.company_id;
 
     try {
         const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).maybeSingle();
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
-        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', validCompanyId).limit(1).maybeSingle();
 
         if (nameTitle && user) {
             nameTitle.innerText = user.name;
