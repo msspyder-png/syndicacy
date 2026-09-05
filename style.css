@@ -725,3 +725,35 @@ input:checked + .slider:before {
     color: #ffffff !important;
     border-color: #1a1a1a !important;
 }
+/* Late Arrival Colors (Subtle Purple) */
+.cal-day.cal-late {
+    background-color: #f3e8ff !important;
+    color: #a855f7 !important;
+    border-color: #d8b4fe !important;
+}
+
+/* Detailed Tables Styling */
+.detailed-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+}
+.detailed-table th {
+    background-color: #1a1a1a;
+    color: #fff;
+    padding: 12px 15px;
+    text-align: left;
+    font-weight: 600;
+}
+.detailed-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #eaeaea;
+    color: #555;
+}
+.detailed-table tr:hover td {
+    background-color: #f9f9f9;
+}
