@@ -14,9 +14,15 @@
             <a href="javascript:window.history.back()" style="color: #888; text-decoration: none; font-size: 14px;">← Back to Analytics</a>
         </div>
 
-        <div class="dash-header" style="text-align: left; margin-bottom: 30px;">
-            <h2 class="title" style="font-size: 24px; margin-bottom: 5px;" id="history-name-title">Loading...</h2>
-            <p class="subtitle" style="margin-top: 0;">Complete historical ledger</p>
+        <div class="dash-header" style="text-align: left; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <h2 class="title" style="font-size: 24px; margin-bottom: 5px;" id="history-name-title">Loading...</h2>
+                    <p class="subtitle" style="margin-top: 0; margin-bottom: 5px;">Complete historical ledger</p>
+                    <p id="history-stats-subtitle" style="font-size: 13px; font-weight: 600; color: #4ade80; margin: 0;"></p>
+                </div>
+                <button class="google-btn" style="padding: 8px 12px; font-size: 11px; width: auto; margin: 0; background-color: #1a1a1a; color: #fff; border: none;" onclick="exportTableToCSV('individual')">Download CSV</button>
+            </div>
         </div>
 
         <div style="background-color: #ffffff; border: 1px solid #eaeaea; border-radius: 8px; overflow-x: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02);">
@@ -37,7 +43,7 @@
         </div>
     </div>
 
-    <script src="script.js?v=1020"></script>
+    <script src="script.js?v=1025"></script>
     <script>
         window.addEventListener('DOMContentLoaded', () => {
             if (typeof generateHistoricalTable === 'function') {

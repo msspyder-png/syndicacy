@@ -1656,16 +1656,23 @@ async function handleCsvChoice(email, name, exportCsv, btn) {
     );
 }
 
+// Ensure the Delete Export generates the identical visual data as the history table
 async function downloadEmployeeCSV(email, name) {
     await ensureSupabase();
+    const leader = getLeader();
+    if (!leader) return;
+
+    const { data: user } = await supabaseClient.from('users').select('*').eq('email', email).maybeSingle();
     const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', email);
+    const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
     
-    let csvContent = "Date,Time,Status,Checkout Time,Late Arrival\n";
-    if (logs && logs.length > 0) {
-        logs.forEach(row => {
-            const isLate = row.is_late ? "Yes" : "No";
-            const checkOut = row.checkout_time || "N/A";
-            csvContent += `${row.date},${row.time},${row.status},${checkOut},${isLate}\n`;
+    const historyData = buildIndividualHistoryData(user, logs, settings);
+    
+    let csvContent = "Date,Day,Status,Check-in,Check-out\n";
+    
+    if (historyData.rows.length > 0) {
+        historyData.rows.forEach(r => {
+            csvContent += `"${r.displayDate}","${r.displayDay}","${r.status}","${r.in}","${r.out}"\n`;
         });
     } else {
         csvContent += "No attendance records found.\n";
@@ -3944,7 +3951,152 @@ async function handleCheckout() {
     }
 }
 
-// --- DEDICATED HISTORICAL TABLE LOGIC ---
+// --- CORE SHARED ENGINE FOR HISTORICAL DATA ---
+function buildIndividualHistoryData(user, logs, settings) {
+    let holidaysArray = [];
+    let customSchedulesArray = [];
+    let exceptionsArray = [];
+    let customSchedulesActive = true;
+    let exceptionsActive = true;
+    let globalStart = "09:00";
+    let globalEnd = "10:00";
+    let lateHours = 0;
+
+    if (settings) {
+        if (settings.holidays) try { holidaysArray = JSON.parse(settings.holidays); } catch(e){}
+        if (!Array.isArray(holidaysArray)) holidaysArray = [];
+        if (settings.check_in_start) globalStart = settings.check_in_start;
+        if (settings.check_in_end) globalEnd = settings.check_in_end;
+        if (settings.late_arrival_hours) lateHours = parseInt(settings.late_arrival_hours);
+        
+        if (settings.custom_schedules) {
+            try {
+                let parsed = JSON.parse(settings.custom_schedules);
+                if (Array.isArray(parsed)) customSchedulesArray = parsed;
+                else { customSchedulesActive = parsed.active; customSchedulesArray = parsed.data || []; }
+            } catch(e){}
+        }
+        if (settings.exceptions) {
+            try {
+                let parsed = JSON.parse(settings.exceptions);
+                if (Array.isArray(parsed)) exceptionsArray = parsed;
+                else { exceptionsActive = parsed.active; exceptionsArray = parsed.data || []; }
+            } catch(e){}
+        }
+    }
+
+    let personalHolidaysSet = new Set();
+    let presentLogsMap = new Map(); 
+    let validCheckinDates = new Set();
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    if (logs) {
+        logs.forEach(log => {
+            if (log.status === 'Holiday/Off') {
+                personalHolidaysSet.add(log.date);
+            } else if (log.status === 'Present') {
+                presentLogsMap.set(log.date, { in: log.time, out: log.checkout_time, isLate: log.is_late });
+                if (parseLocal(log.date) <= today) validCheckinDates.add(log.date);
+            }
+        });
+    }
+
+    const joinedDate = user && user.joined_date ? parseLocal(user.joined_date) : new Date(2000, 0, 1);
+    const todayStr = getUniversalDate(today);
+    
+    let workingDays = 0;
+    for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
+        const dStr = getUniversalDate(d);
+        if (!holidaysArray.includes(dStr) && !personalHolidaysSet.has(dStr)) {
+            workingDays++;
+        }
+    }
+    if (workingDays === 0) workingDays = 1;
+    
+    let totalChecks = validCheckinDates.size;
+    let percent = Math.round((totalChecks / workingDays) * 100);
+    if (percent > 100) percent = 100;
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    let rows = [];
+
+    for (let d = new Date(today); d >= joinedDate; d.setDate(d.getDate() - 1)) {
+        const dateStr = getUniversalDate(d);
+        const isPast = dateStr < todayStr;
+        const isToday = dateStr === todayStr;
+        
+        let allowedStart = globalStart;
+        let allowedEnd = globalEnd;
+        
+        if (exceptionsActive) {
+            const exc = exceptionsArray.find(ex => ex.date === dateStr);
+            if (exc) { allowedStart = exc.start; allowedEnd = exc.end; }
+        }
+        if (customSchedulesActive && user && user.email) {
+            const cust = customSchedulesArray.find(c => c.email === user.email);
+            if (cust) { allowedStart = cust.start; allowedEnd = cust.end; }
+        }
+
+        let finalAllowedEnd = allowedEnd;
+        if (lateHours > 0) {
+            let [h, m] = allowedEnd.split(':');
+            h = (parseInt(h) + lateHours).toString().padStart(2, '0');
+            finalAllowedEnd = `${h}:${m}`;
+        }
+
+        const wasPresent = presentLogsMap.has(dateStr);
+        const logData = wasPresent ? presentLogsMap.get(dateStr) : null;
+        const isPersonalHoliday = personalHolidaysSet.has(dateStr);
+        const isCommonHoliday = holidaysArray.includes(dateStr);
+
+        let rowStatus = "Pending";
+        let checkInDisplay = "--:--";
+        let checkOutDisplay = "--:--";
+        let statusColor = "#f59e0b"; 
+
+        if (isCommonHoliday) {
+            rowStatus = "Organization Off"; statusColor = "#1a1a1a";
+        } else if (isPersonalHoliday) {
+            rowStatus = "Personal Off"; statusColor = "#888";
+        } else if (wasPresent) {
+            if (logData.isLate) { rowStatus = "Late Arrival"; statusColor = "#a855f7"; } 
+            else { rowStatus = "Present"; statusColor = "#4ade80"; }
+            checkInDisplay = logData.in;
+            checkOutDisplay = logData.out || "Did not check out";
+        } else if (isPast) {
+            rowStatus = "Absent"; statusColor = "#ef4444";
+        } else if (isToday) {
+            const nowTime = new Date();
+            const cTime = String(nowTime.getHours()).padStart(2, '0') + ':' + String(nowTime.getMinutes()).padStart(2, '0');
+            if (cTime < allowedStart) { rowStatus = "Not Started"; statusColor = "#94a3b8"; } 
+            else if (cTime > finalAllowedEnd) { rowStatus = "Absent"; statusColor = "#ef4444"; }
+        }
+
+        const parts = dateStr.split('-');
+        const displayDate = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])}, ${parts[0]}`;
+        const displayDay = dayNames[d.getDay()];
+
+        rows.push({
+            rawDate: dateStr,
+            displayDate: displayDate,
+            displayDay: displayDay,
+            status: rowStatus,
+            statusColor: statusColor,
+            in: checkInDisplay,
+            out: checkOutDisplay
+        });
+    }
+
+    return {
+        stats: { checkins: totalChecks, workingDays: workingDays, percent: percent },
+        rows: rows
+    };
+}
+
+// --- DEDICATED HISTORICAL TABLE LOGIC (INDIVIDUAL) ---
 async function generateHistoricalTable() {
     const tableBody = document.getElementById('historical-table-body');
     const nameTitle = document.getElementById('history-name-title');
@@ -3952,14 +4104,12 @@ async function generateHistoricalTable() {
 
     await ensureSupabase();
     
-    // Auth Check: Allow either Leader OR Staff to view this table
     const leader = getLeader();
     const sessionStaff = sessionStorage.getItem('loggedInStaff') ? JSON.parse(sessionStorage.getItem('loggedInStaff')) : null;
     
     const targetEmail = new URLSearchParams(window.location.search).get('email');
     if (!targetEmail || (!leader && !sessionStaff)) return;
     
-    // Ensure staff can only view their OWN records
     if (sessionStaff && targetEmail !== sessionStaff.email) {
         tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:red;">Access Denied.</td></tr>';
         return;
@@ -3972,155 +4122,186 @@ async function generateHistoricalTable() {
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
         const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', validCompanyId).limit(1).maybeSingle();
 
-        if (nameTitle && user) {
-            nameTitle.innerText = user.name;
+        if (nameTitle && user) nameTitle.innerText = user.name;
+
+        const historyData = buildIndividualHistoryData(user, logs, settings);
+        
+        const statsSub = document.getElementById('history-stats-subtitle');
+        if (statsSub) {
+            statsSub.innerText = `${historyData.stats.checkins} / ${historyData.stats.workingDays} Check-ins • ${historyData.stats.percent}% Attendance`;
         }
-
-        let holidaysArray = [];
-        let customSchedulesArray = [];
-        let exceptionsArray = [];
-        let customSchedulesActive = true;
-        let exceptionsActive = true;
-        let globalStart = "09:00";
-        let globalEnd = "10:00";
-        let lateHours = 0;
-
-        if (settings) {
-            if (settings.holidays) try { holidaysArray = JSON.parse(settings.holidays); } catch(e){}
-            if (!Array.isArray(holidaysArray)) holidaysArray = [];
-            if (settings.check_in_start) globalStart = settings.check_in_start;
-            if (settings.check_in_end) globalEnd = settings.check_in_end;
-            if (settings.late_arrival_hours) lateHours = parseInt(settings.late_arrival_hours);
-            
-            if (settings.custom_schedules) {
-                try {
-                    let parsed = JSON.parse(settings.custom_schedules);
-                    if (Array.isArray(parsed)) customSchedulesArray = parsed;
-                    else { customSchedulesActive = parsed.active; customSchedulesArray = parsed.data || []; }
-                } catch(e){}
-            }
-            if (settings.exceptions) {
-                try {
-                    let parsed = JSON.parse(settings.exceptions);
-                    if (Array.isArray(parsed)) exceptionsArray = parsed;
-                    else { exceptionsActive = parsed.active; exceptionsArray = parsed.data || []; }
-                } catch(e){}
-            }
-        }
-
-        let personalHolidaysSet = new Set();
-        let presentLogsMap = new Map(); 
-
-        if (logs) {
-            logs.forEach(log => {
-                if (log.status === 'Holiday/Off') {
-                    personalHolidaysSet.add(log.date);
-                } else if (log.status === 'Present') {
-                    presentLogsMap.set(log.date, { in: log.time, out: log.checkout_time, isLate: log.is_late });
-                }
-            });
-        }
-
-        const joinedDate = user && user.joined_date ? parseLocal(user.joined_date) : new Date(2000, 0, 1);
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        const todayStr = getUniversalDate(today);
-
+        
         tableBody.innerHTML = '';
-        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        let hasRecords = false;
+        if (historyData.rows.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#888;">No historical records found.</td></tr>';
+            return;
+        }
 
-        for (let d = new Date(today); d >= joinedDate; d.setDate(d.getDate() - 1)) {
-            hasRecords = true;
-            const dateStr = getUniversalDate(d);
-            const isPast = dateStr < todayStr;
-            const isToday = dateStr === todayStr;
-            
-            let allowedStart = globalStart;
-            let allowedEnd = globalEnd;
-            
-            if (exceptionsActive) {
-                const exc = exceptionsArray.find(ex => ex.date === dateStr);
-                if (exc) { allowedStart = exc.start; allowedEnd = exc.end; }
-            }
-            if (customSchedulesActive) {
-                const cust = customSchedulesArray.find(c => c.email === targetEmail);
-                if (cust) { allowedStart = cust.start; allowedEnd = cust.end; }
-            }
-
-            let finalAllowedEnd = allowedEnd;
-            if (lateHours > 0) {
-                let [h, m] = allowedEnd.split(':');
-                h = (parseInt(h) + lateHours).toString().padStart(2, '0');
-                finalAllowedEnd = `${h}:${m}`;
-            }
-
-            const wasPresent = presentLogsMap.has(dateStr);
-            const logData = wasPresent ? presentLogsMap.get(dateStr) : null;
-            const isPersonalHoliday = personalHolidaysSet.has(dateStr);
-            const isCommonHoliday = holidaysArray.includes(dateStr);
-
-            let rowStatus = "Pending";
-            let statusColor = "#f59e0b";
-            let checkInDisplay = "--:--";
-            let checkOutDisplay = "--:--";
-
-            if (isCommonHoliday) {
-                rowStatus = "Organization Off";
-                statusColor = "#1a1a1a";
-            } else if (isPersonalHoliday) {
-                rowStatus = "Personal Off";
-                statusColor = "#888";
-            } else if (wasPresent) {
-                if (logData.isLate) {
-                    rowStatus = "Late Arrival";
-                    statusColor = "#a855f7"; 
-                } else {
-                    rowStatus = "Present";
-                    statusColor = "#4ade80";
-                }
-                checkInDisplay = logData.in;
-                checkOutDisplay = logData.out || "<span style='color:#ccc; font-style:italic;'>Did not check out</span>";
-            } else if (isPast) {
-                rowStatus = "Absent";
-                statusColor = "#ef4444";
-            } else if (isToday) {
-                const nowTime = new Date();
-                const cTime = String(nowTime.getHours()).padStart(2, '0') + ':' + String(nowTime.getMinutes()).padStart(2, '0');
-                if (cTime < allowedStart) {
-                    rowStatus = "Not Started";
-                    statusColor = "#94a3b8";
-                } else if (cTime > finalAllowedEnd) {
-                    rowStatus = "Absent";
-                    statusColor = "#ef4444";
-                }
-            }
-
-            const parts = dateStr.split('-');
-            const displayDate = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])}, ${parts[0]}`;
-            const displayDay = dayNames[d.getDay()];
-
+        historyData.rows.forEach(r => {
+            let outDisplay = r.out === 'Did not check out' ? `<span style='color:#ccc; font-style:italic;'>${r.out}</span>` : r.out;
             tableBody.insertAdjacentHTML('beforeend', `
                 <tr style="border-bottom: 1px solid #eaeaea; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#f9f9f9'" onmouseout="this.style.backgroundColor='transparent'">
-                    <td style="padding: 15px; color: #1a1a1a;">${displayDate}</td>
-                    <td style="padding: 15px; color: #1a1a1a; font-weight: 500;">${displayDay}</td>
-                    <td style="padding: 15px; font-weight: bold; color: ${statusColor};">
-                        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:${statusColor}; margin-right:6px;"></span>
-                        ${rowStatus}
+                    <td style="padding: 15px; color: #1a1a1a;">${r.displayDate}</td>
+                    <td style="padding: 15px; color: #1a1a1a; font-weight: 500;">${r.displayDay}</td>
+                    <td style="padding: 15px; font-weight: bold; color: ${r.statusColor};">
+                        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color:${r.statusColor}; margin-right:6px;"></span>
+                        ${r.status}
                     </td>
-                    <td style="padding: 15px; color: #555; font-family: monospace; font-size: 14px;">${checkInDisplay}</td>
-                    <td style="padding: 15px; color: #555; font-family: monospace; font-size: 14px;">${checkOutDisplay}</td>
+                    <td style="padding: 15px; color: #555; font-family: monospace; font-size: 14px;">${r.in}</td>
+                    <td style="padding: 15px; color: #555; font-family: monospace; font-size: 14px;">${outDisplay}</td>
                 </tr>
             `);
-        }
-
-        if (!hasRecords) {
-            tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:#888;">No historical records found.</td></tr>';
-        }
+        });
 
     } catch (err) {
         console.error(err);
         tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:red;">Failed to load data.</td></tr>';
     }
+}
+
+// --- MASSIVE GLOBAL HISTORY MATRIX ---
+async function generateGlobalHistoricalTable() {
+    const thead = document.getElementById('global-historical-head');
+    const tbody = document.getElementById('global-historical-body');
+    if (!thead || !tbody) return;
+
+    await ensureSupabase();
+    const leader = getLeader();
+    if (!leader) return;
+
+    try {
+        const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+        const { data: logs } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
+        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
+
+        if (!staff || staff.length === 0) {
+            tbody.innerHTML = '<tr><td style="padding: 40px; text-align: center; color: #888;">No active staff found.</td></tr>';
+            return;
+        }
+
+        const allData = {};
+        let minDateStr = getUniversalDate(new Date()); 
+        
+        staff.forEach(user => {
+            const userLogs = logs ? logs.filter(l => l.user_email === user.email) : [];
+            allData[user.email] = buildIndividualHistoryData(user, userLogs, settings);
+            
+            if (allData[user.email].rows.length > 0) {
+                const lastRow = allData[user.email].rows[allData[user.email].rows.length - 1];
+                if (lastRow.rawDate < minDateStr) minDateStr = lastRow.rawDate;
+            }
+        });
+
+        // Sticky Headers
+        let header1 = `<tr><th class="sticky-col" rowspan="2" style="background-color: #1a1a1a; color: #fff; padding: 12px 15px; text-align: left; border-right: 2px solid #eaeaea; z-index: 30; left: 0; min-width: 120px;">Date</th>`;
+        let header2 = `<tr>`;
+
+        staff.forEach(user => {
+            const stats = allData[user.email].stats;
+            const shortName = user.name.split(' ')[0];
+            header1 += `<th colspan="3" style="background-color: #1a1a1a; color: #fff; padding: 10px; border-left: 1px solid #333; text-align: center;">
+                <div style="font-size: 14px; font-weight: 600;">${shortName}</div>
+                <div style="font-size: 10px; color: #4ade80; margin-top: 4px;">${stats.checkins}/${stats.workingDays} (${stats.percent}%)</div>
+            </th>`;
+            
+            header2 += `
+                <th style="background-color: #f9f9f9; color: #888; border-left: 1px solid #eaeaea; border-bottom: 2px solid #eaeaea; font-weight: 600; padding: 8px;">Status</th>
+                <th style="background-color: #f9f9f9; color: #888; border-bottom: 2px solid #eaeaea; font-weight: 600; padding: 8px;">In</th>
+                <th style="background-color: #f9f9f9; color: #888; border-right: 1px solid #eaeaea; border-bottom: 2px solid #eaeaea; font-weight: 600; padding: 8px;">Out</th>
+            `;
+        });
+        header1 += `</tr>`;
+        header2 += `</tr>`;
+        
+        thead.innerHTML = header1 + header2;
+
+        tbody.innerHTML = "";
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        
+        const minDate = parseLocal(minDateStr);
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+        for (let d = new Date(today); d >= minDate; d.setDate(d.getDate() - 1)) {
+            const dStr = getUniversalDate(d);
+            const parts = dStr.split('-');
+            const displayDate = `${monthNames[parseInt(parts[1])-1]} ${parseInt(parts[2])}, ${parts[0]}`;
+
+            let rowHtml = `<tr style="border-bottom: 1px solid #eaeaea; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='#fcfcfc'" onmouseout="this.style.backgroundColor='transparent'">
+                <td class="sticky-col" style="background-color: #ffffff; color: #1a1a1a; font-weight: 500; border-right: 2px solid #eaeaea; padding: 12px 15px; white-space: nowrap;">${displayDate}</td>`;
+
+            staff.forEach(user => {
+                const userDay = allData[user.email].rows.find(r => r.rawDate === dStr);
+                
+                if (userDay) {
+                    let outDisplay = userDay.out === 'Did not check out' ? `<span style='color:#ccc; font-style:italic;'>--</span>` : userDay.out;
+                    let inDisplay = userDay.in === '--:--' ? `<span style='color:#ccc;'>--:--</span>` : userDay.in;
+                    
+                    rowHtml += `
+                        <td style="border-left: 1px solid #eaeaea; padding: 12px 8px; font-weight: bold; color: ${userDay.statusColor}; text-align: center;">${userDay.status}</td>
+                        <td style="padding: 12px 8px; color: #555; font-family: monospace; text-align: center;">${inDisplay}</td>
+                        <td style="border-right: 1px solid #eaeaea; padding: 12px 8px; color: #555; font-family: monospace; text-align: center;">${outDisplay}</td>
+                    `;
+                } else {
+                    rowHtml += `
+                        <td style="border-left: 1px solid #eaeaea; padding: 12px 8px; text-align: center; color: #ccc;">-</td>
+                        <td style="padding: 12px 8px; text-align: center; color: #ccc;">-</td>
+                        <td style="border-right: 1px solid #eaeaea; padding: 12px 8px; text-align: center; color: #ccc;">-</td>
+                    `;
+                }
+            });
+            
+            rowHtml += `</tr>`;
+            tbody.insertAdjacentHTML('beforeend', rowHtml);
+        }
+
+    } catch (err) {
+        console.error(err);
+        tbody.innerHTML = '<tr><td style="padding: 40px; text-align: center; color: red;">Failed to load massive dataset.</td></tr>';
+    }
+}
+
+// --- CSV EXPORT FUNCTIONALITY ---
+function exportTableToCSV(type) {
+    let table, filename;
+    
+    if (type === 'individual') {
+        table = document.querySelector('table'); 
+        const nameEl = document.getElementById('history-name-title');
+        const empName = nameEl ? nameEl.innerText.replace(/\s+/g, '_') : 'Employee';
+        filename = `${empName}_History.csv`;
+    } else if (type === 'global') {
+        table = document.querySelector('.global-history-table');
+        filename = 'Global_Matrix.csv';
+    }
+
+    if (!table) return;
+
+    let csv = [];
+    let rows = table.querySelectorAll('tr');
+    
+    for (let i = 0; i < rows.length; i++) {
+        let row = [], cols = rows[i].querySelectorAll('td, th');
+        
+        // Offset shift for global table's second row (due to Date rowspan=2)
+        if (type === 'global' && i === 1) {
+            row.push('""'); 
+        }
+
+        for (let j = 0; j < cols.length; j++) {
+            let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, " ").trim();
+            data = data.replace(/"/g, '""');
+            row.push('"' + data + '"');
+        }
+        csv.push(row.join(','));
+    }
+
+    let csvFile = new Blob([csv.join('\n')], {type: "text/csv;charset=utf-8;"});
+    let downloadLink = document.createElement("a");
+    downloadLink.download = filename;
+    downloadLink.href = window.URL.createObjectURL(csvFile);
+    downloadLink.style.display = "none";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
 }

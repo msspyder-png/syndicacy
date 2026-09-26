@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Matrix - SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="dashboard-body" style="background-color: #fcfcfc;">
+
+    <div class="dashboard-content" style="max-width: 100%; margin: 0 auto; padding-top: 20px; padding-bottom: 90px; padding-left: 0; padding-right: 0;">
+        <div style="text-align: left; margin-bottom: 20px; padding: 0 20px;">
+            <a href="javascript:window.history.back()" style="color: #888; text-decoration: none; font-size: 14px;">← Back to Records</a>
+        </div>
+
+        <div class="dash-header" style="text-align: left; margin-bottom: 20px; padding: 0 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <h2 class="title" style="font-size: 24px; margin-bottom: 5px;">Global Matrix</h2>
+                    <p class="subtitle" style="margin-top: 0; margin-bottom: 0;">Master organizational history</p>
+                </div>
+                <button class="google-btn" style="padding: 8px 12px; font-size: 12px; width: auto; margin: 0; background-color: #1a1a1a; color: #fff; border: none; font-weight: 600;" onclick="exportTableToCSV('global')">Download CSV</button>
+            </div>
+        </div>
+
+        <div style="background-color: #ffffff; border-top: 1px solid #eaeaea; border-bottom: 1px solid #eaeaea; overflow-x: auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); max-height: 70vh; overflow-y: auto; position: relative;">
+            <table class="global-history-table" style="width: 100%; border-collapse: collapse; text-align: center; font-size: 12px; white-space: nowrap;">
+                <thead id="global-historical-head" style="position: sticky; top: 0; z-index: 20;">
+                    <!-- JS Injected Header -->
+                </thead>
+                <tbody id="global-historical-body">
+                    <tr><td style="padding: 40px; text-align: center; color: #888;">Fetching massive dataset...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="script.js?v=2000"></script>
+    <script>
+        window.addEventListener('DOMContentLoaded', () => {
+            if (typeof generateGlobalHistoricalTable === 'function') {
+                generateGlobalHistoricalTable();
+            }
+        });
+    </script>
+</body>
+</html>
