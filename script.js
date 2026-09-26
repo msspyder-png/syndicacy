@@ -550,7 +550,7 @@ async function loadPendingInvites() {
                 btnHtml = `<button class="main-btn" style="padding: 6px 12px; font-size: 11px; background-color: #4ade80; color: black; border: none; cursor: pointer; flex: 1; margin: 0;" onclick="approveInvite('${invite.id}', '${invite.name}')">Approve Now</button>`;
             }
 
-            btnHtml += `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 28px; height: 28px; flex-shrink: 0; margin: 0;" onclick="deleteInvite('${invite.id}', '${invite.name}')">×</button>`;
+            btnHtml += `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 28px; height: 28px; flex-shrink: 0; margin: 0;" onclick="deleteInvite('${invite.id}', '${invite.name.replace(/'/g, "\\'")}')">×</button>`;
 
             const card = `
                 <div class="directory-card" style="border: 1px solid #e0e0e0; background: #fff; margin-bottom: 12px; display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 15px;">
@@ -936,12 +936,14 @@ async function loadTodayAttendance() {
             const log = (attendanceLogs || []).find(a => a.user_email === staff.email);
             const initial = staff.name ? staff.name.charAt(0).toUpperCase() : '?';
             const shortName = staff.name ? staff.name.split(' ')[0] : 'Staff';
+            
+            const onclickRedirect = `onclick="window.location.href='record-individual.html?email=${encodeURIComponent(staff.email)}'"`;
 
             if (log && log.status === 'Holiday/Off') {
                 offCount++;
                 if (offList) {
                     offList.insertAdjacentHTML('beforeend', `
-                        <div class="member-card" style="background-color: #1a1a1a; border: 1px solid #1a1a1a; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+                        <div class="member-card clickable-card" ${onclickRedirect} style="background-color: #1a1a1a; border: 1px solid #1a1a1a; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
                             <div class="avatar" style="background: #ffffff; color: #1a1a1a;">${initial}</div>
                             <span class="name" style="color: #ffffff;">${shortName}</span>
                             <span style="font-size: 9px; color: #aaa; font-weight: 500; margin-top: 2px;">Exempt</span>
@@ -952,7 +954,7 @@ async function loadTodayAttendance() {
                 if (log.checkout_time) {
                     checkoutCount++;
                     if(checkoutList) checkoutList.insertAdjacentHTML('beforeend', `
-                        <div class="member-card" style="background-color: #eff6ff; border: 1px solid #bfdbfe;">
+                        <div class="member-card clickable-card" ${onclickRedirect} style="background-color: #eff6ff; border: 1px solid #bfdbfe;">
                             <div class="avatar" style="background: #3b82f6; color: white;">${initial}</div>
                             <span class="name" style="color: #1e3a8a;">${shortName}</span>
                             <span style="font-size: 9px; color: #3b82f6; font-weight: 500; margin-top: 2px;">Out: ${log.checkout_time}</span>
@@ -961,7 +963,7 @@ async function loadTodayAttendance() {
                 } else if (log.is_late) {
                     lateCount++;
                     if(lateList) lateList.insertAdjacentHTML('beforeend', `
-                        <div class="member-card" style="background-color: #f3e8ff; border: 1px solid #d8b4fe;">
+                        <div class="member-card clickable-card" ${onclickRedirect} style="background-color: #f3e8ff; border: 1px solid #d8b4fe;">
                             <div class="avatar" style="background: #a855f7; color: white;">${initial}</div>
                             <span class="name" style="color: #6b21a8;">${shortName}</span>
                             <span style="font-size: 9px; color: #a855f7; font-weight: 500; margin-top: 2px;">In: ${log.time}</span>
@@ -970,7 +972,7 @@ async function loadTodayAttendance() {
                 } else {
                     activeCount++;
                     activeList.insertAdjacentHTML('beforeend', `
-                        <div class="member-card present">
+                        <div class="member-card present clickable-card" ${onclickRedirect}>
                             <div class="avatar" style="background: #1a1a1a; color: white;">${initial}</div>
                             <span class="name">${shortName}</span>
                             <span style="font-size: 9px; color: #888; font-weight: 500; margin-top: 2px;">${log.time}</span>
@@ -1001,7 +1003,7 @@ async function loadTodayAttendance() {
                     absentCount++;
                     if (absentList) {
                         absentList.insertAdjacentHTML('beforeend', `
-                            <div class="member-card" style="background-color: #fef2f2; border: 1px dashed #ef4444;">
+                            <div class="member-card clickable-card" ${onclickRedirect} style="background-color: #fef2f2; border: 1px dashed #ef4444;">
                                 <div class="avatar" style="background: #fca5a5; color: #7f1d1d;">${initial}</div>
                                 <span class="name" style="color: #ef4444;">${shortName}</span>
                             </div>
@@ -1010,7 +1012,7 @@ async function loadTodayAttendance() {
                 } else {
                     pendingCount++;
                     pendingList.insertAdjacentHTML('beforeend', `
-                        <div class="member-card absent">
+                        <div class="member-card absent clickable-card" ${onclickRedirect}>
                             <div class="avatar" style="background: #f0f0f0; color: #333;">${initial}</div>
                             <span class="name">${shortName}</span>
                         </div>
@@ -1596,17 +1598,128 @@ async function loadTeamDirectory() {
 
         data.forEach(user => {
             const initial = user.name ? user.name.charAt(0).toUpperCase() : '?';
+            const safeName = user.name ? user.name.replace(/'/g, "\\'") : 'Staff';
+            
             directoryList.insertAdjacentHTML('beforeend', `
-                <div class="directory-card">
-                    <div class="avatar" style="background: #1a1a1a; color: white;">${initial}</div>
-                    <div class="staff-info">
-                        <span class="staff-name">${user.name}</span>
-                        <span class="staff-role">${user.role}</span>
+                <div class="directory-card" style="display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box;">
+                    <div style="display: flex; align-items: center; gap: 12px; overflow: hidden;">
+                        <div class="avatar" style="background: #1a1a1a; color: white; flex-shrink: 0; margin: 0;">${initial}</div>
+                        <div class="staff-info" style="overflow: hidden;">
+                            <span class="staff-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${user.name}</span>
+                            <span class="staff-role">${user.role}</span>
+                        </div>
                     </div>
+                    <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 28px; height: 28px; flex-shrink: 0; margin-left: 10px;" onclick="initiateEmployeeDeletion('${user.email}', '${safeName}')">×</button>
                 </div>
             `);
         });
     } catch (err) { console.error(err); }
+}
+
+function initiateEmployeeDeletion(email, name) {
+    const safeName = name.replace(/'/g, "\\'");
+    const modalHtml = `
+        <div id="delete-flow-modal" class="modal-bg" style="z-index: 10008; display: flex;">
+            <div class="modal-box animated-modal" style="width: 90%; max-width: 320px; text-align: center;">
+                <span class="close" onclick="this.parentElement.parentElement.remove()">×</span>
+                <h3 class="section-title" style="margin-bottom: 15px; color: #ef4444;">Remove Employee</h3>
+                <p style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px;">
+                    You are about to remove <strong>${name}</strong> from the workspace. Would you like to export their attendance history to a CSV file first?
+                </p>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                    <button class="google-btn" style="width: 100%; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;" onclick="handleCsvChoice('${email}', '${safeName}', true, this)">Yes, Export & Continue</button>
+                    <button class="google-btn" style="width: 100%; margin: 0; padding: 12px; font-size: 13px; color: #ef4444; border-color: #fca5a5; background: #fef2f2;" onclick="handleCsvChoice('${email}', '${safeName}', false, this)">No, Skip & Continue</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function handleCsvChoice(email, name, exportCsv, btn) {
+    btn.innerText = "Processing...";
+    if (exportCsv) {
+        await downloadEmployeeCSV(email, name);
+    }
+    const modal = document.getElementById('delete-flow-modal');
+    if(modal) modal.remove();
+
+    openPromptModal(
+        "Final Confirmation", 
+        `Enter your Leader Password to permanently remove ${name}.`, 
+        "password", 
+        "", 
+        async function(bossPass) {
+            if (!bossPass) return;
+            await executeEmployeeDeletion(email, bossPass);
+        }
+    );
+}
+
+async function downloadEmployeeCSV(email, name) {
+    await ensureSupabase();
+    const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', email);
+    
+    let csvContent = "Date,Time,Status,Checkout Time,Late Arrival\n";
+    if (logs && logs.length > 0) {
+        logs.forEach(row => {
+            const isLate = row.is_late ? "Yes" : "No";
+            const checkOut = row.checkout_time || "N/A";
+            csvContent += `${row.date},${row.time},${row.status},${checkOut},${isLate}\n`;
+        });
+    } else {
+        csvContent += "No attendance records found.\n";
+    }
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    
+    const safeFilenameName = name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    link.setAttribute("download", `${safeFilenameName}_attendance_history.csv`);
+    
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+async function executeEmployeeDeletion(email, bossPass) {
+    const leader = getLeader();
+    if (!leader) return;
+    await ensureSupabase();
+
+    try {
+        const { data: leaders, error } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('role', 'leader')
+            .eq('password', bossPass.trim())
+            .eq('company_id', leader.company_id);
+
+        if (error || !leaders || leaders.length === 0) {
+            openInfoModal("Access Denied", "Incorrect leader password. Deletion aborted.");
+            return;
+        }
+
+        const { error: delError } = await supabaseClient
+            .from('users')
+            .delete()
+            .eq('email', email)
+            .eq('company_id', leader.company_id);
+
+        if (delError) throw delError;
+
+        openInfoModal("Success", "The employee has been successfully removed from the workspace.");
+        
+        const dir = document.getElementById('directory-list');
+        if (dir) loadTeamDirectory();
+        
+    } catch (err) {
+        console.error(err);
+        openInfoModal("Error", "Failed to remove the employee. " + err.message);
+    }
 }
 
 let localHolidays = [];
@@ -3830,6 +3943,7 @@ async function handleCheckout() {
         loadStaffRecords();
     }
 }
+
 // --- DEDICATED HISTORICAL TABLE LOGIC ---
 async function generateHistoricalTable() {
     const tableBody = document.getElementById('historical-table-body');
