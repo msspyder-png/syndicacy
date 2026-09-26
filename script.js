@@ -1668,7 +1668,8 @@ async function downloadEmployeeCSV(email, name) {
     
     const historyData = buildIndividualHistoryData(user, logs, settings);
     
-    let csvContent = "Date,Day,Status,Check-in,Check-out\n";
+    let csvContent = `"${name} - ${historyData.stats.checkins} / ${historyData.stats.workingDays} Check-ins (${historyData.stats.percent}% Attendance)"\n\n`;
+    csvContent += "Date,Day,Status,Check-in,Check-out\n";
     
     if (historyData.rows.length > 0) {
         historyData.rows.forEach(r => {
@@ -4278,6 +4279,17 @@ function exportTableToCSV(type) {
     if (!table) return;
 
     let csv = [];
+
+    // Inject Stats Header Row for Individual Table Export
+    if (type === 'individual') {
+        const nameTitle = document.getElementById('history-name-title');
+        const statsTitle = document.getElementById('history-stats-subtitle');
+        const nameText = nameTitle ? nameTitle.innerText.trim() : 'Employee';
+        const statsText = statsTitle ? statsTitle.innerText.trim() : '';
+        csv.push(`"${nameText} - ${statsText}"`);
+        csv.push(""); // Add an empty row for spacing
+    }
+
     let rows = table.querySelectorAll('tr');
     
     for (let i = 0; i < rows.length; i++) {
@@ -4292,6 +4304,14 @@ function exportTableToCSV(type) {
             let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, " ").trim();
             data = data.replace(/"/g, '""');
             row.push('"' + data + '"');
+
+            // Handle colspan translation for the Global Matrix header alignment
+            if (type === 'global' && cols[j].hasAttribute('colspan')) {
+                const colspan = parseInt(cols[j].getAttribute('colspan'));
+                for (let c = 1; c < colspan; c++) {
+                    row.push('""'); // Pad with empty cells
+                }
+            }
         }
         csv.push(row.join(','));
     }
