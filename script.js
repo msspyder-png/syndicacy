@@ -2091,12 +2091,51 @@ async function saveSettings() {
             }
 
             let invalidExc = false;
+            let invalidDateExc = false;
+            const todayStr = getUniversalDate();
+
             document.querySelectorAll('#exception-list div').forEach(row => {
                 const inputs = row.querySelectorAll('input');
-                if(inputs.length >= 3 && inputs[1].value && inputs[2].value) {
-                    if (inputs[1].value >= inputs[2].value) invalidExc = true;
+                if(inputs.length >= 3) {
+                    const exDate = inputs[0].value;
+                    const exStart = inputs[1].value;
+                    const exEnd = inputs[2].value;
+
+                    // Mathematically block any date that is today or in the past
+                    if (exDate && exDate <= todayStr) {
+                        invalidDateExc = true;
+                    }
+
+                    if(exStart && exEnd) {
+                        if (exStart >= exEnd) invalidExc = true;
+                    }
                 }
             });
+
+            if (invalidDateExc) {
+                if (existingData && existingData.exceptions) {
+                    try {
+                        let parsed = JSON.parse(existingData.exceptions);
+                        let oldExceptions = Array.isArray(parsed) ? parsed : parsed.data || [];
+                        const list = document.getElementById('exception-list');
+                        list.innerHTML = ""; 
+                        oldExceptions.forEach(exc => {
+                            addException(); 
+                            const rows = list.children;
+                            const lastRow = rows[rows.length - 1];
+                            const inputs = lastRow.querySelectorAll('input');
+                            if(inputs.length >= 3) {
+                                inputs[0].value = exc.date;
+                                inputs[1].value = exc.start;
+                                inputs[2].value = exc.end;
+                            }
+                        });
+                    } catch(e){}
+                }
+                openInfoModal("Invalid Exception Date", "An exception date cannot be set for today or any date in the past. It must be scheduled for tomorrow or later.\n\nYour exceptions list has been safely reverted.");
+                if (subtitle) { subtitle.innerText = "Save blocked: Invalid exception date"; subtitle.style.color = "#ef4444"; }
+                return;
+            }
 
             if (invalidExc) {
                 if (existingData && existingData.exceptions) {
@@ -2118,7 +2157,6 @@ async function saveSettings() {
                         });
                     } catch(e){}
                 }
-                
                 openInfoModal("Invalid Exception Range", "An exception's end time must be later than its start time. Overnight shifts are not supported.\n\nYour exceptions list has been safely reverted.");
                 if (subtitle) { subtitle.innerText = "Save blocked: Invalid exception time"; subtitle.style.color = "#ef4444"; }
                 return;
