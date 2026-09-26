@@ -428,6 +428,19 @@ async function generateInvite() {
     }
 
     try {
+        // Prevent duplicate emails
+        const { data: existingUser } = await supabaseClient.from('users').select('id').eq('email', email).maybeSingle();
+        if (existingUser) {
+            openInfoModal("Email in Use", "An employee already exists in the workspace with this email address.");
+            return null;
+        }
+        
+        const { data: existingInvite } = await supabaseClient.from('staff_invites').select('id').eq('email', email).maybeSingle();
+        if (existingInvite) {
+            openInfoModal("Email in Use", "A pending invitation has already been sent to this email address.");
+            return null;
+        }
+
         const { data, error } = await supabaseClient
             .from('staff_invites')
             .insert([{ email: email, name: name, role: role, status: 'pending', company_id: leader.company_id }])
@@ -1070,11 +1083,10 @@ async function loadTeamLedger() {
     try {
         const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
         const { data: attendance } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
-        const { data: settings } = await supabaseClient.from('settings').select('holidays').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
-        let holidaysArray = [];
-        try { if (settings && settings.holidays) holidaysArray = JSON.parse(settings.holidays); } catch(e){}
-
+        // Fetch all settings so the unified analytics engine operates perfectly
+        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        
         tableBody.innerHTML = ""; 
 
         if (!staff || staff.length === 0) {
@@ -1082,52 +1094,23 @@ async function loadTeamLedger() {
             return;
         }
 
-        const today = new Date();
-        const todayStr = getUniversalDate(today);
+        const todayStr = getUniversalDate(new Date());
 
         staff.forEach(user => {
             const userLogs = attendance ? attendance.filter(log => log.user_email === user.email) : [];
             
-            let validCheckinDates = new Set();
-            let personalHolidaysSet = new Set();
-            userLogs.forEach(log => {
-                if (log.status === 'Holiday/Off') {
-                    personalHolidaysSet.add(log.date);
-                } else if (log.status === 'Present') {
-                    const logDate = parseLocal(log.date);
-                    if (logDate <= today) validCheckinDates.add(log.date);
-                }
-            });
-
-            let workingDays = 0; 
-            if (user.joined_date) {
-                const joinedDate = parseLocal(user.joined_date);
-                for (let d = new Date(joinedDate); d <= today; d.setDate(d.getDate() + 1)) {
-                    const dateStr = getUniversalDate(d);
-                    if (!holidaysArray.includes(dateStr) && !personalHolidaysSet.has(dateStr)) workingDays++;
-                }
-            }
-            if (workingDays === 0) workingDays = 1; 
-
-            const validCheckinCount = validCheckinDates.size;
-            const attendPercent = Math.round((validCheckinCount / workingDays) * 100);
-            const displayPercent = attendPercent > 100 ? 100 : attendPercent; 
+            // Generate analytics using identical unified historical engine
+            const historyData = buildIndividualHistoryData(user, userLogs, settings);
+            const stats = historyData.stats;
+            const todayRow = historyData.rows.find(r => r.rawDate === todayStr);
 
             const presentLogs = userLogs.filter(log => log.status === 'Present');
             let avgTimeStr = calculateAvgCheckInTime(presentLogs);
-            let percentColor = displayPercent >= 80 ? '#4ade80' : (displayPercent >= 50 ? '#f59e0b' : '#ef4444');
+            let percentColor = stats.percent >= 80 ? '#4ade80' : (stats.percent >= 50 ? '#f59e0b' : '#ef4444');
 
-            const checkedInToday = presentLogs.some(log => log.date === todayStr);
-
-            let statusHtml;
-            if (holidaysArray.includes(todayStr)) {
-                statusHtml = `<span style="color:#888; font-weight:bold;">Org Off</span>`;
-            } else if (personalHolidaysSet.has(todayStr)) {
-                statusHtml = `<span style="color:#888; font-weight:bold;">Personal Off</span>`;
-            } else if (checkedInToday) {
-                statusHtml = `<span style="color:#4ade80; font-weight:bold;">Active</span>`;
-            } else {
-                statusHtml = `<span style="color:#f59e0b; font-weight:bold;">Pending</span>`;
+            let statusHtml = "";
+            if (todayRow) {
+                statusHtml = `<span style="color:${todayRow.statusColor}; font-weight:bold;">${todayRow.status}</span>`;
             }
 
             tableBody.insertAdjacentHTML('beforeend', `
@@ -1135,7 +1118,7 @@ async function loadTeamLedger() {
                     <td style="padding: 12px 15px; font-weight: 500; color: #1a1a1a;">${user.name}</td>
                     <td style="padding: 12px 15px; color: #555;">${user.role}</td>
                     <td style="padding: 12px 15px; color: #555;">${avgTimeStr}</td>
-                    <td style="padding: 12px 15px; color: ${percentColor}; font-weight: bold;">${displayPercent}%</td>
+                    <td style="padding: 12px 15px; color: ${percentColor}; font-weight: bold;">${stats.percent}%</td>
                     <td style="padding: 12px 15px; text-align: right;">${statusHtml}</td>
                 </tr>
             `);
@@ -1844,6 +1827,15 @@ function initializeSettingsCalendar() {
                         this.style.cssText = "aspect-ratio: 1; display: flex; justify-content: center; align-items: center; font-size: 12px; border-radius: 4px; cursor: pointer; " + CAL_STYLES.holiday;
                         this.dataset.isholiday = "true";
                         if (!localHolidays.includes(dateStr)) localHolidays.push(dateStr);
+                        
+                        // Check if personal holiday exists and warn boss
+                        if (window.personalHolidaysData) {
+                            const specialNames = window.personalHolidaysData.filter(d => d.date === dateStr).map(d => d.user_name);
+                            if (specialNames.length > 0) {
+                                const uniqueNames = [...new Set(specialNames)].join(', ');
+                                openInfoModal("Note on Special Holidays", "You have previously given a special personal holiday on this date to: " + uniqueNames + ". You can remove it from their individual records if you wish, but the public holiday will now override and apply to everyone.");
+                            }
+                        }
                     }
                     saveSettings(); 
                 };
@@ -1956,9 +1948,17 @@ async function loadSettings() {
 
     try {
         const todayStr = getUniversalDate();
-        const { count } = await supabaseClient.from('checkins').select('*', { count: 'exact', head: true }).eq('company_id', leader.company_id).eq('date', todayStr);
+        // ONLY count true actual checkins (Present, Late) to lock the calendar, ignore Personal Holidays
+        const { count } = await supabaseClient.from('checkins').select('*', { count: 'exact', head: true }).eq('company_id', leader.company_id).eq('date', todayStr).eq('status', 'Present');
         window.todayCheckinsCount = count || 0;
-    } catch(e) { window.todayCheckinsCount = 0; }
+        
+        // Also fetch personal holidays so we can warn the boss if they override one
+        const { data: phData } = await supabaseClient.from('checkins').select('date, user_name').eq('company_id', leader.company_id).eq('status', 'Holiday/Off');
+        window.personalHolidaysData = phData || [];
+    } catch(e) { 
+        window.todayCheckinsCount = 0; 
+        window.personalHolidaysData = [];
+    }
 
     try {
         const { data, error } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
@@ -2204,6 +2204,10 @@ function addException() {
         return;
     }
 
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = getUniversalDate(tomorrow);
+
     const div = document.createElement('div');
     div.style.display = 'flex';
     div.style.gap = '5px';
@@ -2211,7 +2215,7 @@ function addException() {
     div.style.alignItems = 'center';
 
     div.innerHTML = `
-        <input type="date" class="input-field" style="flex: 2; padding: 8px; font-size: 11px; height: 32px;" onchange="saveSettings()">
+        <input type="date" class="input-field" min="${tomorrowStr}" style="flex: 2; padding: 8px; font-size: 11px; height: 32px;" onchange="saveSettings()">
         <input type="time" class="input-field" style="flex: 1; padding: 8px; font-size: 11px; height: 32px;" onchange="saveSettings()">
         <input type="time" class="input-field" style="flex: 1; padding: 8px; font-size: 11px; height: 32px;" onchange="saveSettings()">
         <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 24px; height: 24px; flex-shrink: 0;" onclick="this.parentElement.remove(); updateExceptionCount(); saveSettings();">×</button>
