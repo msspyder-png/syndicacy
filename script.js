@@ -496,6 +496,15 @@ async function sendInviteLink() {
     inviteBtn.disabled = false;
 }
 
+async function copySpecificLink(link) {
+    try {
+        await navigator.clipboard.writeText(link);
+        openInfoModal("Link Copied", "The exact invite link has been copied to your clipboard. Send this to the employee so they can scan their biometrics.");
+    } catch (err) {
+        openPromptModal("Manual Copy", "Copy this link manually:", "text", link, function(){});
+    }
+}
+
 async function loadPendingInvites() {
     await ensureSupabase();
     const pendingList = document.getElementById('pending-list');
@@ -522,32 +531,38 @@ async function loadPendingInvites() {
             const initial = invite.name ? invite.name.charAt(0).toUpperCase() : '?';
             let statusText, statusColor, btnHtml;
             
-            let avatarHtml = `<div class="avatar" style="background: #f0f0f0; color: #333;">${initial}</div>`;
+            let avatarHtml = `<div class="avatar" style="background: #f0f0f0; color: #333; margin: 0;">${initial}</div>`;
             if (invite.face_image) {
-                avatarHtml = `<img src="${invite.face_image}" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid #4ade80;" alt="Face Preview">`;
+                avatarHtml = `<img src="${invite.face_image}" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid #4ade80; margin: 0;" alt="Face Preview">`;
             }
 
             if (invite.status === 'pending') {
                 statusText = "WAITING FOR FACE SCAN";
                 statusColor = "#f59e0b"; 
-                btnHtml = `<button class="google-btn" style="padding: 6px 12px; font-size: 10px; border: 1px dashed #ccc; cursor: not-allowed; opacity: 0.6;" disabled>Approve</button>`;
+                const exactLink = `${window.location.origin}/join.html?id=${invite.id}`;
+                btnHtml = `
+                    <button class="google-btn" style="padding: 6px 12px; font-size: 11px; border: 1px solid #ccc; flex: 1; margin: 0;" onclick="copySpecificLink('${exactLink}')">Copy Link</button>
+                    <button class="google-btn" style="padding: 6px 12px; font-size: 11px; border: 1px dashed #ccc; opacity: 0.6; flex: 1; margin: 0;" onclick="openInfoModal('Biometrics Required', 'This employee has not completed their facial scan yet. They must open their invite link to scan their face before you can approve them.')">Approve</button>
+                `;
             } else if (invite.status === 'scanned') {
                 statusText = "BIOMETRICS READY - WAITING FOR APPROVAL";
                 statusColor = "#4ade80"; 
-                btnHtml = `<button class="main-btn" style="padding: 6px 12px; font-size: 10px; background-color: #4ade80; color: black; border: none; cursor: pointer;" onclick="approveInvite('${invite.id}', '${invite.name}')">Approve Now</button>`;
+                btnHtml = `<button class="main-btn" style="padding: 6px 12px; font-size: 11px; background-color: #4ade80; color: black; border: none; cursor: pointer; flex: 1; margin: 0;" onclick="approveInvite('${invite.id}', '${invite.name}')">Approve Now</button>`;
             }
 
-            btnHtml += `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 26px; height: 26px; flex-shrink: 0; margin-left: 8px;" onclick="deleteInvite('${invite.id}', '${invite.name}')">×</button>`;
+            btnHtml += `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 28px; height: 28px; flex-shrink: 0; margin: 0;" onclick="deleteInvite('${invite.id}', '${invite.name}')">×</button>`;
 
             const card = `
-                <div class="directory-card" style="border: 1px solid #e0e0e0; background: #fff; margin-bottom: 10px; align-items: center;">
-                    ${avatarHtml}
-                    <div class="staff-info" style="flex-grow: 1; margin-left: 10px;">
-                        <span class="staff-name">${invite.name}</span>
-                        <span class="staff-role">${invite.role}</span>
-                        <span style="font-size: 10px; color: ${statusColor}; font-weight: bold; margin-top: 4px; display: block;">${statusText}</span>
+                <div class="directory-card" style="border: 1px solid #e0e0e0; background: #fff; margin-bottom: 12px; display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 15px;">
+                    <div style="display: flex; align-items: center; width: 100%;">
+                        ${avatarHtml}
+                        <div class="staff-info" style="flex-grow: 1; margin-left: 12px;">
+                            <span class="staff-name" style="font-size: 15px;">${invite.name}</span>
+                            <span class="staff-role" style="font-size: 12px;">${invite.role}</span>
+                            <span style="font-size: 10px; color: ${statusColor}; font-weight: bold; margin-top: 4px; display: block;">${statusText}</span>
+                        </div>
                     </div>
-                    <div style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap; justify-content: flex-end; margin-top: 5px;">
+                    <div style="display: flex; gap: 8px; align-items: center; width: 100%; border-top: 1px dashed #eaeaea; padding-top: 12px;">
                         ${btnHtml}
                     </div>
                 </div>

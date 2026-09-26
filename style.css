@@ -177,11 +177,12 @@ body {
     border-color: #1a1a1a;
     background-color: #f9f9f9;
 }
+
 /* --- NEW ADDITIONS FOR OTP PAGE --- */
 
 .otp-container {
     display: flex;
-    gap: 8px; /* Space between the blocks */
+    gap: 8px; 
     margin-bottom: 10px;
 }
 
@@ -191,7 +192,7 @@ body {
     height: 46px;
     font-size: 20px;
     font-weight: 600;
-    text-align: center; /* Keeps the number in the middle */
+    text-align: center; 
     border: 1px solid #ccc;
     border-radius: 6px;
     background-color: #fafafa;
@@ -205,25 +206,26 @@ body {
     border-color: #1a1a1a;
     background-color: #ffffff;
 }
+
 /* --- NEW ADDITIONS FOR LEADER DASHBOARD --- */
 
 .dashboard-body {
-    /* Changes the body setup so content aligns to the top instead of the center */
     display: block; 
     height: auto;
+    min-height: 100vh; /* Better enforcement for mobile */
     background-color: #fcfcfc;
 }
 
 .dashboard-content {
     padding: 20px;
-    padding-bottom: 80px; /* Leaves space so the bottom nav doesn't cover text */
+    padding-bottom: 80px; 
     text-align: center;
 }
 
 /* The Bottom Navigation Bar */
 .bottom-nav {
     position: fixed;
-    bottom: 0;
+    bottom: 0 !important;
     left: 0;
     width: 100%;
     background-color: #ffffff;
@@ -233,9 +235,10 @@ body {
     align-items: center;
     padding: 12px 0;
     box-shadow: 0 -2px 10px rgba(0,0,0,0.02);
-    
-    /* Adds extra padding for modern phones with swipe bars at the bottom */
     padding-bottom: calc(12px + env(safe-area-inset-bottom)); 
+    z-index: 9999; /* Forces it to stay on top */
+    transform: translateZ(0); /* Hardware acceleration fix for mobile browser scrolling */
+    -webkit-transform: translateZ(0);
 }
 
 /* Individual Buttons */
@@ -244,7 +247,7 @@ body {
     flex-direction: column;
     align-items: center;
     text-decoration: none;
-    color: #a0a0a0; /* Grayed out when not active */
+    color: #a0a0a0; 
     gap: 4px;
     transition: color 0.2s;
     width: 60px;
@@ -268,8 +271,9 @@ body {
 
 /* What the currently selected tab looks like */
 .nav-item.active {
-    color: #1a1a1a; /* Turns black when active */
+    color: #1a1a1a; 
 }
+
 /* --- OVERVIEW DASHBOARD LAYOUT --- */
 
 .dash-header {
@@ -279,7 +283,7 @@ body {
 
 .status-section {
     margin-bottom: 35px;
-    text-align: left; /* Aligns the headings to the left */
+    text-align: left; 
 }
 
 /* Professional Subheadings */
@@ -297,8 +301,8 @@ body {
 /* The 5-Column Grid */
 .member-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr); /* Exactly 5 equal columns */
-    gap: 10px; /* Space between the cards */
+    grid-template-columns: repeat(5, 1fr); 
+    gap: 10px; 
 }
 
 /* Base style for all member cards */
@@ -331,7 +335,7 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    width: 100%; /* Keeps long names from breaking the layout */
+    width: 100%; 
 }
 
 /* --- THEME 1: ACTIVE (Crisp & Solid) --- */
@@ -364,6 +368,7 @@ body {
 .member-card.absent .name {
     color: #888888;
 }
+
 /* --- ACCESS CODES DASHBOARD --- */
 
 .code-card {
@@ -395,7 +400,7 @@ body {
 .qr-placeholder {
     margin-top: 15px;
     padding: 10px;
-    background-color: #ffffff; /* White border so scanners can read it easily */
+    background-color: #ffffff; 
     border-radius: 12px;
 }
 
@@ -413,6 +418,7 @@ body {
     margin: 15px 0 0 0;
     font-family: 'Courier New', Courier, monospace;
 }
+
 /* --- ADD STAFF PAGE STYLES --- */
 
 .form-card {
@@ -501,6 +507,7 @@ body {
     font-size: 12px;
     color: #888888;
 }
+
 /* --- RECORDS MODAL & ANIMATIONS --- */
 @keyframes popIn {
     0% { transform: scale(0.95); opacity: 0; }
@@ -637,6 +644,7 @@ body {
     font-weight: 700;
     font-family: 'Courier New', Courier, monospace;
 }
+
 /* --- SETTINGS PAGE STYLES --- */
 
 .setting-header {
@@ -690,6 +698,7 @@ input:checked + .slider {
 input:checked + .slider:before {
     transform: translateX(20px);
 }
+
 /* --- ANALYTICS CALENDAR STYLES --- */
 .calendar-grid {
     display: grid;
@@ -725,6 +734,7 @@ input:checked + .slider:before {
     color: #ffffff !important;
     border-color: #1a1a1a !important;
 }
+
 /* Late Arrival Colors (Subtle Purple) */
 .cal-day.cal-late {
     background-color: #f3e8ff !important;
