@@ -285,6 +285,7 @@ async function handleLeaderAuth() {
             .from('users')
             .select('*')
             .ilike('email', emailInput)
+            .limit(1)
             .maybeSingle();
 
         if (error) throw error;
@@ -433,21 +434,25 @@ async function generateInvite() {
     }
 
     try {
-        // Prevent duplicate emails in active users (case-insensitive check)
-        const { data: existingUser } = await supabaseClient.from('users').select('id').ilike('email', email).maybeSingle();
-        if (existingUser) {
-            openInfoModal("Email in Use", "An employee already exists in the workspace with this email address.");
+        // Safe check using limit(1) to prevent silent query failure
+        const { data: existingUser } = await supabaseClient.from('users')
+            .select('email')
+            .ilike('email', email)
+            .limit(1);
+
+        if (existingUser && existingUser.length > 0) {
+            openInfoModal("Email in Use", "An active employee already exists in the workspace with this email address.");
             return null;
         }
         
-        // Ignore approved/deleted invites and only catch currently pending ones
+        // Safe check for existing pending invites
         const { data: existingInvite } = await supabaseClient.from('staff_invites')
             .select('id')
             .ilike('email', email)
             .in('status', ['pending', 'scanned'])
-            .maybeSingle();
+            .limit(1);
             
-        if (existingInvite) {
+        if (existingInvite && existingInvite.length > 0) {
             openInfoModal("Email in Use", "A pending invitation has already been sent to this email address.");
             return null;
         }
@@ -614,14 +619,14 @@ async function approveInvite(inviteId, employeeName) {
             
             if (fetchError) throw fetchError;
 
-            // PROFESSIONAL DUPLICATE PRE-CHECK (Stops the "users_pkey" crash)
+            // PROFESSIONAL DUPLICATE PRE-CHECK (Stops the "users_pkey" crash dead in its tracks using safe limits)
             const { data: existingUser } = await supabaseClient
                 .from('users')
                 .select('email')
                 .ilike('email', inviteData.email)
-                .maybeSingle();
+                .limit(1);
 
-            if (existingUser) {
+            if (existingUser && existingUser.length > 0) {
                 openInfoModal("Approval Blocked", `Cannot approve ${employeeName}. The email address (${inviteData.email}) is already registered to an active workspace member. This invalid invite will now be removed.`);
                 await supabaseClient.from('staff_invites').delete().eq('id', inviteId);
                 loadPendingInvites();
@@ -1175,7 +1180,7 @@ async function loadIndividualAnalytics() {
     if (!targetEmail) return;
 
     try {
-        const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).maybeSingle();
+        const { data: user } = await supabaseClient.from('users').select('*').eq('email', targetEmail).limit(1).maybeSingle();
         const { data: logs } = await supabaseClient.from('checkins').select('*').eq('user_email', targetEmail);
         const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
 
@@ -2021,7 +2026,7 @@ async function loadSettings() {
     await ensureSupabase();
 
     try {
-        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).maybeSingle();
+        const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).limit(1).maybeSingle();
         if (fresh) { 
             leader = fresh; 
             sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
@@ -2736,7 +2741,7 @@ async function handleStaffLogin() {
     loginBtn.disabled = true;
 
     try {
-        const { data: user, error } = await supabaseClient.from('users').select('*').eq('email', email).maybeSingle();
+        const { data: user, error } = await supabaseClient.from('users').select('*').eq('email', email).limit(1).maybeSingle();
         if (error) throw error;
 
         if (user && user.password === pass) {
@@ -2769,6 +2774,7 @@ async function loadStaffDashboard() {
                 .from('users')
                 .select('*')
                 .eq('email', currentStaff.email)
+                .limit(1)
                 .maybeSingle();
                 
             if (freshStaff) {
