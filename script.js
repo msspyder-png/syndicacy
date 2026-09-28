@@ -3607,11 +3607,21 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
                             openInfoModal("Database Error", error.message + "\n\nPlease ensure your 'checkins' table has exactly these columns: user_email, user_name, date, time, status, company_id.");
                             return;
                         }
+
+                        let checkoutHtml = "";
+                        if (rules && rules.require_checkout) {
+                            checkoutHtml = `
+                                <button class="main-btn" onclick="handleCheckout()" style="width: 100%; margin-top: 25px; padding: 16px; font-size: 15px; background-color: #ef4444;">End Shift & Check Out</button>
+                                <p id="checkout-timer-display" style="font-size: 11px; color: #888; margin-top: 15px; font-family: monospace;"></p>
+                            `;
+                            setTimeout(() => { startCheckoutTimer(timeStr); }, 100);
+                        }
                         
                         statusCard.innerHTML = `
                             <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
                             <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
-                            <p style="font-size: 12px; color: #4ade80; margin-top: 5px; font-weight: 600;">Successfully clocked in at ${timeStr}</p>
+                            <p style="font-size: 12px; color: #4ade80; margin-top: 5px; font-weight: 600; margin-bottom: ${rules && rules.require_checkout ? '0' : '15px'};">Successfully clocked in at ${timeStr}</p>
+                            ${checkoutHtml}
                         `;
                         statusCard.classList.remove('ghost-theme');
                         statusCard.style.border = '1px solid #e0e0e0';
@@ -3620,7 +3630,7 @@ async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
                         const shiftPanel = document.getElementById('shift-details-panel');
                         if(shiftPanel) shiftPanel.style.display = "none";
                         
-                        loadStaffRecords();
+                        setTimeout(() => { loadStaffRecords(); }, 500);
                     });
                 } else {
                     scannerStatus.innerText = "FACE NOT MATCHED. ADJUST LIGHTING OR ANGLE...";
@@ -3990,7 +4000,17 @@ async function handleCheckout() {
         openInfoModal("Error", "Could not check out.");
         if(btn) { btn.innerText = "End Shift & Check Out"; btn.disabled = false; }
     } else {
-        loadStaffRecords();
+        const statusCard = document.getElementById('status-card');
+        if (statusCard) {
+            statusCard.innerHTML = `
+                <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #3b82f6; color: #ffffff;">✓</div>
+                <h3 style="margin: 0; font-size: 18px; color: #1e3a8a;">Checked Out</h3>
+                <p style="font-size: 12px; color: #888; margin-top: 5px;">Shift completed at ${timeStr}.</p>
+            `;
+        }
+        if (window.checkoutInterval) clearInterval(window.checkoutInterval);
+        
+        setTimeout(() => { loadStaffRecords(); }, 500);
     }
 }
 
