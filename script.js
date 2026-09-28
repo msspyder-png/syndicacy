@@ -284,7 +284,7 @@ async function handleLeaderAuth() {
         const { data: user, error } = await supabaseClient
             .from('users')
             .select('*')
-            .eq('email', emailInput)
+            .ilike('email', emailInput)
             .maybeSingle();
 
         if (error) throw error;
@@ -414,11 +414,16 @@ async function generateInvite() {
     if (!nameEl || !emailEl || !roleSelectEl) return null;
     
     const name = nameEl.value.trim();
-    const email = emailEl.value.trim();
+    const email = emailEl.value.trim().toLowerCase(); 
     let role = roleSelectEl.value === 'other' ? document.getElementById('custom-role').value.trim() : roleSelectEl.value;
     
     if (!name || !email || !role || roleSelectEl.value === "") {
         openInfoModal("Missing Info", "Please complete all fields."); 
+        return null;
+    }
+
+    if (leader.email && email === leader.email.toLowerCase()) {
+        openInfoModal("Action Denied", "You cannot invite yourself. This email is already registered to your leader account.");
         return null;
     }
     
@@ -428,8 +433,8 @@ async function generateInvite() {
     }
 
     try {
-        // Prevent duplicate emails in active users
-        const { data: existingUser } = await supabaseClient.from('users').select('id').eq('email', email).maybeSingle();
+        // Prevent duplicate emails in active users (case-insensitive check)
+        const { data: existingUser } = await supabaseClient.from('users').select('id').ilike('email', email).maybeSingle();
         if (existingUser) {
             openInfoModal("Email in Use", "An employee already exists in the workspace with this email address.");
             return null;
@@ -438,7 +443,7 @@ async function generateInvite() {
         // Ignore approved/deleted invites and only catch currently pending ones
         const { data: existingInvite } = await supabaseClient.from('staff_invites')
             .select('id')
-            .eq('email', email)
+            .ilike('email', email)
             .in('status', ['pending', 'scanned'])
             .maybeSingle();
             
@@ -608,6 +613,20 @@ async function approveInvite(inviteId, employeeName) {
                 .single();
             
             if (fetchError) throw fetchError;
+
+            // PROFESSIONAL DUPLICATE PRE-CHECK (Stops the "users_pkey" crash)
+            const { data: existingUser } = await supabaseClient
+                .from('users')
+                .select('email')
+                .ilike('email', inviteData.email)
+                .maybeSingle();
+
+            if (existingUser) {
+                openInfoModal("Approval Blocked", `Cannot approve ${employeeName}. The email address (${inviteData.email}) is already registered to an active workspace member. This invalid invite will now be removed.`);
+                await supabaseClient.from('staff_invites').delete().eq('id', inviteId);
+                loadPendingInvites();
+                return;
+            }
 
             const tempPassword = "Staff" + Math.floor(1000 + Math.random() * 9000);
             const today = getUniversalDate();
