@@ -428,14 +428,20 @@ async function generateInvite() {
     }
 
     try {
-        // Prevent duplicate emails
+        // Prevent duplicate emails in active users
         const { data: existingUser } = await supabaseClient.from('users').select('id').eq('email', email).maybeSingle();
         if (existingUser) {
             openInfoModal("Email in Use", "An employee already exists in the workspace with this email address.");
             return null;
         }
         
-        const { data: existingInvite } = await supabaseClient.from('staff_invites').select('id').eq('email', email).maybeSingle();
+        // Ignore approved/deleted invites and only catch currently pending ones
+        const { data: existingInvite } = await supabaseClient.from('staff_invites')
+            .select('id')
+            .eq('email', email)
+            .in('status', ['pending', 'scanned'])
+            .maybeSingle();
+            
         if (existingInvite) {
             openInfoModal("Email in Use", "A pending invitation has already been sent to this email address.");
             return null;
@@ -1110,7 +1116,17 @@ async function loadTeamLedger() {
 
             let statusHtml = "";
             if (todayRow) {
-                statusHtml = `<span style="color:${todayRow.statusColor}; font-weight:bold;">${todayRow.status}</span>`;
+                let finalStatus = todayRow.status;
+                let finalColor = todayRow.statusColor;
+
+                if (finalStatus === "Present" || finalStatus === "Late Arrival") {
+                    const todayLog = userLogs.find(l => l.date === todayRow.rawDate);
+                    if (todayLog && todayLog.checkout_time) {
+                        finalStatus = "Checked Out";
+                        finalColor = "#3b82f6";
+                    }
+                }
+                statusHtml = `<span style="color:${finalColor}; font-weight:bold;">${finalStatus}</span>`;
             }
 
             tableBody.insertAdjacentHTML('beforeend', `
@@ -1584,7 +1600,7 @@ async function loadTeamDirectory() {
             const safeName = user.name ? user.name.replace(/'/g, "\\'") : 'Staff';
             
             directoryList.insertAdjacentHTML('beforeend', `
-                <div class="directory-card" style="display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box;">
+                <div class="directory-card clickable-card" style="display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box; cursor: pointer;" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'">
                     <div style="display: flex; align-items: center; gap: 12px; overflow: hidden;">
                         <div class="avatar" style="background: #1a1a1a; color: white; flex-shrink: 0; margin: 0;">${initial}</div>
                         <div class="staff-info" style="overflow: hidden;">
@@ -1592,7 +1608,7 @@ async function loadTeamDirectory() {
                             <span class="staff-role">${user.role}</span>
                         </div>
                     </div>
-                    <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 28px; height: 28px; flex-shrink: 0; margin-left: 10px;" onclick="initiateEmployeeDeletion('${user.email}', '${safeName}')">×</button>
+                    <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 28px; height: 28px; flex-shrink: 0; margin-left: 10px;" onclick="event.stopPropagation(); initiateEmployeeDeletion('${user.email}', '${safeName}')">×</button>
                 </div>
             `);
         });
@@ -1701,6 +1717,53 @@ async function executeEmployeeDeletion(email, bossPass) {
             .eq('company_id', leader.company_id);
 
         if (delError) throw delError;
+
+        // CASCADING DELETION LOGIC (Cleans up specific employee arrays inside global settings object)
+        try {
+            const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
+            if (settings) {
+                let updated = false;
+                let payload = {};
+
+                if (settings.custom_schedules) {
+                    try {
+                        let parsed = JSON.parse(settings.custom_schedules);
+                        let isArray = Array.isArray(parsed);
+                        let arr = isArray ? parsed : (parsed.data || []);
+                        const filtered = arr.filter(c => c.email !== email);
+                        if (filtered.length !== arr.length) {
+                            if (isArray) payload.custom_schedules = JSON.stringify(filtered);
+                            else payload.custom_schedules = JSON.stringify({ active: parsed.active, data: filtered });
+                            updated = true;
+                        }
+                    } catch(e) {}
+                }
+
+                if (settings.locations) {
+                    try {
+                        let locs = JSON.parse(settings.locations);
+                        let locUpdated = false;
+                        locs = locs.map(loc => {
+                            if (loc.staff && loc.staff.includes(email)) {
+                                loc.staff = loc.staff.filter(e => e !== email);
+                                locUpdated = true;
+                            }
+                            return loc;
+                        });
+                        if (locUpdated) {
+                            payload.locations = JSON.stringify(locs);
+                            updated = true;
+                        }
+                    } catch(e) {}
+                }
+
+                if (updated) {
+                    await supabaseClient.from('settings').update(payload).eq('id', settings.id);
+                }
+            }
+        } catch (cleanErr) {
+            console.warn("Minor error cleaning up cascaded settings:", cleanErr);
+        }
 
         openInfoModal("Success", "The employee has been successfully removed from the workspace.");
         
