@@ -172,11 +172,12 @@ function setupPassiveLivenessChallenge(session, onPassed) {
         startTime: Date.now(),
         frames: [], 
         passed: false,
+        initialYaw: null,
         onPassed: onPassed
     };
     
     session.timeoutId = setTimeout(() => {
-        failFaceSession(session, 'Scan timed out. Please ensure you are in a well-lit area and facing the camera directly.');
+        failFaceSession(session, 'Scan timed out. Live presence requires a slight head movement.');
     }, FACE_SCAN_TIMEOUT_MS);
 }
 
@@ -185,32 +186,45 @@ function updatePassiveLiveness(session, detection) {
     const challenge = session.challenge;
     if (challenge.passed) return;
 
-    challenge.frames.push(detection.detection.box);
+    // Extract specific facial landmarks
+    const landmarks = detection.landmarks.positions;
+    const noseTip = landmarks[30]; 
+    const leftJaw = landmarks[0];  
+    const rightJaw = landmarks[16]; 
 
-    setFaceScanStatus(session, `Verifying liveness (${challenge.frames.length}/6)...`, '#f59e0b');
+    // Calculate the 3D geometric ratio (Yaw)
+    const leftDist = Math.hypot(noseTip.x - leftJaw.x, noseTip.y - leftJaw.y);
+    const rightDist = Math.hypot(rightJaw.x - noseTip.x, rightJaw.y - noseTip.y);
+    
+    if (rightDist === 0) return;
+    const currentYaw = leftDist / rightDist;
 
-    // Wait for 6 valid frames to process. This removes the strict 1.5s timer that fails on slower mobile devices.
-    if (challenge.frames.length >= 6) {
-        let totalMovement = 0;
-        for (let i = 1; i < challenge.frames.length; i++) {
-            const prev = challenge.frames[i - 1];
-            const curr = challenge.frames[i];
-            const dx = (curr.x + curr.width / 2) - (prev.x + prev.width / 2);
-            const dy = (curr.y + curr.height / 2) - (prev.y + prev.height / 2);
-            const dw = curr.width - prev.width;
-            const dh = curr.height - prev.height;
-            totalMovement += Math.abs(dx) + Math.abs(dy) + Math.abs(dw) + Math.abs(dh);
-        }
+    challenge.frames.push(currentYaw);
 
-        // Anti-Spoofing: Real human faces have natural micro-movements (breathing, pulse, natural sway).
-        // A printed photo or a digital screen held in front of the camera will have almost exactly 0 frame-to-frame variance.
-        if (totalMovement <= 1.5) {
-            failFaceSession(session, 'SECURITY ALERT: Static image or digital screen detected. Live human presence is required.');
-        } else {
-            challenge.passed = true;
-            setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
-            challenge.onPassed(detection);
-        }
+    if (challenge.frames.length === 1) {
+        challenge.initialYaw = currentYaw;
+        setFaceScanStatus(session, 'LIVENESS: Please turn your head slightly left or right.', '#f59e0b');
+        return;
+    }
+
+    // Measure how much the 3D geometry changes over time
+    let maxVariance = 0;
+    for (let i = 0; i < challenge.frames.length; i++) {
+        const diff = Math.abs(challenge.frames[i] - challenge.initialYaw);
+        if (diff > maxVariance) maxVariance = diff;
+    }
+
+    // ANTI-SPOOFING CORE LOGIC:
+    // A phone screen is a flat 2D plane. Even if the phone is shaken, rotated, or moved closer, 
+    // the internal relative ratio of the nose to the cheeks remains geometrically identical.
+    // A real human turning their head changes this 3D ratio significantly.
+    
+    if (maxVariance > 0.15) { // 0.15 threshold requires a deliberate, small head turn
+        challenge.passed = true;
+        setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
+        challenge.onPassed(detection);
+    } else {
+        setFaceScanStatus(session, 'LIVENESS: Please turn your head slightly left or right.', '#f59e0b');
     }
 }
 
