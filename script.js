@@ -68,6 +68,8 @@ function createFaceSession(video, container, statusEl, onFailure) {
         intervalId: null,
         timeoutId: null,
         detectionInProgress: false,
+        identityVerified: false, 
+        cachedDescriptor: null,
         cancelled: false,
         completed: false,
         submitting: false,
@@ -1187,16 +1189,32 @@ async function startFaceScan() {
             createFaceCanvas(session);
             setFaceScanStatus(session, 'SHOW ONLY YOUR FACE. KEEP LOOKING AT THE SCREEN.', '#4ade80');
             setupBlinkChallenge(session, (detection) => saveInvitationBiometrics(session, detection));
+            
             startFaceDetectionLoop(session, async () => {
-                const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
-                if (!isFaceSessionActive(session)) return;
-                if (detections.length !== 1) {
-                    clearFaceCanvas(session);
-                    setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
-                    return;
+                if (!session.identityVerified) {
+                    const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+                    if (!isFaceSessionActive(session)) return;
+                    if (detections.length !== 1) {
+                        clearFaceCanvas(session);
+                        setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
+                        return;
+                    }
+                    session.identityVerified = true;
+                    session.cachedDescriptor = detections[0].descriptor;
+                    drawSingleFace(session, detections[0]);
+                    updateBlinkChallenge(session, detections[0]);
+                } else {
+                    const detections = await faceapi.detectAllFaces(video).withFaceLandmarks();
+                    if (!isFaceSessionActive(session)) return;
+                    if (detections.length !== 1) {
+                        clearFaceCanvas(session);
+                        setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
+                        return;
+                    }
+                    detections[0].descriptor = session.cachedDescriptor;
+                    drawSingleFace(session, detections[0]);
+                    updateBlinkChallenge(session, detections[0]);
                 }
-                drawSingleFace(session, detections[0]);
-                updateBlinkChallenge(session, detections[0]);
             });
         };
 
@@ -4090,22 +4108,36 @@ async function startAttendanceFaceVerification(options) {
             createFaceCanvas(session);
             setFaceScanStatus(session, `LOOK AT THE SCREEN. THREE RANDOM BLINKS ARE REQUIRED FOR ${purpose}.`, '#4ade80');
             setupBlinkChallenge(session, () => finishAttendanceFaceVerification(session, options));
+            
             startFaceDetectionLoop(session, async () => {
-                const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
-                if (!isFaceSessionActive(session)) return;
-                if (detections.length !== 1) {
-                    clearFaceCanvas(session);
-                    setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
-                    return;
+                if (!session.identityVerified) {
+                    const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+                    if (!isFaceSessionActive(session)) return;
+                    if (detections.length !== 1) {
+                        clearFaceCanvas(session);
+                        setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
+                        return;
+                    }
+                    const detection = detections[0];
+                    drawSingleFace(session, detection);
+                    const distance = getFaceDistance(detection.descriptor, savedDescriptor);
+                    if (distance > FACE_MATCH_MAX_DISTANCE) {
+                        setFaceScanStatus(session, 'FACE NOT VERIFIED. USE THE REGISTERED EMPLOYEE FACE.');
+                        return;
+                    }
+                    session.identityVerified = true;
+                    updateBlinkChallenge(session, detection);
+                } else {
+                    const detections = await faceapi.detectAllFaces(video).withFaceLandmarks();
+                    if (!isFaceSessionActive(session)) return;
+                    if (detections.length !== 1) {
+                        clearFaceCanvas(session);
+                        setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
+                        return;
+                    }
+                    drawSingleFace(session, detections[0]);
+                    updateBlinkChallenge(session, detections[0]);
                 }
-                const detection = detections[0];
-                drawSingleFace(session, detection);
-                const distance = getFaceDistance(detection.descriptor, savedDescriptor);
-                if (distance > FACE_MATCH_MAX_DISTANCE) {
-                    setFaceScanStatus(session, 'FACE NOT VERIFIED. USE THE REGISTERED EMPLOYEE FACE.');
-                    return;
-                }
-                updateBlinkChallenge(session, detection);
             });
         };
 
