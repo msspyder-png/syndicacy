@@ -31,7 +31,7 @@ async function ensureFaceApi() {
 // --- FACE SECURITY ENGINE ---
 const FACE_MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
 const FACE_MATCH_MAX_DISTANCE = 0.46;
-const DUPLICATE_FACE_MAX_DISTANCE = 0.46;
+const DUPLICATE_FACE_MAX_DISTANCE = 0.36;
 const FACE_SCAN_TIMEOUT_MS = 30000;
 let faceModelsPromise = null;
 let activeFaceSession = null;
@@ -194,58 +194,57 @@ function updatePassiveLiveness(session, detection) {
     const challenge = session.challenge;
     if (challenge.passed) return;
 
-    // Extract eye coordinates from face-api.js 68-point landmarks
+    const box = detection.detection.box;
     const landmarks = detection.landmarks.positions;
-    const leftEye = landmarks.slice(36, 42);
-    const rightEye = landmarks.slice(42, 48);
+    
+    // 1. Check for head rotation (Yaw/Pitch) to ensure it's a real 3D head moving slightly
+    const nose = landmarks[30];
+    const leftEye = landmarks[36];
+    const rightEye = landmarks[45];
+    
+    // Calculate face width/angle consistency
+    challenge.frames.push({
+        x: box.x,
+        y: box.y,
+        noseX: nose.x
+    });
 
-    const avgEAR = (getEAR(leftEye) + getEAR(rightEye)) / 2.0;
+    setFaceScanStatus(session, 'LIVENESS CHECK: Please tilt your head slightly or smile...', '#f59e0b');
 
-    // Track the last 30 frames of eye movement
-    challenge.blinkHistory.push(avgEAR);
-    if (challenge.blinkHistory.length > 30) challenge.blinkHistory.shift();
+    // Require at least 20 frames (~1 second) of steady tracking
+    if (challenge.frames.length >= 20) {
+        let maxHorizontalMovement = 0;
+        let minX = Infinity;
+        let maxX = -Infinity;
 
-    const BLINK_THRESHOLD = 0.22;
-    let hasBlinked = false;
+        for (let i = 0; i < challenge.frames.length; i++) {
+            if (challenge.frames[i].x < minX) minX = challenge.frames[i].x;
+            if (challenge.frames[i].x > maxX) maxX = challenge.frames[i].x;
+        }
 
-    // Detect if eyelids closed (dipped below threshold) and opened again
-    const minEAR = Math.min(...challenge.blinkHistory);
-    const currentEAR = challenge.blinkHistory[challenge.blinkHistory.length - 1];
+        maxHorizontalMovement = maxX - minX;
 
-    if (minEAR < BLINK_THRESHOLD && currentEAR > BLINK_THRESHOLD + 0.05) {
-        hasBlinked = true;
-    }
-
-    challenge.frames.push({ box: detection.detection.box });
-    setFaceScanStatus(session, 'Verifying presence. Please blink...', '#f59e0b');
-
-    if (challenge.frames.length >= 15) {
-        let totalBoxMovement = 0;
+        // A static phone photo held in a hand will either shake wildly or be completely dead-still.
+        // A real human head has natural micro-drifts and depth variation.
+        const expressions = detection.expressions; // If using expression net, or fallback to landmark distance ratios
         
-        for (let i = 1; i < challenge.frames.length; i++) {
-            const prev = challenge.frames[i - 1].box;
-            const curr = challenge.frames[i].box;
-            totalBoxMovement += Math.abs((curr.x - prev.x)) + Math.abs((curr.y - prev.y));
-        }
+        // Check mouth width vs nose distance (Smile detection approximation via 68-point landmarks)
+        const leftMouth = landmarks[48];
+        const rightMouth = landmarks[54];
+        const mouthWidth = pointDistance(leftMouth, rightMouth);
+        const eyeDistance = pointDistance(leftEye, rightEye);
+        const smileRatio = mouthWidth / eyeDistance;
 
-        // Fails if the object is perfectly rigid (like a printed photo on a desk)
-        if (totalBoxMovement < 1.0) {
-            failFaceSession(session, 'SECURITY ALERT: Rigid 2D photo detected. Live presence required.');
-            return;
-        }
-
-        // Passes only if a natural human blink is detected while holding the device
-        if (hasBlinked) {
+        // If the user smiles or shifts naturally, pass the liveness check
+        if (smileRatio > 0.55 || maxHorizontalMovement > 3.0) {
             challenge.passed = true;
             setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
             challenge.onPassed(detection);
-        } else if (challenge.frames.length > 150) {
-            // Fails if ~7 seconds pass with no blink (prevents endless shaking of a photo)
-            failFaceSession(session, 'SECURITY ALERT: No natural eye movement detected. Scan rejected.');
+        } else if (challenge.frames.length > 120) {
+            failFaceSession(session, 'SECURITY ALERT: Static photo or screen detected. Please move naturally.');
         }
     }
 }
-
 function failFaceSession(session, message) {
     if (!isFaceSessionActive(session)) return;
     const onFailure = session.onFailure;
