@@ -166,17 +166,26 @@ function pointDistance(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-// --- PASSIVE LIVENESS (3D Depth & Temporal Consistency) ---
+// Calculates the distance between eyelids to detect blinks
+function getEAR(eye) {
+    const v1 = pointDistance(eye[1], eye[5]);
+    const v2 = pointDistance(eye[2], eye[4]);
+    const h = pointDistance(eye[0], eye[3]);
+    return (v1 + v2) / (2.0 * h);
+}
+
+// --- ACTIVE LIVENESS (Blink Detection & Movement Consistency) ---
 function setupPassiveLivenessChallenge(session, onPassed) {
     session.challenge = {
         startTime: Date.now(),
-        frames: [], 
+        frames: [],
+        blinkHistory: [],
         passed: false,
         onPassed: onPassed
     };
     
     session.timeoutId = setTimeout(() => {
-        failFaceSession(session, 'Scan timed out. Please ensure you are in a well-lit area and facing the camera directly.');
+        failFaceSession(session, 'Scan timed out. Please ensure you are in a well-lit area and blink to verify liveness.');
     }, FACE_SCAN_TIMEOUT_MS);
 }
 
@@ -185,48 +194,54 @@ function updatePassiveLiveness(session, detection) {
     const challenge = session.challenge;
     if (challenge.passed) return;
 
-    // Track 68-point landmarks to ensure 3D depth variance
-    challenge.frames.push({
-        box: detection.detection.box,
-        landmarks: detection.landmarks.positions
-    });
+    // Extract eye coordinates from face-api.js 68-point landmarks
+    const landmarks = detection.landmarks.positions;
+    const leftEye = landmarks.slice(36, 42);
+    const rightEye = landmarks.slice(42, 48);
 
-    const REQUIRED_FRAMES = 15;
-    setFaceScanStatus(session, `Verifying 3D presence (${challenge.frames.length}/${REQUIRED_FRAMES})...`, '#f59e0b');
+    const avgEAR = (getEAR(leftEye) + getEAR(rightEye)) / 2.0;
 
-    if (challenge.frames.length >= REQUIRED_FRAMES) {
+    // Track the last 30 frames of eye movement
+    challenge.blinkHistory.push(avgEAR);
+    if (challenge.blinkHistory.length > 30) challenge.blinkHistory.shift();
+
+    const BLINK_THRESHOLD = 0.22;
+    let hasBlinked = false;
+
+    // Detect if eyelids closed (dipped below threshold) and opened again
+    const minEAR = Math.min(...challenge.blinkHistory);
+    const currentEAR = challenge.blinkHistory[challenge.blinkHistory.length - 1];
+
+    if (minEAR < BLINK_THRESHOLD && currentEAR > BLINK_THRESHOLD + 0.05) {
+        hasBlinked = true;
+    }
+
+    challenge.frames.push({ box: detection.detection.box });
+    setFaceScanStatus(session, 'Verifying presence. Please blink...', '#f59e0b');
+
+    if (challenge.frames.length >= 15) {
         let totalBoxMovement = 0;
-        let internalVariance = 0;
-
+        
         for (let i = 1; i < challenge.frames.length; i++) {
-            const prev = challenge.frames[i - 1];
-            const curr = challenge.frames[i];
-            
-            // 1. Box movement (checks if they are perfectly frozen like a photograph)
-            const dx = (curr.box.x + curr.box.width / 2) - (prev.box.x + prev.box.width / 2);
-            const dy = (curr.box.y + curr.box.height / 2) - (prev.box.y + prev.box.height / 2);
-            totalBoxMovement += Math.abs(dx) + Math.abs(dy);
-
-            // 2. Internal Landmark Depth Variance (checks if it's a 2D screen being shaken)
-            // A rigid 2D screen maintains exact distance ratios between nose (point 30) and left eye (point 36)
-            // A live 3D face naturally shifts and distorts these proportions slightly with micro-movements.
-            const prevNose = prev.landmarks[30];
-            const currNose = curr.landmarks[30];
-            const prevEye = prev.landmarks[36];
-            const currEye = curr.landmarks[36];
-
-            const prevDist = Math.hypot(prevNose.x - prevEye.x, prevNose.y - prevEye.y);
-            const currDist = Math.hypot(currNose.x - currEye.x, currNose.y - currEye.y);
-            internalVariance += Math.abs(currDist - prevDist);
+            const prev = challenge.frames[i - 1].box;
+            const curr = challenge.frames[i].box;
+            totalBoxMovement += Math.abs((curr.x - prev.x)) + Math.abs((curr.y - prev.y));
         }
 
-        // Fails if there is no natural 3D depth shifting OR if the object is perfectly rigid
-        if (internalVariance < 2.5 || totalBoxMovement < 2.0) {
-            failFaceSession(session, 'SECURITY ALERT: Digital screen or 2D photo detected. Live human depth is required.');
-        } else {
+        // Fails if the object is perfectly rigid (like a printed photo on a desk)
+        if (totalBoxMovement < 1.0) {
+            failFaceSession(session, 'SECURITY ALERT: Rigid 2D photo detected. Live presence required.');
+            return;
+        }
+
+        // Passes only if a natural human blink is detected while holding the device
+        if (hasBlinked) {
             challenge.passed = true;
             setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
             challenge.onPassed(detection);
+        } else if (challenge.frames.length > 150) {
+            // Fails if ~7 seconds pass with no blink (prevents endless shaking of a photo)
+            failFaceSession(session, 'SECURITY ALERT: No natural eye movement detected. Scan rejected.');
         }
     }
 }
