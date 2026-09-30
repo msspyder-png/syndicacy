@@ -160,7 +160,7 @@ function startFaceDetectionLoop(session, callback) {
             session.detectionInProgress = false;
         }
     };
-    session.intervalId = setInterval(runDetection, 250);
+    session.intervalId = setInterval(runDetection, 50);
     runDetection();
 }
 
