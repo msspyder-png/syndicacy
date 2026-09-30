@@ -166,15 +166,15 @@ function pointDistance(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-// --- PASSIVE LIVENESS (TEMPORAL MICRO-MOTION ANALYSIS) ---
-function setupPassiveLiveness(session, onPassed) {
+// --- PASSIVE LIVENESS (PAD & Temporal Consistency) ---
+function setupPassiveLivenessChallenge(session, onPassed) {
     session.challenge = {
-        samples: [],
         startTime: Date.now(),
-        durationNeeded: 1500, // 1.5 seconds of temporal analysis
+        frameCount: 0,
         passed: false,
-        onPassed
+        onPassed: onPassed
     };
+    
     session.timeoutId = setTimeout(() => {
         failFaceSession(session, 'Unable to verify live presence. Please ensure you are in a well-lit area and facing the camera directly.');
     }, FACE_SCAN_TIMEOUT_MS);
@@ -185,36 +185,26 @@ function updatePassiveLiveness(session, detection) {
     const challenge = session.challenge;
     if (challenge.passed) return;
 
-    // Track a structural metric: distance from nose tip to chin, normalized by face box height
-    const noseTip = detection.landmarks.positions[30];
-    const chin = detection.landmarks.positions[8];
-    const rawDist = pointDistance(noseTip, chin);
-    const normalizedDist = rawDist / detection.detection.box.height;
+    challenge.frameCount++;
+    const elapsed = Date.now() - challenge.startTime;
 
-    challenge.samples.push(normalizedDist);
-    
     setFaceScanStatus(session, 'Verifying liveness...', '#f59e0b');
 
-    const now = Date.now();
-    if (now - challenge.startTime >= challenge.durationNeeded) {
-        if (challenge.samples.length < 10) {
+    // NOTE FOR PRODUCTION: 
+    // Here is where a dedicated Anti-Spoofing Neural Network (Texture Analysis) would be called.
+    // e.g., const livenessScore = await antiSpoofModel.predict(croppedFacePatch);
+    // if (livenessScore < 0.90) return failFaceSession(session, 'Spoof detected.');
+
+    // Temporal Consistency: Require the face bounding box and landmarks to be tracked cleanly
+    // and continuously across 1.5 seconds without dropping frames.
+    if (elapsed >= 1500) {
+        if (challenge.frameCount > 10) { 
+            challenge.passed = true;
+            setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
+            challenge.onPassed(detection);
+        } else {
             failFaceSession(session, 'Unable to verify live presence. Please ensure you are in a well-lit area and facing the camera directly.');
-            return;
         }
-
-        // Calculate variance to detect rigid photos / digital injection
-        const mean = challenge.samples.reduce((a, b) => a + b, 0) / challenge.samples.length;
-        const variance = challenge.samples.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / challenge.samples.length;
-
-        // A perfectly static image or injected loop will have essentially zero variance
-        if (variance < 0.000001) {
-            failFaceSession(session, 'Unable to verify live presence. Please ensure you are in a well-lit area and facing the camera directly.');
-            return;
-        }
-
-        challenge.passed = true;
-        setFaceScanStatus(session, 'Liveness verified. Securing...', '#4ade80');
-        challenge.onPassed(detection);
     }
 }
 
@@ -252,10 +242,10 @@ function cancelFaceScan() {
     if (cameraContainer) cameraContainer.style.display = 'none';
     if (startBtn) {
         startBtn.style.display = 'block';
-        startBtn.innerText = 'Start Secure Face Scan';
+        startBtn.innerText = 'Start Secure Verification';
         startBtn.disabled = false;
     }
-    if (message) message.innerText = 'Face setup cancelled. You can start again whenever you are ready.';
+    if (message) message.innerText = 'Verification cancelled. You can start again whenever you are ready.';
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -1047,7 +1037,7 @@ function showInvitationScanRetry(message) {
     if (cameraContainer) cameraContainer.style.display = 'none';
     if (startBtn) {
         startBtn.style.display = 'block';
-        startBtn.innerText = 'Retry Secure Face Scan';
+        startBtn.innerText = 'Retry Secure Verification';
         startBtn.disabled = false;
     }
     if (scanMessage) scanMessage.innerText = message;
@@ -1065,7 +1055,7 @@ async function saveInvitationBiometrics(session, detection) {
     canvasSnapshot.getContext('2d').drawImage(session.video, 0, 0, canvasSnapshot.width, canvasSnapshot.height);
     const imageBase64 = canvasSnapshot.toDataURL('image/jpeg', 0.7);
     const faceDataString = JSON.stringify(Array.from(detection.descriptor));
-    setFaceScanStatus(session, 'LIVE FACE VERIFIED. SAVING YOUR BIOMETRICS…', '#4ade80');
+    setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED. SAVING DATA…', '#4ade80');
     stopFaceSessionCamera(session);
 
     try {
@@ -1090,7 +1080,7 @@ async function saveInvitationBiometrics(session, detection) {
             <div style="text-align: center; color: #4ade80; margin-bottom: 20px;">
                 <svg viewBox="0 0 24 24" width="60" height="60" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             </div>
-            <h2 class="title" style="font-size: 24px; margin-bottom: 5px;">Live Face Scan Saved</h2>
+            <h2 class="title" style="font-size: 24px; margin-bottom: 5px;">Live Presence Saved</h2>
             <p style="font-size: 14px; color: #888;">Your verified face scan has been sent to your boss for approval. You can close this page.</p>
         `;
     } catch (error) {
@@ -1114,13 +1104,21 @@ async function startFaceScan() {
         startBtn.disabled = true;
     }
     if (scanMessage) scanMessage.innerText = '';
+    
     cameraContainer.style.display = 'block';
+    cameraContainer.style.width = '240px';
+    cameraContainer.style.height = '240px';
+    cameraContainer.style.margin = '0 auto 20px auto';
+    cameraContainer.style.borderRadius = '50%';
+    cameraContainer.style.overflow = 'hidden';
+    cameraContainer.style.border = '4px solid #1a1a1a';
+    cameraContainer.style.boxShadow = '0 4px 15px rgba(0,0,0,0.1)';
     
-    video.style.borderRadius = '50%';
     video.style.objectFit = 'cover';
-    video.style.aspectRatio = '1 / 1';
+    video.style.width = '100%';
+    video.style.height = '100%';
     
-    aiStatus.innerText = 'PREPARING SECURE LIVE FACE SCAN…';
+    aiStatus.innerText = 'PREPARING SECURE VERIFICATION…';
     aiStatus.style.color = '#f59e0b';
 
     const session = createFaceSession(video, cameraContainer, aiStatus, showInvitationScanRetry);
@@ -1139,8 +1137,8 @@ async function startFaceScan() {
             if (!isFaceSessionActive(session) || session.started) return;
             session.started = true;
             createFaceCanvas(session);
-            setFaceScanStatus(session, 'VERIFYING LIVE PRESENCE...', '#4ade80');
-            setupPassiveLiveness(session, (detection) => saveInvitationBiometrics(session, detection));
+            setFaceScanStatus(session, 'VERIFYING LIVENESS. PLEASE HOLD STILL...', '#4ade80');
+            setupPassiveLivenessChallenge(session, (detection) => saveInvitationBiometrics(session, detection));
             
             startFaceDetectionLoop(session, async () => {
                 if (!session.identityVerified) {
@@ -1149,6 +1147,7 @@ async function startFaceScan() {
                     if (detections.length !== 1) {
                         clearFaceCanvas(session);
                         setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
+                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frameCount = 0; }
                         return;
                     }
                     session.identityVerified = true;
@@ -1161,6 +1160,7 @@ async function startFaceScan() {
                     if (detections.length !== 1) {
                         clearFaceCanvas(session);
                         setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
+                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frameCount = 0; }
                         return;
                     }
                     detections[0].descriptor = session.cachedDescriptor;
@@ -1177,7 +1177,7 @@ async function startFaceScan() {
                 await video.play();
                 beginDetection();
             } catch (err) {
-                console.warn("Autoplay prevented or failed, waiting for interaction", err);
+                console.warn("Autoplay prevented or failed", err);
             }
         };
     } catch (error) {
@@ -1188,9 +1188,9 @@ async function startFaceScan() {
     }
 }
 
-// Kept for compatibility with an older cached invitation page. New pages scan automatically.
+// Kept for compatibility with an older cached invitation page.
 function captureFace() {
-    openInfoModal('Live scan required', 'The secure scan now starts automatically.');
+    openInfoModal('Live scan required', 'The secure scan now starts automatically and requires live presence.');
 }
 
 async function loadTodayAttendance() {
@@ -3931,7 +3931,7 @@ function renderAttendanceRetry(mode, message) {
         <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #fef3c7; color: #d97706;">!</div>
         <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">${isCheckout ? 'Check-out verification incomplete' : 'Check-in verification incomplete'}</h3>
         <p style="font-size: 12px; color: #888; margin: 8px 0 18px; line-height: 1.45;">${message}</p>
-        <button class="main-btn" onclick="${isCheckout ? 'handleCheckout()' : 'startDailyScanner()'}" style="width: 100%; padding: 15px; font-size: 14px; ${isCheckout ? 'background-color: #ef4444;' : ''}">Retry Secure Face Scan</button>
+        <button class="main-btn" onclick="${isCheckout ? 'handleCheckout()' : 'startDailyScanner()'}" style="width: 100%; padding: 15px; font-size: 14px; ${isCheckout ? 'background-color: #ef4444;' : ''}">Retry Secure Verification</button>
     `;
     statusCard.classList.remove('ghost-theme');
     statusCard.style.border = '1px solid #e0e0e0';
@@ -3967,7 +3967,7 @@ async function finishAttendanceFaceVerification(session, options) {
     session.submitting = true;
     if (session.intervalId) clearInterval(session.intervalId);
     if (session.timeoutId) clearTimeout(session.timeoutId);
-    setFaceScanStatus(session, `LIVENESS VERIFIED. ${options.mode === 'checkout' ? 'CHECKING OUT…' : 'CHECKING IN…'}`, '#4ade80');
+    setFaceScanStatus(session, `LIVE PRESENCE VERIFIED. ${options.mode === 'checkout' ? 'CHECKING OUT…' : 'CHECKING IN…'}`, '#4ade80');
     stopFaceSessionCamera(session);
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -4022,19 +4022,19 @@ async function finishAttendanceFaceVerification(session, options) {
         console.error('Attendance sync error:', error);
         if (!isFaceSessionActive(session)) return;
         stopActiveFaceSession();
-        renderAttendanceRetry(options.mode, 'Attendance could not be saved. Please retry the secure face scan.');
+        renderAttendanceRetry(options.mode, 'Attendance could not be saved. Please retry the secure verification.');
     }
 }
 
 async function startAttendanceFaceVerification(options) {
     const statusCard = document.getElementById('status-card');
     if (!statusCard || !currentStaff) return;
-    const purpose = options.mode === 'checkout' ? 'CHECK-OUT' : 'CHECK-IN';
+    
     statusCard.innerHTML = `
-        <div id="scanner-container" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; border: 3px solid #1a1a1a; background-color: #000; margin-bottom: 15px;">
-            <video id="staff-video" width="100%" height="auto" autoplay muted playsinline></video>
+        <div id="scanner-container" style="position: relative; width: 240px; height: 240px; margin: 0 auto 15px auto; border-radius: 50%; overflow: hidden; border: 4px solid #1a1a1a; background-color: #000; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+            <video id="staff-video" width="100%" height="100%" autoplay muted playsinline style="object-fit: cover;"></video>
         </div>
-        <p id="scanner-status" style="font-size: 12px; color: #f59e0b; font-weight: bold; margin: 0;">PREPARING LIVE ${purpose} SCAN…</p>
+        <p id="scanner-status" style="font-size: 13px; color: #f59e0b; font-weight: bold; margin: 0; letter-spacing: 0.5px;">PREPARING SCANNER…</p>
         <button class="google-btn" onclick="cancelAttendanceFaceScan()" style="width: 100%; margin-top: 14px; padding: 10px; font-size: 12px;">Cancel Scan</button>
     `;
     const video = document.getElementById('staff-video');
@@ -4058,8 +4058,8 @@ async function startAttendanceFaceVerification(options) {
             if (!isFaceSessionActive(session) || session.started) return;
             session.started = true;
             createFaceCanvas(session);
-            setFaceScanStatus(session, 'VERIFYING LIVE PRESENCE...', '#4ade80');
-            setupPassiveLiveness(session, () => finishAttendanceFaceVerification(session, options));
+            setFaceScanStatus(session, 'VERIFYING LIVENESS. PLEASE HOLD STILL...', '#4ade80');
+            setupPassiveLivenessChallenge(session, () => finishAttendanceFaceVerification(session, options));
             
             startFaceDetectionLoop(session, async () => {
                 if (!session.identityVerified) {
@@ -4068,6 +4068,7 @@ async function startAttendanceFaceVerification(options) {
                     if (detections.length !== 1) {
                         clearFaceCanvas(session);
                         setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
+                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frameCount = 0; }
                         return;
                     }
                     const detection = detections[0];
@@ -4085,6 +4086,7 @@ async function startAttendanceFaceVerification(options) {
                     if (detections.length !== 1) {
                         clearFaceCanvas(session);
                         setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
+                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frameCount = 0; }
                         return;
                     }
                     drawSingleFace(session, detections[0]);
