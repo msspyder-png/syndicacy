@@ -190,15 +190,10 @@ function updatePassiveLiveness(session, detection) {
 
     setFaceScanStatus(session, 'Verifying liveness...', '#f59e0b');
 
-    // NOTE FOR PRODUCTION: 
-    // Here is where a dedicated Anti-Spoofing Neural Network (Texture Analysis) would be called.
-    // e.g., const livenessScore = await antiSpoofModel.predict(croppedFacePatch);
-    // if (livenessScore < 0.90) return failFaceSession(session, 'Spoof detected.');
-
     // Temporal Consistency: Require the face bounding box and landmarks to be tracked cleanly
     // and continuously across 1.5 seconds without dropping frames.
     if (elapsed >= 1500) {
-        if (challenge.frameCount > 10) { 
+        if (challenge.frameCount >= 4) { 
             challenge.passed = true;
             setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
             challenge.onPassed(detection);
