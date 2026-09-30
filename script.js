@@ -166,18 +166,17 @@ function pointDistance(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-// --- PASSIVE LIVENESS (PAD & Temporal Consistency) ---
+// --- PASSIVE LIVENESS (3D Depth & Temporal Consistency) ---
 function setupPassiveLivenessChallenge(session, onPassed) {
     session.challenge = {
         startTime: Date.now(),
         frames: [], 
         passed: false,
-        initialYaw: null,
         onPassed: onPassed
     };
     
     session.timeoutId = setTimeout(() => {
-        failFaceSession(session, 'Scan timed out. Live presence requires a slight head movement.');
+        failFaceSession(session, 'Scan timed out. Please ensure you are in a well-lit area and facing the camera directly.');
     }, FACE_SCAN_TIMEOUT_MS);
 }
 
@@ -186,45 +185,49 @@ function updatePassiveLiveness(session, detection) {
     const challenge = session.challenge;
     if (challenge.passed) return;
 
-    // Extract specific facial landmarks
-    const landmarks = detection.landmarks.positions;
-    const noseTip = landmarks[30]; 
-    const leftJaw = landmarks[0];  
-    const rightJaw = landmarks[16]; 
+    // Track 68-point landmarks to ensure 3D depth variance
+    challenge.frames.push({
+        box: detection.detection.box,
+        landmarks: detection.landmarks.positions
+    });
 
-    // Calculate the 3D geometric ratio (Yaw)
-    const leftDist = Math.hypot(noseTip.x - leftJaw.x, noseTip.y - leftJaw.y);
-    const rightDist = Math.hypot(rightJaw.x - noseTip.x, rightJaw.y - noseTip.y);
-    
-    if (rightDist === 0) return;
-    const currentYaw = leftDist / rightDist;
+    const REQUIRED_FRAMES = 15;
+    setFaceScanStatus(session, `Verifying 3D presence (${challenge.frames.length}/${REQUIRED_FRAMES})...`, '#f59e0b');
 
-    challenge.frames.push(currentYaw);
+    if (challenge.frames.length >= REQUIRED_FRAMES) {
+        let totalBoxMovement = 0;
+        let internalVariance = 0;
 
-    if (challenge.frames.length === 1) {
-        challenge.initialYaw = currentYaw;
-        setFaceScanStatus(session, 'LIVENESS: Please turn your head slightly left or right.', '#f59e0b');
-        return;
-    }
+        for (let i = 1; i < challenge.frames.length; i++) {
+            const prev = challenge.frames[i - 1];
+            const curr = challenge.frames[i];
+            
+            // 1. Box movement (checks if they are perfectly frozen like a photograph)
+            const dx = (curr.box.x + curr.box.width / 2) - (prev.box.x + prev.box.width / 2);
+            const dy = (curr.box.y + curr.box.height / 2) - (prev.box.y + prev.box.height / 2);
+            totalBoxMovement += Math.abs(dx) + Math.abs(dy);
 
-    // Measure how much the 3D geometry changes over time
-    let maxVariance = 0;
-    for (let i = 0; i < challenge.frames.length; i++) {
-        const diff = Math.abs(challenge.frames[i] - challenge.initialYaw);
-        if (diff > maxVariance) maxVariance = diff;
-    }
+            // 2. Internal Landmark Depth Variance (checks if it's a 2D screen being shaken)
+            // A rigid 2D screen maintains exact distance ratios between nose (point 30) and left eye (point 36)
+            // A live 3D face naturally shifts and distorts these proportions slightly with micro-movements.
+            const prevNose = prev.landmarks[30];
+            const currNose = curr.landmarks[30];
+            const prevEye = prev.landmarks[36];
+            const currEye = curr.landmarks[36];
 
-    // ANTI-SPOOFING CORE LOGIC:
-    // A phone screen is a flat 2D plane. Even if the phone is shaken, rotated, or moved closer, 
-    // the internal relative ratio of the nose to the cheeks remains geometrically identical.
-    // A real human turning their head changes this 3D ratio significantly.
-    
-    if (maxVariance > 0.15) { // 0.15 threshold requires a deliberate, small head turn
-        challenge.passed = true;
-        setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
-        challenge.onPassed(detection);
-    } else {
-        setFaceScanStatus(session, 'LIVENESS: Please turn your head slightly left or right.', '#f59e0b');
+            const prevDist = Math.hypot(prevNose.x - prevEye.x, prevNose.y - prevEye.y);
+            const currDist = Math.hypot(currNose.x - currEye.x, currNose.y - currEye.y);
+            internalVariance += Math.abs(currDist - prevDist);
+        }
+
+        // Fails if there is no natural 3D depth shifting OR if the object is perfectly rigid
+        if (internalVariance < 2.5 || totalBoxMovement < 2.0) {
+            failFaceSession(session, 'SECURITY ALERT: Digital screen or 2D photo detected. Live human depth is required.');
+        } else {
+            challenge.passed = true;
+            setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
+            challenge.onPassed(detection);
+        }
     }
 }
 
