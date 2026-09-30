@@ -232,16 +232,16 @@ function updateBlinkChallenge(session, detection) {
         return;
     }
 
-    const closedThreshold = Math.max(0.11, challenge.baseline * 0.74);
+    const closedThreshold = Math.max(0.11, challenge.baseline * 0.80);
     const openThreshold = challenge.baseline * 0.86;
 
     if (!challenge.promptActive) {
         if (now >= challenge.nextPromptAt) {
             challenge.promptActive = true;
-            challenge.promptExpiresAt = now + 3000;
+            challenge.promptExpiresAt = now + 5000;
             challenge.sawOpenAfterPrompt = eyeRatio >= openThreshold;
             challenge.sawClosed = false;
-            setFaceScanStatus(session, `BLINK NOW • ${challenge.blinkCount + 1} OF ${REQUIRED_BLINKS}`, '#f59e0b');
+            setFaceScanStatus(session, `CLOSE EYES & HOLD • ${challenge.blinkCount + 1} OF ${REQUIRED_BLINKS}`, '#f59e0b');
         }
         return;
     }
