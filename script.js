@@ -170,13 +170,13 @@ function pointDistance(a, b) {
 function setupPassiveLivenessChallenge(session, onPassed) {
     session.challenge = {
         startTime: Date.now(),
-        frameCount: 0,
+        frames: [], 
         passed: false,
         onPassed: onPassed
     };
     
     session.timeoutId = setTimeout(() => {
-        failFaceSession(session, 'Unable to verify live presence. Please ensure you are in a well-lit area and facing the camera directly.');
+        failFaceSession(session, 'Scan timed out. Please ensure you are in a well-lit area and facing the camera directly.');
     }, FACE_SCAN_TIMEOUT_MS);
 }
 
@@ -185,20 +185,31 @@ function updatePassiveLiveness(session, detection) {
     const challenge = session.challenge;
     if (challenge.passed) return;
 
-    challenge.frameCount++;
-    const elapsed = Date.now() - challenge.startTime;
+    challenge.frames.push(detection.detection.box);
 
-    setFaceScanStatus(session, 'Verifying liveness...', '#f59e0b');
+    setFaceScanStatus(session, `Verifying liveness (${challenge.frames.length}/6)...`, '#f59e0b');
 
-    // Temporal Consistency: Require the face bounding box and landmarks to be tracked cleanly
-    // and continuously across 1.5 seconds without dropping frames.
-    if (elapsed >= 1500) {
-        if (challenge.frameCount >= 4) { 
+    // Wait for 6 valid frames to process. This removes the strict 1.5s timer that fails on slower mobile devices.
+    if (challenge.frames.length >= 6) {
+        let totalMovement = 0;
+        for (let i = 1; i < challenge.frames.length; i++) {
+            const prev = challenge.frames[i - 1];
+            const curr = challenge.frames[i];
+            const dx = (curr.x + curr.width / 2) - (prev.x + prev.width / 2);
+            const dy = (curr.y + curr.height / 2) - (prev.y + prev.height / 2);
+            const dw = curr.width - prev.width;
+            const dh = curr.height - prev.height;
+            totalMovement += Math.abs(dx) + Math.abs(dy) + Math.abs(dw) + Math.abs(dh);
+        }
+
+        // Anti-Spoofing: Real human faces have natural micro-movements (breathing, pulse, natural sway).
+        // A printed photo or a digital screen held in front of the camera will have almost exactly 0 frame-to-frame variance.
+        if (totalMovement <= 1.5) {
+            failFaceSession(session, 'SECURITY ALERT: Static image or digital screen detected. Live human presence is required.');
+        } else {
             challenge.passed = true;
             setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
             challenge.onPassed(detection);
-        } else {
-            failFaceSession(session, 'Unable to verify live presence. Please ensure you are in a well-lit area and facing the camera directly.');
         }
     }
 }
@@ -1142,7 +1153,7 @@ async function startFaceScan() {
                     if (detections.length !== 1) {
                         clearFaceCanvas(session);
                         setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
-                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frameCount = 0; }
+                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frames = []; }
                         return;
                     }
                     session.identityVerified = true;
@@ -1155,7 +1166,7 @@ async function startFaceScan() {
                     if (detections.length !== 1) {
                         clearFaceCanvas(session);
                         setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
-                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frameCount = 0; }
+                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frames = []; }
                         return;
                     }
                     detections[0].descriptor = session.cachedDescriptor;
@@ -4063,7 +4074,7 @@ async function startAttendanceFaceVerification(options) {
                     if (detections.length !== 1) {
                         clearFaceCanvas(session);
                         setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
-                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frameCount = 0; }
+                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frames = []; }
                         return;
                     }
                     const detection = detections[0];
@@ -4081,7 +4092,7 @@ async function startAttendanceFaceVerification(options) {
                     if (detections.length !== 1) {
                         clearFaceCanvas(session);
                         setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
-                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frameCount = 0; }
+                        if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frames = []; }
                         return;
                     }
                     drawSingleFace(session, detections[0]);
