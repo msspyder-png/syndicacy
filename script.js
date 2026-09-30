@@ -1202,8 +1202,14 @@ async function startFaceScan() {
 
         video.onplay = beginDetection;
         video.srcObject = stream;
-        await video.play().catch(() => {});
-        if (video.readyState >= 2) beginDetection();
+        video.onloadedmetadata = async () => {
+            try {
+                await video.play();
+                beginDetection();
+            } catch (err) {
+                console.warn("Autoplay prevented or failed, waiting for interaction", err);
+            }
+        };
     } catch (error) {
         console.error(error);
         if (!isFaceSessionActive(session)) return;
@@ -4105,8 +4111,14 @@ async function startAttendanceFaceVerification(options) {
 
         video.onplay = beginDetection;
         video.srcObject = stream;
-        await video.play().catch(() => {});
-        if (video.readyState >= 2) beginDetection();
+        video.onloadedmetadata = async () => {
+            try {
+                await video.play();
+                beginDetection();
+            } catch (err) {
+                console.warn("Autoplay prevented or failed", err);
+            }
+        };
     } catch (error) {
         console.error('Attendance camera error:', error);
         if (!isFaceSessionActive(session)) return;
