@@ -454,6 +454,19 @@ body {
     margin-top: 0;
 }
 
+/* --- LIVE FACE SCAN --- */
+.face-scan-message {
+    min-height: 18px;
+    margin: -8px 0 14px;
+    color: #888;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.face-scan-overlay {
+    box-sizing: border-box;
+}
+
 /* Directory Section */
 .directory-section {
     margin-top: 20px;

@@ -23,17 +23,18 @@
             <p style="font-size: 14px; color: #888; margin-bottom: 30px;">You've been invited to join as: <strong id="emp-role" style="color: #1a1a1a;">Role</strong></p>
             
             <div style="background-color: #f9f9f9; border: 1px solid #eaeaea; padding: 15px; border-radius: 8px; margin-bottom: 30px; text-align: left; font-size: 12px; color: #555; line-height: 1.5;">
-                <strong>Next Step: Biometric Setup</strong><br>
-                To secure your account, you will need to complete a quick facial scan. This data is encrypted and ensures only you can check in to your shifts.
+                <strong>Next Step: Live Biometric Setup</strong><br>
+                To protect your account, the camera will ask you to complete three random blink prompts within 30 seconds. Keep only your face in frame.
             </div>
 
             <div id="camera-container" style="display: none; margin-bottom: 20px; position: relative;">
                 <video id="video" width="100%" height="auto" autoplay muted playsinline style="border-radius: 8px; border: 2px solid #1a1a1a; background-color: #000;"></video>
                 <p id="ai-status" style="font-size: 11px; color: #f59e0b; font-weight: bold; margin-top: 10px;">LOADING AI MODELS...</p>
-                <button id="capture-btn" class="main-btn form-btn" style="display: none; background-color: #4ade80; color: black; margin-top: 15px;" onclick="captureFace()">Scan My Face</button>
+                <button class="google-btn" style="width: 100%; margin-top: 12px; padding: 10px; font-size: 12px;" onclick="cancelFaceScan()">Cancel Scan</button>
             </div>
 
-            <button id="start-btn" class="main-btn form-btn" onclick="startFaceScan()">Start Camera Setup</button>
+            <p id="registration-scan-message" class="face-scan-message" aria-live="polite"></p>
+            <button id="start-btn" class="main-btn form-btn" onclick="startFaceScan()">Start Secure Face Scan</button>
         </div>
 
         <div id="error-state" style="display: none;">
@@ -43,7 +44,7 @@
 
     </div>
 
-    <script src="script.js?v=1001"></script>
+    <script src="script.js?v=1030"></script>
     
 </body>
 </html>

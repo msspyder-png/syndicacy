@@ -28,6 +28,293 @@ async function ensureFaceApi() {
     }
 }
 
+// --- FACE SECURITY ENGINE ---
+// A face must be both recognised and live.  The lower distance is deliberately
+// stricter than the former 0.60 matcher so that lookalikes are not accepted as
+// easily.  These values can be calibrated later with real, consented test data.
+const FACE_MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+const FACE_MATCH_MAX_DISTANCE = 0.46;
+const DUPLICATE_FACE_MAX_DISTANCE = 0.46;
+const FACE_SCAN_TIMEOUT_MS = 30000;
+const REQUIRED_BLINKS = 3;
+let faceModelsPromise = null;
+let activeFaceSession = null;
+
+async function ensureFaceModels() {
+    await ensureFaceApi();
+    if (!faceModelsPromise) {
+        faceModelsPromise = Promise.all([
+            faceapi.nets.ssdMobilenetv1.loadFromUri(FACE_MODEL_URL),
+            faceapi.nets.faceLandmark68Net.loadFromUri(FACE_MODEL_URL),
+            faceapi.nets.faceRecognitionNet.loadFromUri(FACE_MODEL_URL)
+        ]).catch((error) => {
+            faceModelsPromise = null;
+            throw error;
+        });
+    }
+    return faceModelsPromise;
+}
+
+function createFaceSession(video, container, statusEl, onFailure) {
+    stopActiveFaceSession();
+    const session = {
+        id: `${Date.now()}-${Math.random()}`,
+        video,
+        container,
+        statusEl,
+        onFailure,
+        stream: null,
+        canvas: null,
+        intervalId: null,
+        timeoutId: null,
+        detectionInProgress: false,
+        cancelled: false,
+        completed: false,
+        submitting: false,
+        challenge: null
+    };
+    activeFaceSession = session;
+    return session;
+}
+
+function isFaceSessionActive(session) {
+    return activeFaceSession === session && !session.cancelled && !session.completed;
+}
+
+function setFaceScanStatus(session, message, color = '#f59e0b') {
+    if (!isFaceSessionActive(session) || !session.statusEl) return;
+    session.statusEl.innerText = message;
+    session.statusEl.style.color = color;
+}
+
+function stopFaceSessionCamera(session) {
+    if (!session) return;
+    if (session.intervalId) clearInterval(session.intervalId);
+    if (session.timeoutId) clearTimeout(session.timeoutId);
+    session.intervalId = null;
+    session.timeoutId = null;
+    if (session.stream) session.stream.getTracks().forEach(track => track.stop());
+    if (session.video) {
+        try { session.video.pause(); } catch (e) {}
+        session.video.srcObject = null;
+    }
+    if (session.canvas) session.canvas.remove();
+    session.canvas = null;
+}
+
+function stopActiveFaceSession() {
+    const session = activeFaceSession;
+    if (!session) return;
+    session.cancelled = true;
+    stopFaceSessionCamera(session);
+    if (activeFaceSession === session) activeFaceSession = null;
+}
+
+function completeFaceSession(session) {
+    if (activeFaceSession !== session) return;
+    session.completed = true;
+    stopFaceSessionCamera(session);
+    activeFaceSession = null;
+}
+
+function createFaceCanvas(session) {
+    if (!isFaceSessionActive(session)) return null;
+    if (session.container) session.container.querySelectorAll('.face-scan-overlay').forEach(el => el.remove());
+    const canvas = faceapi.createCanvasFromMedia(session.video);
+    canvas.className = 'face-scan-overlay';
+    canvas.style.position = 'absolute';
+    canvas.style.inset = '0';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.pointerEvents = 'none';
+    session.container.append(canvas);
+    faceapi.matchDimensions(canvas, { width: session.video.clientWidth, height: session.video.clientHeight });
+    session.canvas = canvas;
+    return canvas;
+}
+
+function drawSingleFace(session, detection) {
+    if (!session.canvas || !session.video || !detection) return;
+    const displaySize = { width: session.video.clientWidth, height: session.video.clientHeight };
+    const ctx = session.canvas.getContext('2d');
+    ctx.clearRect(0, 0, session.canvas.width, session.canvas.height);
+    const resized = faceapi.resizeResults(detection, displaySize);
+    faceapi.draw.drawFaceLandmarks(session.canvas, resized);
+}
+
+function clearFaceCanvas(session) {
+    if (!session.canvas) return;
+    const ctx = session.canvas.getContext('2d');
+    ctx.clearRect(0, 0, session.canvas.width, session.canvas.height);
+}
+
+function startFaceDetectionLoop(session, callback) {
+    const runDetection = async () => {
+        if (!isFaceSessionActive(session) || session.detectionInProgress || !session.video || session.video.readyState < 2) return;
+        session.detectionInProgress = true;
+        try {
+            await callback();
+        } catch (error) {
+            console.error('Face scan detection error:', error);
+        } finally {
+            session.detectionInProgress = false;
+        }
+    };
+    session.intervalId = setInterval(runDetection, 250);
+    runDetection();
+}
+
+function pointDistance(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function getEyeAspectRatio(landmarks) {
+    if (!landmarks) return null;
+    const eyeRatio = (eye) => {
+        if (!eye || eye.length !== 6) return null;
+        const width = pointDistance(eye[0], eye[3]);
+        if (!width) return null;
+        return (pointDistance(eye[1], eye[5]) + pointDistance(eye[2], eye[4])) / (2 * width);
+    };
+    const left = eyeRatio(landmarks.getLeftEye());
+    const right = eyeRatio(landmarks.getRightEye());
+    return left && right ? (left + right) / 2 : null;
+}
+
+function median(values) {
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+function randomBlinkDelay() {
+    return 900 + Math.floor(Math.random() * 2200);
+}
+
+function setupBlinkChallenge(session, onPassed) {
+    session.challenge = {
+        eyeSamples: [],
+        baseline: null,
+        blinkCount: 0,
+        nextPromptAt: null,
+        promptActive: false,
+        promptExpiresAt: 0,
+        sawOpenAfterPrompt: false,
+        sawClosed: false,
+        onPassed
+    };
+    session.timeoutId = setTimeout(() => {
+        failFaceSession(session, 'Verification timed out. Please retry and complete all three blink prompts.');
+    }, FACE_SCAN_TIMEOUT_MS);
+}
+
+function updateBlinkChallenge(session, detection) {
+    if (!isFaceSessionActive(session) || !session.challenge) return;
+    const challenge = session.challenge;
+    if (challenge.passed) return;
+    const eyeRatio = getEyeAspectRatio(detection.landmarks);
+    if (!eyeRatio) {
+        setFaceScanStatus(session, 'KEEP YOUR EYES CLEARLY VISIBLE TO THE CAMERA.');
+        return;
+    }
+
+    const now = Date.now();
+    if (!challenge.baseline) {
+        challenge.eyeSamples.push(eyeRatio);
+        setFaceScanStatus(session, 'FACE VERIFIED. KEEP LOOKING AT THE SCREEN…', '#4ade80');
+        if (challenge.eyeSamples.length >= 12) {
+            challenge.baseline = median(challenge.eyeSamples);
+            challenge.nextPromptAt = now + randomBlinkDelay();
+            setFaceScanStatus(session, 'FACE VERIFIED. GET READY FOR THREE RANDOM BLINK CHECKS.', '#4ade80');
+        }
+        return;
+    }
+
+    const closedThreshold = Math.max(0.11, challenge.baseline * 0.74);
+    const openThreshold = challenge.baseline * 0.86;
+
+    if (!challenge.promptActive) {
+        if (now >= challenge.nextPromptAt) {
+            challenge.promptActive = true;
+            challenge.promptExpiresAt = now + 3000;
+            challenge.sawOpenAfterPrompt = eyeRatio >= openThreshold;
+            challenge.sawClosed = false;
+            setFaceScanStatus(session, `BLINK NOW • ${challenge.blinkCount + 1} OF ${REQUIRED_BLINKS}`, '#f59e0b');
+        }
+        return;
+    }
+
+    if (eyeRatio >= openThreshold) challenge.sawOpenAfterPrompt = true;
+    if (challenge.sawOpenAfterPrompt && eyeRatio <= closedThreshold) {
+        challenge.sawClosed = true;
+        setFaceScanStatus(session, `BLINK DETECTED • OPEN YOUR EYES • ${challenge.blinkCount + 1} OF ${REQUIRED_BLINKS}`, '#f59e0b');
+    }
+
+    if (challenge.sawClosed && eyeRatio >= openThreshold) {
+        challenge.blinkCount += 1;
+        challenge.promptActive = false;
+        if (challenge.blinkCount >= REQUIRED_BLINKS) {
+            challenge.passed = true;
+            setFaceScanStatus(session, 'LIVE FACE VERIFIED. SECURING ATTENDANCE…', '#4ade80');
+            challenge.onPassed(detection);
+            return;
+        }
+        challenge.nextPromptAt = now + randomBlinkDelay();
+        setFaceScanStatus(session, `BLINK ${challenge.blinkCount} OF ${REQUIRED_BLINKS} CONFIRMED. STAY READY…`, '#4ade80');
+        return;
+    }
+
+    if (now > challenge.promptExpiresAt) {
+        failFaceSession(session, 'Blink prompt missed. For security, please retry the live face scan.');
+    }
+}
+
+function failFaceSession(session, message) {
+    if (!isFaceSessionActive(session)) return;
+    const onFailure = session.onFailure;
+    stopActiveFaceSession();
+    if (typeof onFailure === 'function') onFailure(message);
+}
+
+function getFaceDistance(firstDescriptor, secondDescriptor) {
+    if (!firstDescriptor || !secondDescriptor || firstDescriptor.length !== secondDescriptor.length) return Infinity;
+    let total = 0;
+    for (let i = 0; i < firstDescriptor.length; i += 1) {
+        const difference = Number(firstDescriptor[i]) - Number(secondDescriptor[i]);
+        total += difference * difference;
+    }
+    return Math.sqrt(total);
+}
+
+function parseFaceDescriptor(faceData) {
+    try {
+        const parsed = typeof faceData === 'string' ? JSON.parse(faceData) : faceData;
+        return Array.isArray(parsed) && parsed.length === 128 ? parsed : null;
+    } catch (error) {
+        return null;
+    }
+}
+
+function cancelFaceScan() {
+    stopActiveFaceSession();
+    const cameraContainer = document.getElementById('camera-container');
+    const startBtn = document.getElementById('start-btn');
+    const message = document.getElementById('registration-scan-message');
+    if (cameraContainer) cameraContainer.style.display = 'none';
+    if (startBtn) {
+        startBtn.style.display = 'block';
+        startBtn.innerText = 'Start Secure Face Scan';
+        startBtn.disabled = false;
+    }
+    if (message) message.innerText = 'Face setup cancelled. You can start again whenever you are ready.';
+}
+
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopActiveFaceSession();
+});
+window.addEventListener('pagehide', stopActiveFaceSession);
+window.addEventListener('beforeunload', stopActiveFaceSession);
+
 try {
     if (window.supabase && typeof window.supabase.createClient === 'function') {
         supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
@@ -601,6 +888,29 @@ async function loadPendingInvites() {
     } catch (err) { console.error(err); }
 }
 
+async function findDuplicateCompanyFace(inviteData) {
+    const inviteDescriptor = parseFaceDescriptor(inviteData.face_data);
+    if (!inviteDescriptor || !supabaseClient) return null;
+
+    const { data: staffMembers, error } = await supabaseClient
+        .from('users')
+        .select('name, email, face_data')
+        .eq('company_id', inviteData.company_id)
+        .neq('role', 'leader');
+
+    if (error) throw error;
+
+    let closestMatch = null;
+    (staffMembers || []).forEach((staffMember) => {
+        const staffDescriptor = parseFaceDescriptor(staffMember.face_data);
+        const distance = getFaceDistance(inviteDescriptor, staffDescriptor);
+        if (distance <= DUPLICATE_FACE_MAX_DISTANCE && (!closestMatch || distance < closestMatch.distance)) {
+            closestMatch = { ...staffMember, distance };
+        }
+    });
+    return closestMatch;
+}
+
 async function approveInvite(inviteId, employeeName) {
     openConfirmModal("Approve Staff", `Are you sure you want to officially approve ${employeeName}'s face scan and add them to the team?`, async function() {
         await ensureSupabase();
@@ -629,6 +939,17 @@ async function approveInvite(inviteId, employeeName) {
             if (existingUser && existingUser.length > 0) {
                 openInfoModal("Approval Blocked", `Cannot approve ${employeeName}. The email address (${inviteData.email}) is already registered to an active workspace member. This invalid invite will now be removed.`);
                 await supabaseClient.from('staff_invites').delete().eq('id', inviteId);
+                loadPendingInvites();
+                return;
+            }
+
+            const duplicateFace = await findDuplicateCompanyFace(inviteData);
+            if (duplicateFace) {
+                await supabaseClient.from('staff_invites').delete().eq('id', inviteId);
+                openInfoModal(
+                    'Approval Blocked: Matching Biometrics',
+                    `${employeeName} and ${duplicateFace.name || duplicateFace.email} appear to share the same biometrics. The pending invite has been removed and no new employee was added.`
+                );
                 loadPendingInvites();
                 return;
             }
@@ -770,124 +1091,130 @@ async function verifyInviteLink() {
     }
 }
 
-async function startFaceScan() {
-    await ensureFaceApi();
-    const startBtn = document.getElementById('start-btn');
+function showInvitationScanRetry(message) {
     const cameraContainer = document.getElementById('camera-container');
-    const video = document.getElementById('video');
-    const aiStatus = document.getElementById('ai-status');
-    const captureBtn = document.getElementById('capture-btn');
-
-    if (!video) return;
-
-    startBtn.style.display = 'none'; 
-    cameraContainer.style.display = 'block'; 
-
-    try {
-        const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
-        await Promise.all([
-            faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-            faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-            faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-        ]);
-
-        aiStatus.innerText = "AI READY. TURNING ON CAMERA...";
-        aiStatus.style.color = "#4ade80"; 
-
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
-        video.srcObject = stream;
-
-        video.onplay = () => {
-            aiStatus.innerText = "CAMERA ACTIVE. PLEASE LOOK AT THE SCREEN.";
-            if (captureBtn) captureBtn.style.display = 'block';
-
-            const canvas = faceapi.createCanvasFromMedia(video);
-            canvas.style.position = 'absolute';
-            canvas.style.top = '0';
-            canvas.style.left = '0';
-            cameraContainer.append(canvas);
-
-            const displaySize = { width: video.clientWidth, height: video.clientHeight };
-            faceapi.matchDimensions(canvas, displaySize);
-
-            setInterval(async () => {
-                const detections = await faceapi.detectAllFaces(video).withFaceLandmarks();
-                const resizedDetections = faceapi.resizeResults(detections, displaySize);
-                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-                faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
-            }, 100);
-        };
-    } catch (err) {
-        openInfoModal("Camera Error", "Please check your browser permissions.");
-        aiStatus.innerText = "ERROR: Could not access camera.";
-        aiStatus.style.color = "red";
+    const startBtn = document.getElementById('start-btn');
+    const scanMessage = document.getElementById('registration-scan-message');
+    if (cameraContainer) cameraContainer.style.display = 'none';
+    if (startBtn) {
+        startBtn.style.display = 'block';
+        startBtn.innerText = 'Retry Secure Face Scan';
+        startBtn.disabled = false;
     }
+    if (scanMessage) scanMessage.innerText = message;
 }
 
-async function captureFace() {
-    await ensureSupabase();
-    await ensureFaceApi();
-    const video = document.getElementById('video');
-    const captureBtn = document.getElementById('capture-btn');
-    const aiStatus = document.getElementById('ai-status');
+async function saveInvitationBiometrics(session, detection) {
+    if (!isFaceSessionActive(session) || session.submitting) return;
+    session.submitting = true;
+    if (session.intervalId) clearInterval(session.intervalId);
+    if (session.timeoutId) clearTimeout(session.timeoutId);
 
-    if (captureBtn) {
-        captureBtn.disabled = true;
-        captureBtn.innerText = "Analyzing & Snapping Photo...";
-    }
-    aiStatus.innerText = "PROCESSING 68 FACIAL POINTS...";
-    aiStatus.style.color = "#f59e0b";
+    const canvasSnapshot = document.createElement('canvas');
+    canvasSnapshot.width = session.video.videoWidth || 320;
+    canvasSnapshot.height = session.video.videoHeight || 240;
+    canvasSnapshot.getContext('2d').drawImage(session.video, 0, 0, canvasSnapshot.width, canvasSnapshot.height);
+    const imageBase64 = canvasSnapshot.toDataURL('image/jpeg', 0.7);
+    const faceDataString = JSON.stringify(Array.from(detection.descriptor));
+    setFaceScanStatus(session, 'LIVE FACE VERIFIED. SAVING YOUR BIOMETRICS…', '#4ade80');
+    stopFaceSessionCamera(session);
 
     try {
-        const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
-
-        if (!detection) {
-            openInfoModal("Scan Failed", "No face detected clearly! Please look straight at the camera.");
-            if (captureBtn) { captureBtn.disabled = false; captureBtn.innerText = "Scan My Face"; }
-            aiStatus.innerText = "WAITING FOR FACE...";
-            return;
-        }
-
-        const faceDataString = JSON.stringify(Array.from(detection.descriptor));
-        const canvasSnapshot = document.createElement('canvas');
-        canvasSnapshot.width = video.videoWidth || 320;
-        canvasSnapshot.height = video.videoHeight || 240;
-        const ctx = canvasSnapshot.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvasSnapshot.width, canvasSnapshot.height);
-        
-        const imageBase64 = canvasSnapshot.toDataURL('image/jpeg', 0.7);
-
-        aiStatus.innerText = "BIOMETRICS SECURED! UPLOADING TO CLOUD...";
-
-        const urlParams = new URLSearchParams(window.location.search);
-        const { error } = await supabaseClient
+        await ensureSupabase();
+        if (!isFaceSessionActive(session)) return;
+        const inviteId = new URLSearchParams(window.location.search).get('id');
+        const { data, error } = await supabaseClient
             .from('staff_invites')
-            .update({ 
-                face_data: faceDataString, 
-                face_image: imageBase64, 
-                status: 'scanned' 
-            })
-            .eq('id', urlParams.get('id'));
+            .update({ face_data: faceDataString, face_image: imageBase64, status: 'scanned' })
+            .eq('id', inviteId)
+            .eq('status', 'pending')
+            .select('id');
 
         if (error) throw error;
+        if (!data || data.length !== 1) throw new Error('This invitation is no longer available.');
+        if (!isFaceSessionActive(session)) return;
 
-        if (video.srcObject) {
-            video.srcObject.getTracks().forEach(track => track.stop());
-        }
-
-        document.getElementById('camera-container').style.display = 'none';
+        completeFaceSession(session);
+        const cameraContainer = document.getElementById('camera-container');
+        if (cameraContainer) cameraContainer.style.display = 'none';
         document.getElementById('success-state').innerHTML = `
             <div style="text-align: center; color: #4ade80; margin-bottom: 20px;">
                 <svg viewBox="0 0 24 24" width="60" height="60" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
             </div>
-            <h2 class="title" style="font-size: 24px; margin-bottom: 5px;">Biometrics & Photo Saved!</h2>
-            <p style="font-size: 14px; color: #888;">Your photo has been sent to the boss for verification. You can close this page.</p>
+            <h2 class="title" style="font-size: 24px; margin-bottom: 5px;">Live Face Scan Saved</h2>
+            <p style="font-size: 14px; color: #888;">Your verified face scan has been sent to your boss for approval. You can close this page.</p>
         `;
-    } catch (err) {
-        console.error(err);
-        openInfoModal("Error", "Error saving biometric data.");
-        if (captureBtn) { captureBtn.disabled = false; captureBtn.innerText = "Scan My Face"; }
+    } catch (error) {
+        console.error(error);
+        if (!isFaceSessionActive(session)) return;
+        stopActiveFaceSession();
+        showInvitationScanRetry('We could not save your scan. Please check your connection and try again.');
     }
+}
+
+async function startFaceScan() {
+    const startBtn = document.getElementById('start-btn');
+    const cameraContainer = document.getElementById('camera-container');
+    const video = document.getElementById('video');
+    const aiStatus = document.getElementById('ai-status');
+    const scanMessage = document.getElementById('registration-scan-message');
+    if (!video || !cameraContainer || !aiStatus) return;
+
+    if (startBtn) {
+        startBtn.style.display = 'none';
+        startBtn.disabled = true;
+    }
+    if (scanMessage) scanMessage.innerText = '';
+    cameraContainer.style.display = 'block';
+    aiStatus.innerText = 'PREPARING SECURE LIVE FACE SCAN…';
+    aiStatus.style.color = '#f59e0b';
+
+    const session = createFaceSession(video, cameraContainer, aiStatus, showInvitationScanRetry);
+    try {
+        await ensureFaceModels();
+        if (!isFaceSessionActive(session)) return;
+        setFaceScanStatus(session, 'TURNING ON CAMERA…', '#4ade80');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+        if (!isFaceSessionActive(session)) {
+            stream.getTracks().forEach(track => track.stop());
+            return;
+        }
+        session.stream = stream;
+
+        const beginDetection = () => {
+            if (!isFaceSessionActive(session) || session.started) return;
+            session.started = true;
+            createFaceCanvas(session);
+            setFaceScanStatus(session, 'SHOW ONLY YOUR FACE. KEEP LOOKING AT THE SCREEN.', '#4ade80');
+            setupBlinkChallenge(session, (detection) => saveInvitationBiometrics(session, detection));
+            startFaceDetectionLoop(session, async () => {
+                const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+                if (!isFaceSessionActive(session)) return;
+                if (detections.length !== 1) {
+                    clearFaceCanvas(session);
+                    setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
+                    return;
+                }
+                drawSingleFace(session, detections[0]);
+                updateBlinkChallenge(session, detections[0]);
+            });
+        };
+
+        video.onplay = beginDetection;
+        video.srcObject = stream;
+        await video.play().catch(() => {});
+        if (video.readyState >= 2) beginDetection();
+    } catch (error) {
+        console.error(error);
+        if (!isFaceSessionActive(session)) return;
+        stopActiveFaceSession();
+        showInvitationScanRetry('Camera access failed. Please allow camera access and try again.');
+    }
+}
+
+// Kept for compatibility with an older cached invitation page. New pages scan automatically.
+function captureFace() {
+    openInfoModal('Live scan required', 'The secure scan now starts automatically and requires three random blinks.');
 }
 
 async function loadTodayAttendance() {
@@ -2802,6 +3129,7 @@ async function loadStaffDashboard() {
     if (logOutBtn) {
         logOutBtn.onclick = function(e) {
             e.preventDefault();
+            stopActiveFaceSession();
             sessionStorage.removeItem('loggedInStaff');
             window.location.href = 'index.html';
         };
@@ -3418,6 +3746,8 @@ function changeStaffMonth(offset) {
 }
 
 function switchStaffTab(tabName) {
+    // Leaving Home immediately releases the camera and cancels an unfinished scan.
+    if (tabName !== 'home') stopActiveFaceSession();
     document.getElementById('view-home').style.display = 'none';
     document.getElementById('view-records').style.display = 'none';
     document.getElementById('view-settings').style.display = 'none';
@@ -3574,161 +3904,221 @@ async function startDailyScanner() {
     }
 }
 
-async function continueScannerProcess(rules, safeCompanyId, todayDateStr, now) {
-    if (rules && rules.require_gps) {
-        let targetLat, targetLng, targetRadius, isExempt = false;
-        
-        let locations = [];
-        try { if (rules.locations) locations = JSON.parse(rules.locations); } catch(e){}
+async function verifyAttendanceLocation(rules, safeCompanyId, mode) {
+    if (!rules || !rules.require_gps) return true;
+    let targetLat, targetLng, targetRadius, isExempt = false;
+    let locations = [];
+    try { if (rules.locations) locations = JSON.parse(rules.locations); } catch (e) {}
 
-        if (locations && locations.length > 0) {
-            let userLocation = locations.find(loc => loc.staff && loc.staff.includes(currentStaff.email));
-            
-            if (!userLocation) userLocation = locations.find(loc => loc.id === 'main') || locations[0];
-            
-            if (userLocation.id === 'exempt' || userLocation.isExempt) {
-                isExempt = true;
-            } else {
-                targetLat = userLocation.lat;
-                targetLng = userLocation.lng;
-                targetRadius = userLocation.radius || 150;
-            }
-        } else {
-            targetLat = rules.office_lat;
-            targetLng = rules.office_lng;
-            targetRadius = rules.office_radius || 150;
+    if (locations.length > 0) {
+        let userLocation = locations.find(loc => loc.staff && loc.staff.includes(currentStaff.email));
+        if (!userLocation) userLocation = locations.find(loc => loc.id === 'main') || locations[0];
+        if (userLocation.id === 'exempt' || userLocation.isExempt) isExempt = true;
+        else {
+            targetLat = userLocation.lat;
+            targetLng = userLocation.lng;
+            targetRadius = userLocation.radius || 150;
         }
-
-        if (!isExempt) {
-            if (!targetLat || !targetLng) {
-                openInfoModal("Manager Error", "Office GPS location has not been pinned in settings yet!");
-                return;
-            }
-            
-            try {
-                const position = await new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
-                });
-
-                const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, targetLat, targetLng);
-
-                if (distanceMeters > targetRadius) {
-                    openInfoModal("Geofence Violation", `You are too far from your assigned workplace (${Math.round(distanceMeters)} meters away). You must be within ${targetRadius} meters to clock in.`);
-                    return;
-                }
-            } catch (err) {
-                openInfoModal("GPS Error", "Please enable location permissions on your device to check in.");
-                return;
-            }
-        }
+    } else {
+        targetLat = rules.office_lat;
+        targetLng = rules.office_lng;
+        targetRadius = rules.office_radius || 150;
     }
 
+    if (isExempt) return true;
+    if (!targetLat || !targetLng) {
+        openInfoModal('Manager Error', 'Office GPS location has not been pinned in settings yet.');
+        return false;
+    }
+
+    try {
+        const position = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+        });
+        const distanceMeters = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, targetLat, targetLng);
+        if (distanceMeters > targetRadius) {
+            openInfoModal('Geofence Violation', `You are too far from your assigned workplace (${Math.round(distanceMeters)} meters away). You must be within ${targetRadius} meters to ${mode === 'checkout' ? 'check out' : 'clock in'}.`);
+            return false;
+        }
+        return true;
+    } catch (error) {
+        openInfoModal('GPS Error', `Please enable location permissions to ${mode === 'checkout' ? 'check out' : 'check in'}.`);
+        return false;
+    }
+}
+
+function renderAttendanceRetry(mode, message) {
     const statusCard = document.getElementById('status-card');
-    
+    if (!statusCard) return;
+    const isCheckout = mode === 'checkout';
+    statusCard.innerHTML = `
+        <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #fef3c7; color: #d97706;">!</div>
+        <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">${isCheckout ? 'Check-out verification incomplete' : 'Check-in verification incomplete'}</h3>
+        <p style="font-size: 12px; color: #888; margin: 8px 0 18px; line-height: 1.45;">${message}</p>
+        <button class="main-btn" onclick="${isCheckout ? 'handleCheckout()' : 'startDailyScanner()'}" style="width: 100%; padding: 15px; font-size: 14px; ${isCheckout ? 'background-color: #ef4444;' : ''}">Retry Secure Face Scan</button>
+    `;
+    statusCard.classList.remove('ghost-theme');
+    statusCard.style.border = '1px solid #e0e0e0';
+    statusCard.style.backgroundColor = '#ffffff';
+}
+
+function renderCheckedInCard(timeStr, requireCheckout) {
+    const statusCard = document.getElementById('status-card');
+    if (!statusCard) return;
+    const checkoutHtml = requireCheckout ? `
+        <button class="main-btn" onclick="handleCheckout()" style="width: 100%; margin-top: 25px; padding: 16px; font-size: 15px; background-color: #ef4444;">End Shift & Check Out</button>
+        <p id="checkout-timer-display" style="font-size: 11px; color: #888; margin-top: 15px; font-family: monospace;"></p>
+    ` : '';
+    statusCard.innerHTML = `
+        <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
+        <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
+        <p style="font-size: 12px; color: #4ade80; margin-top: 5px; font-weight: 600; margin-bottom: ${requireCheckout ? '0' : '15px'};">Successfully clocked in at ${timeStr}</p>
+        ${checkoutHtml}
+    `;
+    statusCard.classList.remove('ghost-theme');
+    statusCard.style.border = '1px solid #e0e0e0';
+    statusCard.style.backgroundColor = '#ffffff';
+    if (requireCheckout) setTimeout(() => startCheckoutTimer(timeStr), 100);
+}
+
+function cancelAttendanceFaceScan() {
+    stopActiveFaceSession();
+    loadStaffRecords();
+}
+
+async function finishAttendanceFaceVerification(session, options) {
+    if (!isFaceSessionActive(session) || session.submitting) return;
+    session.submitting = true;
+    if (session.intervalId) clearInterval(session.intervalId);
+    if (session.timeoutId) clearTimeout(session.timeoutId);
+    setFaceScanStatus(session, `LIVE FACE VERIFIED. ${options.mode === 'checkout' ? 'CHECKING OUT…' : 'CHECKING IN…'}`, '#4ade80');
+    stopFaceSessionCamera(session);
+
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    try {
+        if (!isFaceSessionActive(session)) return;
+        let error = null;
+        let savedRecord = null;
+        if (options.mode === 'checkout') {
+            ({ data: savedRecord, error } = await supabaseClient
+                .from('checkins')
+                .update({ checkout_time: timeStr })
+                .eq('user_email', currentStaff.email)
+                .eq('company_id', options.safeCompanyId)
+                .eq('date', options.todayDateStr)
+                .select('id'));
+        } else {
+            ({ data: savedRecord, error } = await supabaseClient
+                .from('checkins')
+                .insert([{
+                    user_email: currentStaff.email,
+                    user_name: currentStaff.name,
+                    date: options.todayDateStr,
+                    time: timeStr,
+                    status: 'Present',
+                    is_late: window.isCheckingInLate === true,
+                    company_id: options.safeCompanyId
+                }])
+                .select('id'));
+        }
+        if (error) throw error;
+        if (!savedRecord || savedRecord.length !== 1) throw new Error('Attendance record was not saved.');
+        if (!isFaceSessionActive(session)) return;
+
+        completeFaceSession(session);
+        if (options.mode === 'checkout') {
+            const statusCard = document.getElementById('status-card');
+            if (statusCard) {
+                statusCard.innerHTML = `
+                    <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #3b82f6; color: #ffffff;">✓</div>
+                    <h3 style="margin: 0; font-size: 18px; color: #1e3a8a;">Checked Out</h3>
+                    <p style="font-size: 12px; color: #888; margin-top: 5px;">Shift completed at ${timeStr}.</p>
+                `;
+            }
+            if (window.checkoutInterval) clearInterval(window.checkoutInterval);
+        } else {
+            renderCheckedInCard(timeStr, options.rules && options.rules.require_checkout);
+            const shiftPanel = document.getElementById('shift-details-panel');
+            if (shiftPanel) shiftPanel.style.display = 'none';
+        }
+        setTimeout(() => loadStaffRecords(), 500);
+    } catch (error) {
+        console.error('Attendance sync error:', error);
+        if (!isFaceSessionActive(session)) return;
+        stopActiveFaceSession();
+        renderAttendanceRetry(options.mode, 'Attendance could not be saved. Please retry the secure face scan.');
+    }
+}
+
+async function startAttendanceFaceVerification(options) {
+    const statusCard = document.getElementById('status-card');
+    if (!statusCard || !currentStaff) return;
+    const purpose = options.mode === 'checkout' ? 'CHECK-OUT' : 'CHECK-IN';
     statusCard.innerHTML = `
         <div id="scanner-container" style="position: relative; width: 100%; border-radius: 8px; overflow: hidden; border: 3px solid #1a1a1a; background-color: #000; margin-bottom: 15px;">
             <video id="staff-video" width="100%" height="auto" autoplay muted playsinline></video>
         </div>
-        <p id="scanner-status" style="font-size: 12px; color: #f59e0b; font-weight: bold; margin: 0;">LOADING AI MODELS...</p>
+        <p id="scanner-status" style="font-size: 12px; color: #f59e0b; font-weight: bold; margin: 0;">PREPARING LIVE ${purpose} SCAN…</p>
+        <button class="google-btn" onclick="cancelAttendanceFaceScan()" style="width: 100%; margin-top: 14px; padding: 10px; font-size: 12px;">Cancel Scan</button>
     `;
-
     const video = document.getElementById('staff-video');
     const scannerStatus = document.getElementById('scanner-status');
+    const session = createFaceSession(video, document.getElementById('scanner-container'), scannerStatus, (message) => renderAttendanceRetry(options.mode, message));
 
-    const MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
-    await Promise.all([
-        faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
-        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
-    ]);
+    try {
+        const savedDescriptor = parseFaceDescriptor(currentStaff.face_data);
+        if (!savedDescriptor) throw new Error('No usable biometric template');
+        await ensureFaceModels();
+        if (!isFaceSessionActive(session)) return;
+        setFaceScanStatus(session, 'TURNING ON CAMERA…', '#4ade80');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+        if (!isFaceSessionActive(session)) {
+            stream.getTracks().forEach(track => track.stop());
+            return;
+        }
+        session.stream = stream;
 
-    scannerStatus.innerText = "CAMERA ACTIVE. LOOK AT THE SCREEN.";
-    scannerStatus.style.color = "#4ade80";
-
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
-    video.srcObject = stream;
-
-    const savedNumbers = JSON.parse(currentStaff.face_data);
-    const savedFloatArray = new Float32Array(savedNumbers);
-    const labeledDescriptor = new faceapi.LabeledFaceDescriptors(currentStaff.name, [savedFloatArray]);
-    
-    const faceMatcher = new faceapi.FaceMatcher([labeledDescriptor], 0.6);
-
-    video.onplay = () => {
-        const canvas = faceapi.createCanvasFromMedia(video);
-        canvas.style.position = 'absolute';
-        canvas.style.top = '0';
-        canvas.style.left = '0';
-        document.getElementById('scanner-container').append(canvas);
-
-        const displaySize = { width: video.clientWidth, height: video.clientHeight };
-        faceapi.matchDimensions(canvas, displaySize);
-
-        scannerInterval = setInterval(async () => {
-            const detection = await faceapi.detectSingleFace(video).withFaceLandmarks().withFaceDescriptor();
-            
-            if (detection) {
-                const resizedDetections = faceapi.resizeResults(detection, displaySize);
-                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-                faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
-
-                const match = faceMatcher.findBestMatch(detection.descriptor);
-                
-                if (match.label === currentStaff.name) {
-                    clearInterval(scannerInterval); 
-                    video.srcObject.getTracks().forEach(track => track.stop()); 
-                    
-                    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                    scannerStatus.innerText = "MATCH FOUND! SYNCING ATTENDANCE...";
-                    
-                    supabaseClient.from('checkins').insert([{
-                        user_email: currentStaff.email,
-                        user_name: currentStaff.name,
-                        date: todayDateStr,
-                        time: timeStr,
-                        status: 'Present',
-                        is_late: window.isCheckingInLate === true,
-                        company_id: safeCompanyId 
-                    }]).then(({ error }) => {
-                        if (error) {
-                            openInfoModal("Database Error", error.message + "\n\nPlease ensure your 'checkins' table has exactly these columns: user_email, user_name, date, time, status, company_id.");
-                            return;
-                        }
-
-                        let checkoutHtml = "";
-                        if (rules && rules.require_checkout) {
-                            checkoutHtml = `
-                                <button class="main-btn" onclick="handleCheckout()" style="width: 100%; margin-top: 25px; padding: 16px; font-size: 15px; background-color: #ef4444;">End Shift & Check Out</button>
-                                <p id="checkout-timer-display" style="font-size: 11px; color: #888; margin-top: 15px; font-family: monospace;"></p>
-                            `;
-                            setTimeout(() => { startCheckoutTimer(timeStr); }, 100);
-                        }
-                        
-                        statusCard.innerHTML = `
-                            <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #1a1a1a; color: #ffffff;">✓</div>
-                            <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Checked In</h3>
-                            <p style="font-size: 12px; color: #4ade80; margin-top: 5px; font-weight: 600; margin-bottom: ${rules && rules.require_checkout ? '0' : '15px'};">Successfully clocked in at ${timeStr}</p>
-                            ${checkoutHtml}
-                        `;
-                        statusCard.classList.remove('ghost-theme');
-                        statusCard.style.border = '1px solid #e0e0e0';
-                        statusCard.style.backgroundColor = '#ffffff';
-                        
-                        const shiftPanel = document.getElementById('shift-details-panel');
-                        if(shiftPanel) shiftPanel.style.display = "none";
-                        
-                        setTimeout(() => { loadStaffRecords(); }, 500);
-                    });
-                } else {
-                    scannerStatus.innerText = "FACE NOT MATCHED. ADJUST LIGHTING OR ANGLE...";
-                    scannerStatus.style.color = "#f59e0b";
+        const beginDetection = () => {
+            if (!isFaceSessionActive(session) || session.started) return;
+            session.started = true;
+            createFaceCanvas(session);
+            setFaceScanStatus(session, `LOOK AT THE SCREEN. THREE RANDOM BLINKS ARE REQUIRED FOR ${purpose}.`, '#4ade80');
+            setupBlinkChallenge(session, () => finishAttendanceFaceVerification(session, options));
+            startFaceDetectionLoop(session, async () => {
+                const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+                if (!isFaceSessionActive(session)) return;
+                if (detections.length !== 1) {
+                    clearFaceCanvas(session);
+                    setFaceScanStatus(session, detections.length > 1 ? 'ONLY ONE FACE MAY BE IN FRAME.' : 'FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.');
+                    return;
                 }
-            } else {
-                canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-            }
-        }, 500); 
-    };
+                const detection = detections[0];
+                drawSingleFace(session, detection);
+                const distance = getFaceDistance(detection.descriptor, savedDescriptor);
+                if (distance > FACE_MATCH_MAX_DISTANCE) {
+                    setFaceScanStatus(session, 'FACE NOT VERIFIED. USE THE REGISTERED EMPLOYEE FACE.');
+                    return;
+                }
+                updateBlinkChallenge(session, detection);
+            });
+        };
+
+        video.onplay = beginDetection;
+        video.srcObject = stream;
+        await video.play().catch(() => {});
+        if (video.readyState >= 2) beginDetection();
+    } catch (error) {
+        console.error('Attendance camera error:', error);
+        if (!isFaceSessionActive(session)) return;
+        stopActiveFaceSession();
+        renderAttendanceRetry(options.mode, 'Camera or biometric setup failed. Please allow camera access and retry.');
+    }
+}
+
+async function continueScannerProcess(rules, safeCompanyId, todayDateStr) {
+    const locationVerified = await verifyAttendanceLocation(rules, safeCompanyId, 'checkin');
+    if (!locationVerified) return;
+    startAttendanceFaceVerification({ mode: 'checkin', rules, safeCompanyId, todayDateStr });
 }
 
 function bindTimePickerFix() {
@@ -4025,81 +4415,23 @@ function startCheckoutTimer(checkInTimeStr) {
 
 async function handleCheckout() {
     await ensureSupabase();
+    if (!currentStaff || !supabaseClient) {
+        openInfoModal('Session Expired', 'Please log in again before checking out.');
+        return;
+    }
     const btn = document.querySelector('button[onclick="handleCheckout()"]');
     if(btn) { btn.innerText = "Verifying Location..."; btn.disabled = true; }
 
     const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
     const { data: rules } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
-
-    if (rules && rules.require_gps) {
-        let targetLat, targetLng, targetRadius, isExempt = false;
-        let locations = [];
-        try { if (rules.locations) locations = JSON.parse(rules.locations); } catch(e){}
-
-        if (locations && locations.length > 0) {
-            let userLocation = locations.find(loc => loc.staff && loc.staff.includes(currentStaff.email));
-            if (!userLocation) userLocation = locations.find(loc => loc.id === 'main') || locations[0];
-            if (userLocation.id === 'exempt' || userLocation.isExempt) {
-                isExempt = true;
-            } else {
-                targetLat = userLocation.lat;
-                targetLng = userLocation.lng;
-                targetRadius = userLocation.radius || 150;
-            }
-        } else {
-            targetLat = rules.office_lat;
-            targetLng = rules.office_lng;
-            targetRadius = rules.office_radius || 150;
-        }
-
-        if (!isExempt) {
-            if (!targetLat || !targetLng) {
-                openInfoModal("Manager Error", "Office GPS location not pinned.");
-                if(btn) { btn.innerText = "End Shift & Check Out"; btn.disabled = false; }
-                return;
-            }
-            try {
-                const position = await new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
-                });
-                const dist = calculateDistanceMeters(position.coords.latitude, position.coords.longitude, targetLat, targetLng);
-                if (dist > targetRadius) {
-                    openInfoModal("Geofence Violation", `You are too far to check out (${Math.round(dist)}m away). Must be within ${targetRadius}m.`);
-                    if(btn) { btn.innerText = "End Shift & Check Out"; btn.disabled = false; }
-                    return;
-                }
-            } catch (err) {
-                openInfoModal("GPS Error", "Enable location permissions to check out.");
-                if(btn) { btn.innerText = "End Shift & Check Out"; btn.disabled = false; }
-                return;
-            }
-        }
+    const locationVerified = await verifyAttendanceLocation(rules, safeCompanyId, 'checkout');
+    if (!locationVerified) {
+        if(btn) { btn.innerText = 'End Shift & Check Out'; btn.disabled = false; }
+        return;
     }
 
-    if(btn) btn.innerText = "Processing...";
     const todayDateStr = getUniversalDate();
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    const { error } = await supabaseClient.from('checkins').update({ checkout_time: timeStr })
-        .eq('user_email', currentStaff.email).eq('date', todayDateStr);
-    
-    if (error) {
-        openInfoModal("Error", "Could not check out.");
-        if(btn) { btn.innerText = "End Shift & Check Out"; btn.disabled = false; }
-    } else {
-        const statusCard = document.getElementById('status-card');
-        if (statusCard) {
-            statusCard.innerHTML = `
-                <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #3b82f6; color: #ffffff;">✓</div>
-                <h3 style="margin: 0; font-size: 18px; color: #1e3a8a;">Checked Out</h3>
-                <p style="font-size: 12px; color: #888; margin-top: 5px;">Shift completed at ${timeStr}.</p>
-            `;
-        }
-        if (window.checkoutInterval) clearInterval(window.checkoutInterval);
-        
-        setTimeout(() => { loadStaffRecords(); }, 500);
-    }
+    startAttendanceFaceVerification({ mode: 'checkout', rules, safeCompanyId, todayDateStr });
 }
 
 // --- CORE SHARED ENGINE FOR HISTORICAL DATA ---
