@@ -194,54 +194,51 @@ function updatePassiveLiveness(session, detection) {
     const challenge = session.challenge;
     if (challenge.passed) return;
 
-    const box = detection.detection.box;
     const landmarks = detection.landmarks.positions;
     
-    // 1. Check for head rotation (Yaw/Pitch) to ensure it's a real 3D head moving slightly
-    const nose = landmarks[30];
-    const leftEye = landmarks[36];
-    const rightEye = landmarks[45];
-    
-    // Calculate face width/angle consistency
+    // Track eye and mouth geometry changes over time
+    const leftEye = landmarks.slice(36, 42);
+    const rightEye = landmarks.slice(42, 48);
+    const leftMouth = landmarks[48];
+    const rightMouth = landmarks[54];
+    const topLip = landmarks[51];
+    const bottomLip = landmarks[57];
+
+    const mouthWidth = pointDistance(leftMouth, rightMouth);
+    const mouthHeight = pointDistance(topLip, bottomLip);
+    const eyeDistance = pointDistance(leftEye[0], rightEye[3]);
+
+    // Calculate structural ratios
+    const mouthOpenRatio = mouthHeight / mouthWidth;
+    const smileMetric = mouthWidth / eyeDistance;
+
     challenge.frames.push({
-        x: box.x,
-        y: box.y,
-        noseX: nose.x
+        mouthOpen: mouthOpenRatio,
+        smile: smileMetric
     });
 
-    setFaceScanStatus(session, 'LIVENESS CHECK: Please tilt your head slightly or smile...', '#f59e0b');
+    setFaceScanStatus(session, 'SECURITY CHECK: Please open your mouth slightly or smile!', '#f59e0b');
 
-    // Require at least 20 frames (~1 second) of steady tracking
-    if (challenge.frames.length >= 20) {
-        let maxHorizontalMovement = 0;
-        let minX = Infinity;
-        let maxX = -Infinity;
+    // Collect at least 30 frames to analyze expression changes
+    if (challenge.frames.length >= 30) {
+        let minMouth = Infinity;
+        let maxMouth = -Infinity;
 
-        for (let i = 0; i < challenge.frames.length; i++) {
-            if (challenge.frames[i].x < minX) minX = challenge.frames[i].x;
-            if (challenge.frames[i].x > maxX) maxX = challenge.frames[i].x;
-        }
+        challenge.frames.forEach(f => {
+            if (f.mouthOpen < minMouth) minMouth = f.mouthOpen;
+            if (f.mouthOpen > maxMouth) maxMouth = f.mouthOpen;
+        });
 
-        maxHorizontalMovement = maxX - minX;
+        const mouthDelta = maxMouth - minMouth;
 
-        // A static phone photo held in a hand will either shake wildly or be completely dead-still.
-        // A real human head has natural micro-drifts and depth variation.
-        const expressions = detection.expressions; // If using expression net, or fallback to landmark distance ratios
-        
-        // Check mouth width vs nose distance (Smile detection approximation via 68-point landmarks)
-        const leftMouth = landmarks[48];
-        const rightMouth = landmarks[54];
-        const mouthWidth = pointDistance(leftMouth, rightMouth);
-        const eyeDistance = pointDistance(leftEye, rightEye);
-        const smileRatio = mouthWidth / eyeDistance;
-
-        // If the user smiles or shifts naturally, pass the liveness check
-        if (smileRatio > 0.55 || maxHorizontalMovement > 3.0) {
+        // A static phone photo has a completely fixed mouth structure (delta is near 0).
+        // A live human opening their mouth or smiling creates a measurable geometric shift.
+        if (mouthDelta > 0.04 || smileMetric > 0.65) {
             challenge.passed = true;
             setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
             challenge.onPassed(detection);
-        } else if (challenge.frames.length > 120) {
-            failFaceSession(session, 'SECURITY ALERT: Static photo or screen detected. Please move naturally.');
+        } else if (challenge.frames.length > 150) {
+            failFaceSession(session, 'SECURITY ALERT: Static image detected. Dynamic expression required.');
         }
     }
 }
