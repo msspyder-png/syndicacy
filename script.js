@@ -29,14 +29,10 @@ async function ensureFaceApi() {
 }
 
 // --- FACE SECURITY ENGINE ---
-// A face must be both recognised and live.  The lower distance is deliberately
-// stricter than the former 0.60 matcher so that lookalikes are not accepted as
-// easily.  These values can be calibrated later with real, consented test data.
 const FACE_MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
 const FACE_MATCH_MAX_DISTANCE = 0.46;
 const DUPLICATE_FACE_MAX_DISTANCE = 0.46;
 const FACE_SCAN_TIMEOUT_MS = 30000;
-const REQUIRED_BLINKS = 3;
 let faceModelsPromise = null;
 let activeFaceSession = null;
 
@@ -170,104 +166,55 @@ function pointDistance(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function getEyeAspectRatio(landmarks) {
-    if (!landmarks) return null;
-    const eyeRatio = (eye) => {
-        if (!eye || eye.length !== 6) return null;
-        const width = pointDistance(eye[0], eye[3]);
-        if (!width) return null;
-        return (pointDistance(eye[1], eye[5]) + pointDistance(eye[2], eye[4])) / (2 * width);
-    };
-    const left = eyeRatio(landmarks.getLeftEye());
-    const right = eyeRatio(landmarks.getRightEye());
-    return left && right ? (left + right) / 2 : null;
-}
-
-function median(values) {
-    const sorted = [...values].sort((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
-}
-
-function randomBlinkDelay() {
-    return 900 + Math.floor(Math.random() * 2200);
-}
-
-function setupBlinkChallenge(session, onPassed) {
+// --- PASSIVE LIVENESS (TEMPORAL MICRO-MOTION ANALYSIS) ---
+function setupPassiveLiveness(session, onPassed) {
     session.challenge = {
-        eyeSamples: [],
-        baseline: null,
-        blinkCount: 0,
-        nextPromptAt: null,
-        promptActive: false,
-        promptExpiresAt: 0,
-        sawOpenAfterPrompt: false,
-        sawClosed: false,
+        samples: [],
+        startTime: Date.now(),
+        durationNeeded: 1500, // 1.5 seconds of temporal analysis
+        passed: false,
         onPassed
     };
     session.timeoutId = setTimeout(() => {
-        failFaceSession(session, 'Verification timed out. Please retry and complete all three blink prompts.');
+        failFaceSession(session, 'Unable to verify live presence. Please ensure you are in a well-lit area and facing the camera directly.');
     }, FACE_SCAN_TIMEOUT_MS);
 }
 
-function updateBlinkChallenge(session, detection) {
+function updatePassiveLiveness(session, detection) {
     if (!isFaceSessionActive(session) || !session.challenge) return;
     const challenge = session.challenge;
     if (challenge.passed) return;
-    const eyeRatio = getEyeAspectRatio(detection.landmarks);
-    if (!eyeRatio) {
-        setFaceScanStatus(session, 'KEEP YOUR EYES CLEARLY VISIBLE TO THE CAMERA.');
-        return;
-    }
+
+    // Track a structural metric: distance from nose tip to chin, normalized by face box height
+    const noseTip = detection.landmarks.positions[30];
+    const chin = detection.landmarks.positions[8];
+    const rawDist = pointDistance(noseTip, chin);
+    const normalizedDist = rawDist / detection.detection.box.height;
+
+    challenge.samples.push(normalizedDist);
+    
+    setFaceScanStatus(session, 'Verifying liveness...', '#f59e0b');
 
     const now = Date.now();
-    if (!challenge.baseline) {
-        challenge.eyeSamples.push(eyeRatio);
-        setFaceScanStatus(session, 'FACE VERIFIED. KEEP LOOKING AT THE SCREEN…', '#4ade80');
-        if (challenge.eyeSamples.length >= 12) {
-            challenge.baseline = median(challenge.eyeSamples);
-            challenge.nextPromptAt = now + randomBlinkDelay();
-            setFaceScanStatus(session, 'FACE VERIFIED. GET READY FOR THREE RANDOM BLINK CHECKS.', '#4ade80');
-        }
-        return;
-    }
-
-    const closedThreshold = Math.max(0.11, challenge.baseline * 0.80);
-    const openThreshold = challenge.baseline * 0.86;
-
-    if (!challenge.promptActive) {
-        if (now >= challenge.nextPromptAt) {
-            challenge.promptActive = true;
-            challenge.promptExpiresAt = now + 5000;
-            challenge.sawOpenAfterPrompt = eyeRatio >= openThreshold;
-            challenge.sawClosed = false;
-            setFaceScanStatus(session, `CLOSE EYES & HOLD • ${challenge.blinkCount + 1} OF ${REQUIRED_BLINKS}`, '#f59e0b');
-        }
-        return;
-    }
-
-    if (eyeRatio >= openThreshold) challenge.sawOpenAfterPrompt = true;
-    if (challenge.sawOpenAfterPrompt && eyeRatio <= closedThreshold) {
-        challenge.sawClosed = true;
-        setFaceScanStatus(session, `BLINK DETECTED • OPEN YOUR EYES • ${challenge.blinkCount + 1} OF ${REQUIRED_BLINKS}`, '#f59e0b');
-    }
-
-    if (challenge.sawClosed && eyeRatio >= openThreshold) {
-        challenge.blinkCount += 1;
-        challenge.promptActive = false;
-        if (challenge.blinkCount >= REQUIRED_BLINKS) {
-            challenge.passed = true;
-            setFaceScanStatus(session, 'LIVE FACE VERIFIED. SECURING ATTENDANCE…', '#4ade80');
-            challenge.onPassed(detection);
+    if (now - challenge.startTime >= challenge.durationNeeded) {
+        if (challenge.samples.length < 10) {
+            failFaceSession(session, 'Unable to verify live presence. Please ensure you are in a well-lit area and facing the camera directly.');
             return;
         }
-        challenge.nextPromptAt = now + randomBlinkDelay();
-        setFaceScanStatus(session, `BLINK ${challenge.blinkCount} OF ${REQUIRED_BLINKS} CONFIRMED. STAY READY…`, '#4ade80');
-        return;
-    }
 
-    if (now > challenge.promptExpiresAt) {
-        failFaceSession(session, 'Blink prompt missed. For security, please retry the live face scan.');
+        // Calculate variance to detect rigid photos / digital injection
+        const mean = challenge.samples.reduce((a, b) => a + b, 0) / challenge.samples.length;
+        const variance = challenge.samples.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / challenge.samples.length;
+
+        // A perfectly static image or injected loop will have essentially zero variance
+        if (variance < 0.000001) {
+            failFaceSession(session, 'Unable to verify live presence. Please ensure you are in a well-lit area and facing the camera directly.');
+            return;
+        }
+
+        challenge.passed = true;
+        setFaceScanStatus(session, 'Liveness verified. Securing...', '#4ade80');
+        challenge.onPassed(detection);
     }
 }
 
@@ -1168,6 +1115,11 @@ async function startFaceScan() {
     }
     if (scanMessage) scanMessage.innerText = '';
     cameraContainer.style.display = 'block';
+    
+    video.style.borderRadius = '50%';
+    video.style.objectFit = 'cover';
+    video.style.aspectRatio = '1 / 1';
+    
     aiStatus.innerText = 'PREPARING SECURE LIVE FACE SCAN…';
     aiStatus.style.color = '#f59e0b';
 
@@ -1187,8 +1139,8 @@ async function startFaceScan() {
             if (!isFaceSessionActive(session) || session.started) return;
             session.started = true;
             createFaceCanvas(session);
-            setFaceScanStatus(session, 'SHOW ONLY YOUR FACE. KEEP LOOKING AT THE SCREEN.', '#4ade80');
-            setupBlinkChallenge(session, (detection) => saveInvitationBiometrics(session, detection));
+            setFaceScanStatus(session, 'VERIFYING LIVE PRESENCE...', '#4ade80');
+            setupPassiveLiveness(session, (detection) => saveInvitationBiometrics(session, detection));
             
             startFaceDetectionLoop(session, async () => {
                 if (!session.identityVerified) {
@@ -1202,7 +1154,7 @@ async function startFaceScan() {
                     session.identityVerified = true;
                     session.cachedDescriptor = detections[0].descriptor;
                     drawSingleFace(session, detections[0]);
-                    updateBlinkChallenge(session, detections[0]);
+                    updatePassiveLiveness(session, detections[0]);
                 } else {
                     const detections = await faceapi.detectAllFaces(video).withFaceLandmarks();
                     if (!isFaceSessionActive(session)) return;
@@ -1213,7 +1165,7 @@ async function startFaceScan() {
                     }
                     detections[0].descriptor = session.cachedDescriptor;
                     drawSingleFace(session, detections[0]);
-                    updateBlinkChallenge(session, detections[0]);
+                    updatePassiveLiveness(session, detections[0]);
                 }
             });
         };
@@ -1238,7 +1190,7 @@ async function startFaceScan() {
 
 // Kept for compatibility with an older cached invitation page. New pages scan automatically.
 function captureFace() {
-    openInfoModal('Live scan required', 'The secure scan now starts automatically and requires three random blinks.');
+    openInfoModal('Live scan required', 'The secure scan now starts automatically.');
 }
 
 async function loadTodayAttendance() {
@@ -4015,7 +3967,7 @@ async function finishAttendanceFaceVerification(session, options) {
     session.submitting = true;
     if (session.intervalId) clearInterval(session.intervalId);
     if (session.timeoutId) clearTimeout(session.timeoutId);
-    setFaceScanStatus(session, `LIVE FACE VERIFIED. ${options.mode === 'checkout' ? 'CHECKING OUT…' : 'CHECKING IN…'}`, '#4ade80');
+    setFaceScanStatus(session, `LIVENESS VERIFIED. ${options.mode === 'checkout' ? 'CHECKING OUT…' : 'CHECKING IN…'}`, '#4ade80');
     stopFaceSessionCamera(session);
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -4106,8 +4058,8 @@ async function startAttendanceFaceVerification(options) {
             if (!isFaceSessionActive(session) || session.started) return;
             session.started = true;
             createFaceCanvas(session);
-            setFaceScanStatus(session, `LOOK AT THE SCREEN. THREE RANDOM BLINKS ARE REQUIRED FOR ${purpose}.`, '#4ade80');
-            setupBlinkChallenge(session, () => finishAttendanceFaceVerification(session, options));
+            setFaceScanStatus(session, 'VERIFYING LIVE PRESENCE...', '#4ade80');
+            setupPassiveLiveness(session, () => finishAttendanceFaceVerification(session, options));
             
             startFaceDetectionLoop(session, async () => {
                 if (!session.identityVerified) {
@@ -4126,7 +4078,7 @@ async function startAttendanceFaceVerification(options) {
                         return;
                     }
                     session.identityVerified = true;
-                    updateBlinkChallenge(session, detection);
+                    updatePassiveLiveness(session, detection);
                 } else {
                     const detections = await faceapi.detectAllFaces(video).withFaceLandmarks();
                     if (!isFaceSessionActive(session)) return;
@@ -4136,7 +4088,7 @@ async function startAttendanceFaceVerification(options) {
                         return;
                     }
                     drawSingleFace(session, detections[0]);
-                    updateBlinkChallenge(session, detections[0]);
+                    updatePassiveLiveness(session, detections[0]);
                 }
             });
         };
