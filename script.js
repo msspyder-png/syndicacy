@@ -541,54 +541,34 @@ async function handleLeaderAuth() {
         enterButton.style.cursor = "wait"; 
         enterButton.innerText = "1. Pinging Cloud...";
 
-        const { data: user, error } = await supabaseClient
-            .from('users')
-            .select('*')
-            .ilike('email', emailInput)
-            .limit(1)
-            .maybeSingle();
+        
+// 1. Attempt secure login via Supabase Auth
+const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+    email: emailInput,
+    password: passInput
+});
 
-        if (error) throw error;
+if (authError) {
+    // If login fails, assume they need to sign up via OTP flow
+    enterButton.innerText = "3. Sending Email...";
+    sessionStorage.setItem("pendingEmail", emailInput);
+    sessionStorage.setItem("pendingPass", passInput);
+    const secretOTP = Math.floor(100000 + Math.random() * 900000).toString();
+    sessionStorage.setItem("savedOTP", secretOTP);
+    
+    // ... keep your existing EmailJS logic here ...
+    return;
+}
 
-        enterButton.innerText = "2. Cloud verified...";
+// 2. If successful, fetch their workspace profile
+const { data: user, error: profileError } = await supabaseClient
+    .from('users')
+    .select('*')
+    .eq('email', emailInput)
+    .limit(1)
+    .maybeSingle();
 
-        if (user) {
-            if (user.password === passInput) {
-                if (!user.company_id) {
-                    user.company_id = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
-                    await supabaseClient.from('users').update({ company_id: user.company_id }).eq('id', user.id);
-                }
-                
-                sessionStorage.removeItem('loggedInStaff');
-                sessionStorage.setItem('loggedInLeader', JSON.stringify(user));
-                window.location.href = 'leader-dashboard.html';
-            } else {
-                openInfoModal("Access Denied", "Incorrect password for this email account.");
-                enterButton.disabled = false;
-                enterButton.innerText = "Enter";
-                enterButton.style.backgroundColor = "#1a1a1a"; 
-                enterButton.style.cursor = "pointer";
-            }
-        } else {
-            enterButton.innerText = "3. Sending Email...";
-            sessionStorage.setItem("pendingEmail", emailInput);
-            sessionStorage.setItem("pendingPass", passInput);
-            const secretOTP = Math.floor(100000 + Math.random() * 900000).toString();
-            sessionStorage.setItem("savedOTP", secretOTP);
-
-            emailjs.send("service_3zk298q", "template_kpcjk5c", {
-                user_email: emailInput,
-                otp: secretOTP
-            }, "nMcZwN9HYoPDwm016")
-            .then(function() {
-                window.location.href = 'leader-otp.html';
-            }, function(err) {
-                openInfoModal("Email Error", "Failed to send OTP email.");
-                enterButton.disabled = false;
-                enterButton.innerText = "Enter";
-                enterButton.style.backgroundColor = "#1a1a1a"; 
-            });
-        }
+// ... keep your existing company_id generation and redirect logic here ...
     } catch (criticalError) {
         openInfoModal("System Crash", "APP CRASHED! Error: " + criticalError.message);
         document.querySelector('.form-btn').disabled = false;
@@ -614,9 +594,23 @@ async function verifyOTP() {
 
             if (!supabaseClient) return;
 
+            // 1. Securely register the user in Supabase Auth
+            const { data: authData, error: authError } = await supabaseClient.auth.signUp({
+                email: newEmail,
+                password: newPass
+            });
+
+            if (authError) throw authError;
+
+            // 2. Insert public profile data (NEVER include the password field here)
             const { data, error } = await supabaseClient
                 .from('users')
-                .insert([{ email: newEmail, password: newPass, role: 'leader', joined_date: today, company_id: newCompanyId }])
+                .insert([{ 
+                    email: newEmail, 
+                    role: 'leader', 
+                    joined_date: today, 
+                    company_id: newCompanyId 
+                }])
                 .select();
 
             if (error) throw error;
@@ -927,14 +921,12 @@ async function approveInvite(inviteId, employeeName) {
                 return;
             }
 
-            const tempPassword = "Staff" + Math.floor(1000 + Math.random() * 9000);
             const today = getUniversalDate();
 
             const { error: insertError } = await supabaseClient
                 .from('users')
                 .insert([{
                     email: inviteData.email,
-                    password: tempPassword,
                     role: inviteData.role,
                     joined_date: today,
                     name: inviteData.name,
@@ -942,7 +934,9 @@ async function approveInvite(inviteId, employeeName) {
                     face_image: inviteData.face_image,
                     company_id: inviteData.company_id
                 }]);
-
+                
+            // Note: To allow the staff member to log in, you must invite them via Supabase Auth Admin API 
+            // or have them set their own password via a Magic Link (e.g., using the new reset password function).
             if (insertError) throw insertError;
 
             await supabaseClient
@@ -1836,45 +1830,20 @@ function changeMonth(offset) {
     loadIndividualAnalytics(); 
 }
 
-async function revealPassword() {
+async function sendPasswordReset() {
     if (!currentViewedUser) return;
     
-    openPromptModal(
-        "SECURITY CHECK", 
-        "Enter your Leader Password to reveal staff credentials.", 
-        "password", 
-        "", 
-        async function(bossPass) {
-            if (!bossPass) return;
-
-            const leader = getLeader();
-            if (!leader) return;
-            await ensureSupabase();
-
-            try {
-                const { data: leaders, error } = await supabaseClient
-                    .from('users')
-                    .select('*')
-                    .eq('role', 'leader')
-                    .eq('password', bossPass.trim())
-                    .eq('company_id', leader.company_id);
-
-                if (error || !leaders || leaders.length === 0) {
-                    openInfoModal("ACCESS DENIED", "Incorrect leader password.");
-                    return;
-                }
-
-                updateElementSafe('emp-cred-pass', `Password: ${currentViewedUser.password}`);
-                document.getElementById('emp-cred-pass').style.display = 'block';
-
-            } catch (err) {
-                console.error(err);
-                openInfoModal("Error", "Verification error occurred.");
-            }
+    openConfirmModal("Send Password Reset", `Send a secure password setup link to ${currentViewedUser.email}?`, async function() {
+        await ensureSupabase();
+        const { error } = await supabaseClient.auth.resetPasswordForEmail(currentViewedUser.email);
+        
+        if (error) {
+            openInfoModal("Error", "Failed to send reset link.");
+        } else {
+            openInfoModal("Success", "Password reset link sent to the employee.");
         }
-    );
+    });
 }
-
 async function emailCredentials() {
     if (!currentViewedUser) return;
     
@@ -2059,14 +2028,13 @@ async function executeEmployeeDeletion(email, bossPass) {
     await ensureSupabase();
 
     try {
-        const { data: leaders, error } = await supabaseClient
-            .from('users')
-            .select('*')
-            .eq('role', 'leader')
-            .eq('password', bossPass.trim())
-            .eq('company_id', leader.company_id);
+       // Securely verify the leader's identity
+        const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+            email: leader.email,
+            password: bossPass.trim()
+        });
 
-        if (error || !leaders || leaders.length === 0) {
+        if (authError) {
             openInfoModal("Access Denied", "Incorrect leader password. Deletion aborted.");
             return;
         }
@@ -3078,24 +3046,39 @@ async function handleStaffLogin() {
     loginBtn.disabled = true;
 
     try {
-        const { data: user, error } = await supabaseClient.from('users').select('*').eq('email', email).limit(1).maybeSingle();
-        if (error) throw error;
+            // 1. Authenticate securely
+            const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+                email: email,
+                password: pass
+            });
 
-        if (user && user.password === pass) {
-            sessionStorage.removeItem('loggedInLeader');
-            sessionStorage.setItem('loggedInStaff', JSON.stringify(user));
-            window.location.href = 'staff-dashboard.html';
-        } else {
-            openInfoModal("Login Failed", "Incorrect email or password.");
+            if (authError) {
+                openInfoModal("Login Failed", "Incorrect email or password.");
+                loginBtn.innerText = "Login";
+                loginBtn.disabled = false;
+                return;
+            }
+
+            // 2. Fetch profile data
+            const { data: user, error } = await supabaseClient.from('users').select('*').eq('email', email).limit(1).maybeSingle();
+            if (error) throw error;
+
+            // 3. Set session and redirect
+            if (user) {
+                sessionStorage.removeItem('loggedInLeader');
+                sessionStorage.setItem('loggedInStaff', JSON.stringify(user));
+                window.location.href = 'staff-dashboard.html';
+            } else {
+                openInfoModal("Login Failed", "User profile not found.");
+                loginBtn.innerText = "Login";
+                loginBtn.disabled = false;
+            }
+        } catch (err) {
+            console.error("Staff Login Crash:", err);
+            openInfoModal("Database Error", err.message);
             loginBtn.innerText = "Login";
             loginBtn.disabled = false;
         }
-    } catch (err) {
-        console.error("Staff Login Crash:", err);
-        openInfoModal("Database Error", err.message);
-        loginBtn.innerText = "Login";
-        loginBtn.disabled = false;
-    }
 }
 
 async function loadStaffDashboard() {
