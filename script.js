@@ -556,7 +556,19 @@ if (authError) {
     const secretOTP = Math.floor(100000 + Math.random() * 900000).toString();
     sessionStorage.setItem("savedOTP", secretOTP);
     
-    // ... keep your existing EmailJS logic here ...
+    emailjs.send("service_3zk298q", "template_kpcjk5c", {
+        user_email: emailInput,
+        otp: secretOTP
+    }, "nMcZwN9HYoPDwm016")
+    .then(function() {
+        window.location.href = 'leader-otp.html';
+    }, function(err) {
+        openInfoModal("Email Error", "Failed to send OTP email.");
+        enterButton.disabled = false;
+        enterButton.innerText = "Enter";
+        enterButton.style.backgroundColor = "#1a1a1a"; 
+    });
+    
     return;
 }
 
