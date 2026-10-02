@@ -297,9 +297,10 @@ try {
 }
 
 // --- GLOBAL WORKSPACE HELPER ---
+let secureVerifiedLeader = null;
 function getLeader() {
-    const data = sessionStorage.getItem('loggedInLeader');
-    return data ? JSON.parse(data) : null;
+    // Returns securely verified data from the server token, ignoring fake sessionStorage
+    return secureVerifiedLeader; 
 }
 
 // --- STRICT LOCAL TIMEZONE PARSER ---
@@ -519,6 +520,7 @@ function toggleCustomTimeUI() {
 }
 
 // --- SMART AUTHENTICATION (DETECTIVE MODE) ---
+// --- SMART AUTHENTICATION (DETECTIVE MODE) ---
 async function handleLeaderAuth() {
     await ensureSupabase();
     try {
@@ -539,48 +541,57 @@ async function handleLeaderAuth() {
         enterButton.disabled = true;
         enterButton.style.backgroundColor = "#888888"; 
         enterButton.style.cursor = "wait"; 
-        enterButton.innerText = "1. Pinging Cloud...";
+        enterButton.innerText = "1. Authenticating...";
 
-        
-// 1. Attempt secure login via Supabase Auth
-const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
-    email: emailInput,
-    password: passInput
-});
+        // 1. Securely verify login with Supabase Auth
+        const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+            email: emailInput,
+            password: passInput
+        });
 
-if (authError) {
-    // If login fails, assume they need to sign up via OTP flow
-    enterButton.innerText = "3. Sending Email...";
-    sessionStorage.setItem("pendingEmail", emailInput);
-    sessionStorage.setItem("pendingPass", passInput);
-    const secretOTP = Math.floor(100000 + Math.random() * 900000).toString();
-    sessionStorage.setItem("savedOTP", secretOTP);
-    
-    emailjs.send("service_3zk298q", "template_kpcjk5c", {
-        user_email: emailInput,
-        otp: secretOTP
-    }, "nMcZwN9HYoPDwm016")
-    .then(function() {
-        window.location.href = 'leader-otp.html';
-    }, function(err) {
-        openInfoModal("Email Error", "Failed to send OTP email.");
-        enterButton.disabled = false;
-        enterButton.innerText = "Enter";
-        enterButton.style.backgroundColor = "#1a1a1a"; 
-    });
-    
-    return;
-}
+        if (authError) {
+            enterButton.innerText = "3. Sending Server OTP...";
+            sessionStorage.setItem("pendingEmail", emailInput);
+            sessionStorage.setItem("pendingPass", passInput);
 
-// 2. If successful, fetch their workspace profile
-const { data: user, error: profileError } = await supabaseClient
-    .from('users')
-    .select('*')
-    .eq('email', emailInput)
-    .limit(1)
-    .maybeSingle();
+            // Supabase securely generates and emails the OTP on the server
+            const { error: otpError } = await supabaseClient.auth.signInWithOtp({
+                email: emailInput
+            });
 
-// ... keep your existing company_id generation and redirect logic here ...
+            if (otpError) {
+                openInfoModal("Email Error", "Failed to send OTP: " + otpError.message);
+                enterButton.disabled = false;
+                enterButton.innerText = "Enter";
+                enterButton.style.backgroundColor = "#1a1a1a"; 
+                return;
+            }
+
+            window.location.href = 'leader-otp.html';
+            return;
+        }
+        // 2. Fetch the user's workspace profile securely
+        const { data: user, error: profileError } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('email', emailInput)
+            .limit(1)
+            .maybeSingle();
+
+        if (user) {
+            if (!user.company_id) {
+                user.company_id = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
+                await supabaseClient.from('users').update({ company_id: user.company_id }).eq('id', user.id);
+            }
+            // Supabase Auth automatically stored the secure session token! We just redirect.
+            window.location.href = 'leader-dashboard.html';
+        } else {
+            openInfoModal("Access Denied", "No leader profile found.");
+            enterButton.disabled = false;
+            enterButton.innerText = "Enter";
+            enterButton.style.backgroundColor = "#1a1a1a"; 
+        }
+
     } catch (criticalError) {
         openInfoModal("System Crash", "APP CRASHED! Error: " + criticalError.message);
         document.querySelector('.form-btn').disabled = false;
@@ -588,57 +599,60 @@ const { data: user, error: profileError } = await supabaseClient
         document.querySelector('.form-btn').style.backgroundColor = "#1a1a1a"; 
     }
 }
-
 async function verifyOTP() {
     await ensureSupabase();
     try {
         const inputs = document.querySelectorAll('.otp-field');
         let typedOTP = "";
         inputs.forEach(input => { typedOTP += input.value.trim(); });
-        const savedOTP = sessionStorage.getItem("savedOTP");
+        
+        const email = sessionStorage.getItem("pendingEmail");
+        const password = sessionStorage.getItem("pendingPass");
 
-        if (typedOTP !== "" && typedOTP === savedOTP) {
-            const newEmail = sessionStorage.getItem("pendingEmail");
-            const newPass = sessionStorage.getItem("pendingPass");
-            const today = getUniversalDate();
-            
-            const newCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
-
-            if (!supabaseClient) return;
-
-            // 1. Securely register the user in Supabase Auth
-            const { data: authData, error: authError } = await supabaseClient.auth.signUp({
-                email: newEmail,
-                password: newPass
-            });
-
-            if (authError) throw authError;
-
-            // 2. Insert public profile data (NEVER include the password field here)
-            const { data, error } = await supabaseClient
-                .from('users')
-                .insert([{ 
-                    email: newEmail, 
-                    role: 'leader', 
-                    joined_date: today, 
-                    company_id: newCompanyId 
-                }])
-                .select();
-
-            if (error) throw error;
-
-            sessionStorage.removeItem("pendingEmail");
-            sessionStorage.removeItem("pendingPass");
-            sessionStorage.removeItem("savedOTP");
-            
-            sessionStorage.removeItem('loggedInStaff');
-            sessionStorage.setItem('loggedInLeader', JSON.stringify(data[0]));
-            window.location.href = 'leader-dashboard.html'; 
-        } else {
-            openInfoModal("Verification Failed", "Incorrect OTP. Please try again.");
+        if (!typedOTP || typedOTP.length < 6 || !email) {
+            openInfoModal("Verification Failed", "Please enter the complete 6-digit code.");
+            return;
         }
+
+        if (!supabaseClient) return;
+
+        // 1. Verify the OTP code securely on the Supabase server
+        const { data: authData, error: verifyError } = await supabaseClient.auth.verifyOtp({
+            email: email,
+            token: typedOTP,
+            type: 'email'
+        });
+
+        if (verifyError) throw verifyError;
+
+        // 2. Set the password they chose during signup
+        if (password) {
+            await supabaseClient.auth.updateUser({ password: password });
+        }
+
+        const today = getUniversalDate();
+        const newCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
+
+        // 3. Insert public profile data
+        const { data, error } = await supabaseClient
+            .from('users')
+            .insert([{ 
+                email: email, 
+                role: 'leader', 
+                joined_date: today, 
+                company_id: newCompanyId 
+            }])
+            .select();
+
+        if (error) throw error;
+
+        sessionStorage.removeItem("pendingEmail");
+        sessionStorage.removeItem("pendingPass");
+        
+        window.location.href = 'leader-dashboard.html'; 
+
     } catch (criticalError) {
-        openInfoModal("System Crash", "APP CRASHED during OTP! Error: " + criticalError.message);
+        openInfoModal("Verification Failed", "Incorrect or expired OTP. Please try again.");
     }
 }
 
@@ -3077,8 +3091,7 @@ async function handleStaffLogin() {
 
             // 3. Set session and redirect
             if (user) {
-                sessionStorage.removeItem('loggedInLeader');
-                sessionStorage.setItem('loggedInStaff', JSON.stringify(user));
+                // Supabase Auth automatically stored the secure session token! We just redirect.
                 window.location.href = 'staff-dashboard.html';
             } else {
                 openInfoModal("Login Failed", "User profile not found.");
@@ -3115,7 +3128,6 @@ async function loadStaffDashboard() {
             }
         } catch(e) {}
     }
-
     if (!currentStaff.company_id) {
         currentStaff.company_id = "UNASSIGNED_ID";
     }
@@ -3130,12 +3142,12 @@ async function loadStaffDashboard() {
         };
     }
 
-    const logOutBtn = document.getElementById("secure-logout-btn");
+   const logOutBtn = document.getElementById("secure-logout-btn");
     if (logOutBtn) {
-        logOutBtn.onclick = function(e) {
+        logOutBtn.onclick = async function(e) {
             e.preventDefault();
             stopActiveFaceSession();
-            sessionStorage.removeItem('loggedInStaff');
+            await supabaseClient.auth.signOut(); // Securely end the JWT session
             window.location.href = 'index.html';
         };
     }
@@ -4001,33 +4013,42 @@ async function finishAttendanceFaceVerification(session, options) {
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     try {
-        if (!isFaceSessionActive(session)) return;
-        let error = null;
-        let savedRecord = null;
-        if (options.mode === 'checkout') {
-            ({ data: savedRecord, error } = await supabaseClient
-                .from('checkins')
-                .update({ checkout_time: timeStr })
-                .eq('user_email', currentStaff.email)
-                .eq('company_id', options.safeCompanyId)
-                .eq('date', options.todayDateStr)
-                .select('id'));
-        } else {
-            ({ data: savedRecord, error } = await supabaseClient
-                .from('checkins')
-                .insert([{
-                    user_email: currentStaff.email,
-                    user_name: currentStaff.name,
-                    date: options.todayDateStr,
-                    time: timeStr,
-                    status: 'Present',
-                    is_late: window.isCheckingInLate === true,
-                    company_id: options.safeCompanyId
-                }])
-                .select('id'));
-        }
-        if (error) throw error;
-        if (!savedRecord || savedRecord.length !== 1) throw new Error('Attendance record was not saved.');
+            if (!isFaceSessionActive(session)) return;
+            let error = null;
+            let savedRecord = null;
+            
+            // Capture the live GPS coordinates (if GPS is required by rules)
+            let liveCoords = null;
+            if (options.rules && options.rules.require_gps) {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
+                });
+                liveCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
+            }
+
+            // Send the raw evidence to the secure Edge Function
+            const payload = {
+                mode: options.mode,
+                company_id: options.safeCompanyId,
+                date: options.todayDateStr,
+                time: timeStr,
+                is_late: window.isCheckingInLate === true,
+                face_descriptor: Array.from(session.cachedDescriptor), // 128-point face array
+                gps_coords: liveCoords // { lat, lng }
+            };
+
+            const { data: response, error: functionError } = await supabaseClient.functions.invoke('verify-attendance', {
+                body: payload
+            });
+
+            // The edge function will throw an error if the math fails (e.g., face doesn't match, GPS is too far)
+            if (functionError || response?.error) {
+                 throw new Error(functionError?.message || response?.error || "Server verification failed.");
+            }
+
+            // Mock the expected array response format for the rest of your client logic
+            savedRecord = response ? [{ id: response.id }] : null;
+            if (!savedRecord || savedRecord.length !== 1) throw new Error('Attendance record was not saved.');
         if (!isFaceSessionActive(session)) return;
 
         completeFaceSession(session);
@@ -4157,6 +4178,29 @@ function bindTimePickerFix() {
 
 window.addEventListener('DOMContentLoaded', async () => {
     await ensureSupabase();
+
+    // SECURITY FIX: Validate the cryptographically signed JWT token with the server
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    
+    // 1. Identify the current page and define which pages are allowed without logging in
+    const currentPage = window.location.pathname.split('/').pop() || 'index.html';
+    const publicPages = ['index.html', 'leader.html', 'staff.html', 'join.html', 'leader-otp.html', ''];
+
+    // 2. ROUTE GUARD: If there is no secure session and they are on a private page, kick them out
+    if (!session && !publicPages.includes(currentPage)) {
+        window.location.replace('index.html'); // .replace prevents using the "Back" button to return
+        return; // Instantly stop executing the rest of the page's code
+    }
+
+    // 3. If they are logged in, securely load their profile data into memory
+    if (session) {
+        const { data: userProfile } = await supabaseClient.from('users').select('*').eq('email', session.user.email).limit(1).maybeSingle();
+        if (userProfile && userProfile.role === 'leader') {
+            secureVerifiedLeader = userProfile;
+        } else if (userProfile && userProfile.role !== 'leader') {
+            currentStaff = userProfile; // Securely load staff
+        }
+    }
     
     initializeSettingsCalendar();
     loadPendingInvites(); 
