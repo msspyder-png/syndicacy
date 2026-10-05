@@ -601,6 +601,15 @@ async function handleLeaderAuth() {
 }
 async function verifyOTP() {
     await ensureSupabase();
+    
+    // 1. Grab the button and lock it immediately to prevent double-clicks
+    const verifyBtn = document.querySelector('.form-btn');
+    if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.innerText = "Verifying...";
+        verifyBtn.style.backgroundColor = "#888888";
+    }
+
     try {
         const inputs = document.querySelectorAll('.otp-field');
         let typedOTP = "";
@@ -610,13 +619,15 @@ async function verifyOTP() {
         const password = sessionStorage.getItem("pendingPass");
 
         if (!typedOTP || typedOTP.length < 6 || !email) {
+            // Unlock button if data is missing
+            if (verifyBtn) { verifyBtn.disabled = false; verifyBtn.innerText = "Verify"; verifyBtn.style.backgroundColor = "#1a1a1a"; }
             openInfoModal("Verification Failed", "Please enter the complete 6-digit code.");
             return;
         }
 
         if (!supabaseClient) return;
 
-        // 1. Verify the OTP code securely on the Supabase server
+        // 2. Verify the OTP code securely on the Supabase server
         const { data: authData, error: verifyError } = await supabaseClient.auth.verifyOtp({
             email: email,
             token: typedOTP,
@@ -625,7 +636,7 @@ async function verifyOTP() {
 
         if (verifyError) throw verifyError;
 
-        // 2. Set the password they chose during signup
+        // 3. Set the password they chose during signup
         if (password) {
             await supabaseClient.auth.updateUser({ password: password });
         }
@@ -633,7 +644,7 @@ async function verifyOTP() {
         const today = getUniversalDate();
         const newCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
 
-        // 3. Insert public profile data
+        // 4. Insert public profile data
         const { data, error } = await supabaseClient
             .from('users')
             .insert([{ 
@@ -652,7 +663,14 @@ async function verifyOTP() {
         window.location.href = 'leader-dashboard.html'; 
 
     } catch (criticalError) {
-        openInfoModal("Verification Failed", "Incorrect or expired OTP. Please try again.");
+        // 5. Unlock the button if a real error occurs
+        if (verifyBtn) {
+            verifyBtn.disabled = false;
+            verifyBtn.innerText = "Verify";
+            verifyBtn.style.backgroundColor = "#1a1a1a";
+        }
+        // Display the actual server error message instead of a generic one
+        openInfoModal("Verification Failed", criticalError.message || "Incorrect or expired OTP.");
     }
 }
 
@@ -949,6 +967,7 @@ async function approveInvite(inviteId, employeeName) {
 
             const today = getUniversalDate();
 
+            // USP: Insert only the 128-point face_data math. Omit face_image entirely.
             const { error: insertError } = await supabaseClient
                 .from('users')
                 .insert([{
@@ -957,7 +976,6 @@ async function approveInvite(inviteId, employeeName) {
                     joined_date: today,
                     name: inviteData.name,
                     face_data: inviteData.face_data,
-                    face_image: inviteData.face_image,
                     company_id: inviteData.company_id
                 }]);
                 
@@ -965,9 +983,10 @@ async function approveInvite(inviteId, employeeName) {
             // or have them set their own password via a Magic Link (e.g., using the new reset password function).
             if (insertError) throw insertError;
 
+            // USP: Permanently overwrite the temporary registration photo with null
             await supabaseClient
                 .from('staff_invites')
-                .update({ status: 'approved' })
+                .update({ status: 'approved', face_image: null })
                 .eq('id', inviteId);
 
             showApprovalSuccessModal(employeeName);
@@ -1859,23 +1878,9 @@ function changeMonth(offset) {
 async function sendPasswordReset() {
     if (!currentViewedUser) return;
     
-    openConfirmModal("Send Password Reset", `Send a secure password setup link to ${currentViewedUser.email}?`, async function() {
-        await ensureSupabase();
-        const { error } = await supabaseClient.auth.resetPasswordForEmail(currentViewedUser.email);
-        
-        if (error) {
-            openInfoModal("Error", "Failed to send reset link.");
-        } else {
-            openInfoModal("Success", "Password reset link sent to the employee.");
-        }
-    });
-}
-async function emailCredentials() {
-    if (!currentViewedUser) return;
-    
     openPromptModal(
         "SECURITY CHECK", 
-        "Enter your Leader Password to send staff credentials.", 
+        `Enter your Leader Password to send a secure setup link to ${currentViewedUser.name}.`, 
         "password", 
         "", 
         async function(bossPass) {
@@ -1885,32 +1890,29 @@ async function emailCredentials() {
             if (!leader) return;
             await ensureSupabase();
 
-            try {
-                const { data: leaders, error } = await supabaseClient
-                    .from('users')
-                    .select('*')
-                    .eq('role', 'leader')
-                    .eq('password', bossPass.trim())
-                    .eq('company_id', leader.company_id);
+            // 1. SECURE SERVER-SIDE CHECK: Ask the Supabase Auth server to verify the hash
+            const { error: authError } = await supabaseClient.auth.signInWithPassword({
+                email: leader.email,
+                password: bossPass.trim()
+            });
 
-                if (error || !leaders || leaders.length === 0) {
-                    openInfoModal("ACCESS DENIED", "Incorrect leader password. Email not sent.");
-                    return;
-                }
+            // 2. REJECT IF INCORRECT
+            if (authError) {
+                openInfoModal("ACCESS DENIED", "Incorrect leader password. Link not sent.");
+                return;
+            }
 
-                const subject = encodeURIComponent(`Your SYNDICACY Access Credentials`);
-                const body = encodeURIComponent(`Hi ${currentViewedUser.name},\n\nHere,s your secure access credentials for the SYNDICACY portal:\n\nEmail: ${currentViewedUser.email}\nPassword: ${currentViewedUser.password}\n\nIMPORTANT SECURITY NOTE: Please delete this email immediately after logging in for the first time to maintain account security.\n\nBest,\nManagement`);
-                
-                window.location.href = `mailto:${currentViewedUser.email}?subject=${subject}&body=${body}`;
-
-            } catch (err) {
-                console.error(err);
-                openInfoModal("Error", "Error sending credentials.");
+            // 3. EXECUTE IF CORRECT
+            const { error: resetError } = await supabaseClient.auth.resetPasswordForEmail(currentViewedUser.email);
+            
+            if (resetError) {
+                openInfoModal("Error", "Failed to send the setup link.");
+            } else {
+                openInfoModal("Success", `Secure setup link has been sent to ${currentViewedUser.email}.`);
             }
         }
     );
 }
-
 async function renameEmployee() {
     if (!currentViewedUser) return;
     
