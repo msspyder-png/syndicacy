@@ -63,6 +63,20 @@
                 <input type="time" id="check-in-end" class="input-field" value="10:00" style="width: 50%;" onchange="saveSettings()">
             </div>
 
+            <!-- PASTE THE NEW TIMEZONE DROPDOWN HERE -->
+            <label class="form-label">Workspace Timezone</label>
+            <select id="workspace-timezone" class="input-field" style="margin-bottom: 15px;" onchange="saveSettings()">
+                <option value="America/New_York">Eastern Time (US)</option>
+                <option value="America/Chicago">Central Time (US)</option>
+                <option value="America/Denver">Mountain Time (US)</option>
+                <option value="America/Los_Angeles">Pacific Time (US)</option>
+                <option value="Europe/London">London (GMT)</option>
+                <option value="Asia/Calcutta">India (IST)</option>
+                <option value="Asia/Dubai">Dubai (GST)</option>
+                <option value="Asia/Singapore">Singapore (SGT)</option>
+                <option value="Australia/Sydney">Sydney (AEST)</option>
+                <option value="UTC">Universal Coordinated Time (UTC)</option>
+            </select>
             <!-- TWO-COLUMN LAYOUT: EXCEPTIONS & CUSTOM TIMES -->
             <div style="display: flex; gap: 20px; border-top: 1px solid #eaeaea; padding-top: 15px; flex-wrap: wrap;">
                 

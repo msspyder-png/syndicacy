@@ -29,7 +29,7 @@ async function ensureFaceApi() {
 }
 
 // --- FACE SECURITY ENGINE ---
-const FACE_MODEL_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+const FACE_MODEL_URL = '/models';
 const FACE_MATCH_MAX_DISTANCE = 0.46;
 const DUPLICATE_FACE_MAX_DISTANCE = 0.36;
 const FACE_SCAN_TIMEOUT_MS = 30000;
@@ -967,7 +967,16 @@ async function approveInvite(inviteId, employeeName) {
 
             const today = getUniversalDate();
 
-            // USP: Insert only the 128-point face_data math. Omit face_image entirely.
+            // 1. SECURE AUTH CREATION: Tell the Edge Function to create their official login identity
+            const { data: authData, error: authCreationError } = await supabaseClient.functions.invoke('create-employee', {
+                body: { email: inviteData.email, name: inviteData.name }
+            });
+
+            if (authCreationError || (authData && authData.error)) {
+                 throw new Error(authCreationError?.message || authData?.error || "Failed to create authentication profile.");
+            }
+
+            // 2. USP: Insert only the 128-point face_data math. Omit face_image entirely.
             const { error: insertError } = await supabaseClient
                 .from('users')
                 .insert([{
@@ -979,8 +988,6 @@ async function approveInvite(inviteId, employeeName) {
                     company_id: inviteData.company_id
                 }]);
                 
-            // Note: To allow the staff member to log in, you must invite them via Supabase Auth Admin API 
-            // or have them set their own password via a Magic Link (e.g., using the new reset password function).
             if (insertError) throw insertError;
 
             // USP: Permanently overwrite the temporary registration photo with null
@@ -2419,6 +2426,11 @@ async function loadSettings() {
             document.getElementById('require-pin').checked = data.require_pin;
             const locBtn = document.getElementById('manage-locations-btn');
             if (locBtn) locBtn.style.display = data.require_gps ? 'block' : 'none';
+
+            if (document.getElementById('workspace-timezone')) {
+                const autoDetect = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                document.getElementById('workspace-timezone').value = data.timezone || autoDetect;
+            }
             
             const chk = document.getElementById('require-checkout');
             if(chk) chk.checked = data.require_checkout;
@@ -4239,7 +4251,8 @@ window.addEventListener('DOMContentLoaded', async () => {
     loadTodayAttendance(); 
     loadTeamLedger(); 
     loadIndividualAnalytics(); 
-    
+    if (typeof generateHistoricalTable === 'function') generateHistoricalTable();
+    if (typeof generateGlobalHistoricalTable === 'function') generateGlobalHistoricalTable();
     injectMapDependencies();
     injectMapModalHTML();
     bindGPSControls();
