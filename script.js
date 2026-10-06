@@ -1938,7 +1938,6 @@ async function renameEmployee() {
         }
     );
 }
-
 async function loadTeamDirectory() {
     const directoryList = document.getElementById('directory-list');
     const leader = getLeader();
@@ -1953,20 +1952,73 @@ async function loadTeamDirectory() {
             return;
         }
 
+        // Clear existing intervals to prevent memory leaks when reloading the directory
+        if (window.directoryIntervals) {
+            window.directoryIntervals.forEach(clearInterval);
+        }
+        window.directoryIntervals = [];
+
         data.forEach(user => {
             const initial = user.name ? user.name.charAt(0).toUpperCase() : '?';
             const safeName = user.name ? user.name.replace(/'/g, "\\'") : 'Staff';
             
+            let actionHtml = '';
+
+            if (user.pending_deletion_at) {
+                const uniqueId = 'countdown-' + Math.random().toString(36).substr(2, 9);
+                actionHtml = `
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="text-align: right;">
+                            <span style="font-size: 9px; font-weight: bold; color: #ef4444; display: block; letter-spacing: 0.5px;">DELETING IN</span>
+                            <span id="${uniqueId}" style="font-size: 12px; font-family: monospace; font-weight: 600; color: #ef4444;">--:--:--</span>
+                        </div>
+                        <button class="google-btn" style="padding: 4px 8px; font-size: 10px; margin: 0; border: 1px solid #1a1a1a; color: #1a1a1a;" onclick="event.stopPropagation(); cancelEmployeeDeletion('${user.email}', '${safeName}')">Undo</button>
+                    </div>
+                `;
+
+                // Set up the live 24-hour countdown
+                const delTime = new Date(user.pending_deletion_at).getTime();
+                const expiryTime = delTime + (24 * 60 * 60 * 1000);
+
+                const interval = setInterval(() => {
+                    const now = new Date().getTime();
+                    const diff = expiryTime - now;
+                    const el = document.getElementById(uniqueId);
+                    
+                    if (!el) {
+                        clearInterval(interval);
+                        return;
+                    }
+
+                    if (diff <= 0) {
+                        el.innerText = "00:00:00";
+                        clearInterval(interval);
+                    } else {
+                        const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                        const s = Math.floor((diff % (1000 * 60)) / 1000);
+                        el.innerText = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                    }
+                }, 1000);
+                window.directoryIntervals.push(interval);
+            } else {
+                actionHtml = `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 28px; height: 28px; flex-shrink: 0; margin-left: 10px;" onclick="event.stopPropagation(); initiateEmployeeDeletion('${user.email}', '${safeName}')">×</button>`;
+            }
+            
+            // Turn the card red if they are scheduled for deletion
+            const cardBg = user.pending_deletion_at ? 'background-color: #fef2f2; border-color: #fca5a5;' : 'background-color: #ffffff; border-color: #eaeaea;';
+            const nameColor = user.pending_deletion_at ? 'color: #ef4444;' : 'color: #1a1a1a;';
+
             directoryList.insertAdjacentHTML('beforeend', `
-                <div class="directory-card clickable-card" style="display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box; cursor: pointer;" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'">
+                <div class="directory-card clickable-card" style="display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box; cursor: pointer; ${cardBg}" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'">
                     <div style="display: flex; align-items: center; gap: 12px; overflow: hidden;">
                         <div class="avatar" style="background: #1a1a1a; color: white; flex-shrink: 0; margin: 0;">${initial}</div>
                         <div class="staff-info" style="overflow: hidden;">
-                            <span class="staff-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${user.name}</span>
+                            <span class="staff-name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; ${nameColor}">${user.name}</span>
                             <span class="staff-role">${user.role}</span>
                         </div>
                     </div>
-                    <button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 28px; height: 28px; flex-shrink: 0; margin-left: 10px;" onclick="event.stopPropagation(); initiateEmployeeDeletion('${user.email}', '${safeName}')">×</button>
+                    ${actionHtml}
                 </div>
             `);
         });
@@ -1979,13 +2031,13 @@ function initiateEmployeeDeletion(email, name) {
         <div id="delete-flow-modal" class="modal-bg" style="z-index: 10008; display: flex;">
             <div class="modal-box animated-modal" style="width: 90%; max-width: 320px; text-align: center;">
                 <span class="close" onclick="this.parentElement.parentElement.remove()">×</span>
-                <h3 class="section-title" style="margin-bottom: 15px; color: #ef4444;">Remove Employee</h3>
+                <h3 class="section-title" style="margin-bottom: 15px; color: #ef4444;">Schedule Removal</h3>
                 <p style="font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 20px;">
-                    You are about to remove <strong>${name}</strong> from the workspace. Would you like to export their attendance history to a CSV file first?
+                    <strong>${name}</strong> will be scheduled for permanent deletion in exactly 24 hours. They will function normally until then. Would you like to export their attendance history to a CSV file first?
                 </p>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <button class="google-btn" style="width: 100%; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;" onclick="handleCsvChoice('${email}', '${safeName}', true, this)">Yes, Export & Continue</button>
-                    <button class="google-btn" style="width: 100%; margin: 0; padding: 12px; font-size: 13px; color: #ef4444; border-color: #fca5a5; background: #fef2f2;" onclick="handleCsvChoice('${email}', '${safeName}', false, this)">No, Skip & Continue</button>
+                    <button class="google-btn" style="width: 100%; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;" onclick="handleCsvChoice('${email}', '${safeName}', true, this)">Yes, Export & Schedule</button>
+                    <button class="google-btn" style="width: 100%; margin: 0; padding: 12px; font-size: 13px; color: #ef4444; border-color: #fca5a5; background: #fef2f2;" onclick="handleCsvChoice('${email}', '${safeName}', false, this)">No, Skip & Schedule</button>
                 </div>
             </div>
         </div>
@@ -2003,7 +2055,7 @@ async function handleCsvChoice(email, name, exportCsv, btn) {
 
     openPromptModal(
         "Final Confirmation", 
-        `Enter your Leader Password to permanently remove ${name}.`, 
+        `Enter your Leader Password to schedule the removal of ${name} in 24 hours.`, 
         "password", 
         "", 
         async function(bossPass) {
@@ -2056,8 +2108,7 @@ async function executeEmployeeDeletion(email, bossPass) {
     await ensureSupabase();
 
     try {
-       // Securely verify the leader's identity
-        const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+        const { error: authError } = await supabaseClient.auth.signInWithPassword({
             email: leader.email,
             password: bossPass.trim()
         });
@@ -2069,68 +2120,45 @@ async function executeEmployeeDeletion(email, bossPass) {
 
         const { error: delError } = await supabaseClient
             .from('users')
-            .delete()
+            .update({ pending_deletion_at: new Date().toISOString() })
             .eq('email', email)
             .eq('company_id', leader.company_id);
 
         if (delError) throw delError;
 
-        // CASCADING DELETION LOGIC (Cleans up specific employee arrays inside global settings object)
-        try {
-            const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
-            if (settings) {
-                let updated = false;
-                let payload = {};
-
-                if (settings.custom_schedules) {
-                    try {
-                        let parsed = JSON.parse(settings.custom_schedules);
-                        let isArray = Array.isArray(parsed);
-                        let arr = isArray ? parsed : (parsed.data || []);
-                        const filtered = arr.filter(c => c.email !== email);
-                        if (filtered.length !== arr.length) {
-                            if (isArray) payload.custom_schedules = JSON.stringify(filtered);
-                            else payload.custom_schedules = JSON.stringify({ active: parsed.active, data: filtered });
-                            updated = true;
-                        }
-                    } catch(e) {}
-                }
-
-                if (settings.locations) {
-                    try {
-                        let locs = JSON.parse(settings.locations);
-                        let locUpdated = false;
-                        locs = locs.map(loc => {
-                            if (loc.staff && loc.staff.includes(email)) {
-                                loc.staff = loc.staff.filter(e => e !== email);
-                                locUpdated = true;
-                            }
-                            return loc;
-                        });
-                        if (locUpdated) {
-                            payload.locations = JSON.stringify(locs);
-                            updated = true;
-                        }
-                    } catch(e) {}
-                }
-
-                if (updated) {
-                    await supabaseClient.from('settings').update(payload).eq('id', settings.id);
-                }
-            }
-        } catch (cleanErr) {
-            console.warn("Minor error cleaning up cascaded settings:", cleanErr);
-        }
-
-        openInfoModal("Success", "The employee has been successfully removed from the workspace.");
+        openInfoModal("Scheduled", "The employee has been scheduled for permanent deletion in 24 hours.");
         
         const dir = document.getElementById('directory-list');
         if (dir) loadTeamDirectory();
         
     } catch (err) {
         console.error(err);
-        openInfoModal("Error", "Failed to remove the employee. " + err.message);
+        openInfoModal("Error", "Failed to schedule deletion. " + err.message);
     }
+}
+
+async function cancelEmployeeDeletion(email, name) {
+    const leader = getLeader();
+    if (!leader) return;
+    await ensureSupabase();
+
+    openConfirmModal("Cancel Deletion", `Are you sure you want to cancel the deletion of ${name} and keep them on the team?`, async function() {
+        try {
+            const { error } = await supabaseClient
+                .from('users')
+                .update({ pending_deletion_at: null })
+                .eq('email', email)
+                .eq('company_id', leader.company_id);
+
+            if (error) throw error;
+            
+            openInfoModal("Success", `${name} has been fully restored.`);
+            loadTeamDirectory();
+        } catch (err) {
+            console.error(err);
+            openInfoModal("Error", "Failed to cancel deletion.");
+        }
+    });
 }
 
 let localHolidays = [];
