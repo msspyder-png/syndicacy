@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Setup - SYNDICACY</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+</head>
+<body style="display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #f4f4f4; margin: 0; font-family: -apple-system, sans-serif;">
+
+    <div class="form-card" style="width: 100%; max-width: 400px; text-align: center; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.05);">
+        <h2 style="font-size: 22px; margin-bottom: 10px; color: #1a1a1a;">Biometric Security</h2>
+        <p style="font-size: 13px; color: #888; margin-bottom: 25px;">Set your password and verify your face to secure your account.</p>
+
+        <div id="setup-form">
+            <input type="password" id="new-password" class="input-field" placeholder="Create a secure password" style="width: 100%; margin-bottom: 20px; box-sizing: border-box;">
+            
+            <div id="camera-container" style="display: none; position: relative; width: 240px; height: 240px; margin: 0 auto 20px auto; border-radius: 50%; overflow: hidden; border: 4px solid #1a1a1a; background-color: #000;">
+                <video id="video" autoplay muted playsinline style="object-fit: cover; width: 100%; height: 100%;"></video>
+            </div>
+            <p id="ai-status" style="font-size: 11px; font-weight: bold; margin-bottom: 15px; color: #888;"></p>
+
+            <button id="start-btn" class="main-btn" onclick="startSetupScan()" style="width: 100%; padding: 15px; font-size: 14px; background-color: #1a1a1a; color: white;">Save Password & Scan Face</button>
+        </div>
+        
+        <div id="success-state" style="display: none;">
+            <div style="color: #4ade80; font-size: 40px; margin-bottom: 15px;">✓</div>
+            <h3 style="margin: 0; font-size: 18px; color: #1a1a1a;">Access Granted</h3>
+            <p style="font-size: 13px; color: #555; margin-top: 10px;">Your password is saved and biometrics are verified.</p>
+            <button class="main-btn" onclick="window.location.href='staff.html'" style="width: 100%; margin-top: 20px; padding: 15px; background-color: #1a1a1a; color: white;">Go to Login</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+        async function startSetupScan() {
+            if (!window.isSecureContext) { alert("Camera requires a secure HTTPS connection."); return; }
+            
+            const newPassword = document.getElementById('new-password').value;
+            if (newPassword.length < 6) { alert("Password must be at least 6 characters."); return; }
+            
+            const token = new URLSearchParams(window.location.search).get('token');
+            if (!token) { alert("Invalid link."); return; }
+
+            document.getElementById('start-btn').style.display = 'none';
+            document.getElementById('camera-container').style.display = 'block';
+            
+            const video = document.getElementById('video');
+            const aiStatus = document.getElementById('ai-status');
+            
+            await ensureFaceModels();
+            aiStatus.innerText = "TURNING ON CAMERA...";
+            aiStatus.style.color = "#4ade80";
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                video.srcObject = stream;
+                
+                video.onplay = async () => {
+                    aiStatus.innerText = "VERIFYING IDENTITY...";
+                    const interval = setInterval(async () => {
+                        const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+                        if (detections.length === 1) {
+                            clearInterval(interval);
+                            aiStatus.innerText = "FACE DETECTED. SECURING ACCOUNT...";
+                            stream.getTracks().forEach(track => track.stop());
+                            
+                            // Send data to the Edge Function
+                            const res = await fetch('https://qimabxbtbvgayayzvnoj.supabase.co/functions/v1/biometric-setup', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    token: token,
+                                    live_face_descriptor: Array.from(detections[0].descriptor)
+                                })
+                            });
+                            
+                            const data = await res.json();
+                            if (data.error) {
+                                alert(data.error);
+                                window.location.reload();
+                                return;
+                            }
+
+                            // The Magic: Parse the silent Supabase link, log in instantly, and save the password
+                            const authUrl = new URL(data.action_link.replace('#', '?'));
+                            const accessToken = authUrl.searchParams.get('access_token');
+                            const refreshToken = authUrl.searchParams.get('refresh_token');
+                            
+                            await supabaseClient.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+                            await supabaseClient.auth.updateUser({ password: newPassword });
+                            await supabaseClient.auth.signOut(); // Log out so they must log in manually the first time
+                            
+                            document.getElementById('setup-form').style.display = 'none';
+                            document.getElementById('success-state').style.display = 'block';
+                        }
+                    }, 500);
+                };
+            } catch (err) {
+                alert("Camera access denied or failed.");
+                window.location.reload();
+            }
+        }
+    </script>
+</body>
+</html>

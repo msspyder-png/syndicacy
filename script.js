@@ -1639,7 +1639,11 @@ async function loadIndividualAnalytics() {
         updateElementSafe('emp-cred-email', user?.email || "No Email");
         
         const firstName = user?.name ? user.name.split(' ')[0] : 'Staff';
-        updateElementSafe('email-staff-btn', `Email ${firstName}`);
+        const credBtn = document.getElementById('email-staff-btn');
+if (credBtn) {
+    credBtn.innerText = user.setup_completed ? "Send Password Reset Link" : "Send Credentials Link";
+    credBtn.onclick = generateBiometricSetupLink;
+}
         
         let safeLogs = Array.isArray(logs) ? logs : [];
         let validCheckinDates = new Set();
@@ -1882,41 +1886,66 @@ function changeMonth(offset) {
     loadIndividualAnalytics(); 
 }
 
-async function sendPasswordReset() {
+a// --- BIOMETRIC CREDENTIALS ENGINE ---
+async function generateBiometricSetupLink() {
     if (!currentViewedUser) return;
     
+    const isSetup = currentViewedUser.setup_completed === true;
+    const actionText = isSetup ? "Biometric Reset Link" : "Credentials Link";
+
     openPromptModal(
         "SECURITY CHECK", 
-        `Enter your Leader Password to send a secure setup link to ${currentViewedUser.name}.`, 
+        `Enter your Leader Password to generate a secure ${actionText} for ${currentViewedUser.name}.`, 
         "password", 
         "", 
         async function(bossPass) {
             if (!bossPass) return;
-            
             const leader = getLeader();
             if (!leader) return;
             await ensureSupabase();
 
-            // 1. SECURE SERVER-SIDE CHECK: Ask the Supabase Auth server to verify the hash
+            // 1. Verify Boss Password
             const { error: authError } = await supabaseClient.auth.signInWithPassword({
                 email: leader.email,
                 password: bossPass.trim()
             });
 
-            // 2. REJECT IF INCORRECT
             if (authError) {
-                openInfoModal("ACCESS DENIED", "Incorrect leader password. Link not sent.");
+                openInfoModal("ACCESS DENIED", "Incorrect leader password. Action aborted.");
                 return;
             }
 
-            // 3. EXECUTE IF CORRECT
-            const { error: resetError } = await supabaseClient.auth.resetPasswordForEmail(currentViewedUser.email);
+            // 2. Generate cryptographically secure token
+            const token = (Math.random().toString(36).substr(2) + Math.random().toString(36).substr(2)).toUpperCase();
             
-            if (resetError) {
-                openInfoModal("Error", "Failed to send the setup link.");
-            } else {
-                openInfoModal("Success", `Secure setup link has been sent to ${currentViewedUser.email}.`);
+            // 3. Set expiration (7 days for setup, 1 day for reset)
+            const daysValid = isSetup ? 1 : 7;
+            const expiresAt = new Date();
+            expiresAt.setDate(expiresAt.getDate() + daysValid);
+
+            // 4. Save to secure database
+            const { error: insertError } = await supabaseClient.from('secure_links').insert([{
+                company_id: leader.company_id,
+                email: currentViewedUser.email,
+                token: token,
+                type: isSetup ? 'reset' : 'setup',
+                expires_at: expiresAt.toISOString()
+            }]);
+
+            if (insertError) {
+                openInfoModal("System Error", "Failed to generate link in database.");
+                return;
             }
+
+            // 5. Draft the Email
+            const baseUrl = window.location.origin;
+            const setupUrl = `${baseUrl}/setup.html?token=${token}`;
+            
+            const subject = isSetup ? 'Reset your SYNDICACY Password' : 'Set up your SYNDICACY Credentials';
+            const body = `Hi ${currentViewedUser.name},\n\nPlease click the secure link below to ${isSetup ? 'reset your password' : 'set up your login credentials'}. You will be required to scan your face to prove your identity.\n\n${setupUrl}\n\nThis link expires in ${daysValid} day(s) and can only be used once.\n\nThank you!`;
+            
+            window.location.href = `mailto:${currentViewedUser.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            openInfoModal("Link Drafted", `Success! An email draft containing the secure ${daysValid}-day link has been opened for ${currentViewedUser.name}.`);
         }
     );
 }
