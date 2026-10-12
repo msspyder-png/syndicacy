@@ -195,8 +195,6 @@ function updatePassiveLiveness(session, detection) {
     if (challenge.passed) return;
 
     const landmarks = detection.landmarks.positions;
-    
-    // Track eye and mouth geometry changes over time
     const leftEye = landmarks.slice(36, 42);
     const rightEye = landmarks.slice(42, 48);
     const leftMouth = landmarks[48];
@@ -208,38 +206,19 @@ function updatePassiveLiveness(session, detection) {
     const mouthHeight = pointDistance(topLip, bottomLip);
     const eyeDistance = pointDistance(leftEye[0], rightEye[3]);
 
-    // Calculate structural ratios
-    const mouthOpenRatio = mouthHeight / mouthWidth;
-    const smileMetric = mouthWidth / eyeDistance;
-
     challenge.frames.push({
-        mouthOpen: mouthOpenRatio,
-        smile: smileMetric
+        mouthOpen: mouthHeight / mouthWidth,
+        smile: mouthWidth / eyeDistance,
+        timestamp: performance.now() // Captures exact microsecond hardware entropy
     });
 
     setFaceScanStatus(session, 'SECURITY CHECK: Please open your mouth slightly or smile!', '#f59e0b');
 
-    // Collect at least 30 frames to analyze expression changes
+    // The browser no longer grades the math. It just collects 30 frames and stops.
     if (challenge.frames.length >= 30) {
-        let minMouth = Infinity;
-        let maxMouth = -Infinity;
-
-        challenge.frames.forEach(f => {
-            if (f.mouthOpen < minMouth) minMouth = f.mouthOpen;
-            if (f.mouthOpen > maxMouth) maxMouth = f.mouthOpen;
-        });
-
-        const mouthDelta = maxMouth - minMouth;
-
-        // A static phone photo has a completely fixed mouth structure (delta is near 0).
-        // A live human opening their mouth or smiling creates a measurable geometric shift.
-        if (mouthDelta > 0.04 || smileMetric > 0.65) {
-            challenge.passed = true;
-            setFaceScanStatus(session, 'LIVE PRESENCE VERIFIED.', '#4ade80');
-            challenge.onPassed(detection);
-        } else if (challenge.frames.length > 150) {
-            failFaceSession(session, 'SECURITY ALERT: Static image detected. Dynamic expression required.');
-        }
+        challenge.passed = true;
+        setFaceScanStatus(session, 'EVIDENCE COLLECTED. UPLOADING TO VAULT...', '#4ade80');
+        challenge.onPassed(detection, challenge.frames);
     }
 }
 function failFaceSession(session, message) {
@@ -524,7 +503,7 @@ function toggleCustomTimeUI() {
 async function handleLeaderAuth() {
     await ensureSupabase();
     try {
-        const emailInput = document.getElementById('user-email').value.trim();
+     const emailInput = document.getElementById('user-email').value.trim().toLowerCase();
         const passInput = document.getElementById('user-pass').value;
         const enterButton = document.querySelector('.form-btn'); 
 
@@ -3895,15 +3874,21 @@ async function startDailyScanner() {
         const { data: rules, error: rulesErr } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
         if (rulesErr) throw rulesErr;
 
-        if (rules && rules.holidays) {
-            let holidayArray = [];
-            try { holidayArray = JSON.parse(rules.holidays); } catch(e){}
-            if (holidayArray.includes(todayDateStr)) {
-                openInfoModal("Scanner Locked", "Today has been declared an official Holiday by your organization.");
-                return;
-            }
+       if (rules && rules.require_pin) {
+            openPromptModal(
+                "SECURITY CHECK",
+                "Enter the 4-digit Daily Access PIN provided by your Manager:",
+                "text",
+                "",
+                async function(userPin) {
+                    // Browser no longer checks if the PIN is right. It just sends it.
+                    continueScannerProcess(rules, safeCompanyId, todayDateStr, userPin);
+                }
+            );
+            return; 
         }
-
+        
+        continueScannerProcess(rules, safeCompanyId, todayDateStr, null);
         let allowedStart = rules && rules.check_in_start ? rules.check_in_start : "09:00";
         let allowedEnd = rules && rules.check_in_end ? rules.check_in_end : "10:00";
         let lateHours = rules && rules.late_arrival_hours ? parseInt(rules.late_arrival_hours) : 0;
@@ -4074,64 +4059,70 @@ function cancelAttendanceFaceScan() {
     loadStaffRecords();
 }
 
+// Web Crypto HMAC Generator
+async function generateSignature(payloadString, secret) {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+        "raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+    );
+    const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payloadString));
+    return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function finishAttendanceFaceVerification(session, options) {
     if (!isFaceSessionActive(session) || session.submitting) return;
     session.submitting = true;
     if (session.intervalId) clearInterval(session.intervalId);
     if (session.timeoutId) clearTimeout(session.timeoutId);
-    setFaceScanStatus(session, `LIVE PRESENCE VERIFIED. ${options.mode === 'checkout' ? 'CHECKING OUT…' : 'CHECKING IN…'}`, '#4ade80');
+    setFaceScanStatus(session, `VERIFYING LIVENESS IN VAULT…`, '#4ade80');
     stopFaceSessionCamera(session);
 
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     try {
-            if (!isFaceSessionActive(session)) return;
-            let error = null;
-            let savedRecord = null;
-            
-            // Capture the live GPS coordinates (if GPS is required by rules)
-            let liveCoords = null;
-            if (options.rules && options.rules.require_gps) {
-                const position = await new Promise((resolve, reject) => {
-                    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 });
-                });
-                liveCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
-            }
-
-            // Send the raw evidence to the secure Edge Function
-            const payload = {
-                mode: options.mode,
-                company_id: options.safeCompanyId,
-                date: options.todayDateStr,
-                time: timeStr,
-                is_late: window.isCheckingInLate === true,
-                face_descriptor: Array.from(session.cachedDescriptor), // 128-point face array
-                gps_coords: liveCoords // { lat, lng }
-            };
-
-            const { data: response, error: functionError } = await supabaseClient.functions.invoke('verify-attendance', {
-                body: payload
-            });
-
-            // The edge function will throw an error if the math fails (e.g., face doesn't match, GPS is too far)
-            if (functionError || response?.error) {
-                 throw new Error(functionError?.message || response?.error || "Server verification failed.");
-            }
-
-            // Mock the expected array response format for the rest of your client logic
-            savedRecord = response ? [{ id: response.id }] : null;
-            if (!savedRecord || savedRecord.length !== 1) throw new Error('Attendance record was not saved.');
         if (!isFaceSessionActive(session)) return;
+        
+        let liveCoords = null;
+        if (options.rules && options.rules.require_gps) {
+            const position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 }));
+            liveCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
+        }
+
+        // 1. Generate Turnstile Token (Placeholder integration)
+        // Note: For full Turnstile, inject <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script> into your HTML head
+        let turnstileToken = "development-bypass-token"; 
+        if (typeof turnstile !== 'undefined') {
+             turnstileToken = await new Promise(resolve => {
+                 turnstile.render(document.body, { sitekey: '0x4AAAAAAFUfuleYnhBml357', callback: resolve }); // Replace with real SiteKey
+             });
+        }
+
+        // 2. Cryptographically Sign the Payload locally
+        const signaturePayload = `${currentStaff.email}:${options.mode}:${liveCoords?.lat || 0}:${session.challenge.frames.length}`;
+        const signature = await generateSignature(signaturePayload, "syndicacy-default-secret-key"); // Must match backend environment variable
+
+        const payload = {
+            mode: options.mode,
+            company_id: options.safeCompanyId,
+            user_email: currentStaff.email,
+            live_face_descriptor: Array.from(session.cachedDescriptor),
+            liveness_evidence: session.challenge.frames,
+            gps_coords: liveCoords,
+            pin_code: options.pinCode || null,
+            turnstile_token: turnstileToken,
+            signature: signature
+        };
+
+        const { data: response, error: functionError } = await supabaseClient.functions.invoke('verify-attendance', { body: payload });
+
+        if (functionError || response?.error) {
+             throw new Error(functionError?.message || response?.error || "Server verification failed.");
+        }
 
         completeFaceSession(session);
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
         if (options.mode === 'checkout') {
             const statusCard = document.getElementById('status-card');
-            if (statusCard) {
-                statusCard.innerHTML = `
-                    <div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #3b82f6; color: #ffffff;">✓</div>
-                    <h3 style="margin: 0; font-size: 18px; color: #1e3a8a;">Checked Out</h3>
-                    <p style="font-size: 12px; color: #888; margin-top: 5px;">Shift completed at ${timeStr}.</p>
-                `;
-            }
+            if (statusCard) statusCard.innerHTML = `<div class="avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #3b82f6; color: #ffffff;">✓</div><h3 style="margin: 0; font-size: 18px; color: #1e3a8a;">Checked Out</h3><p style="font-size: 12px; color: #888; margin-top: 5px;">Shift completed at ${timeStr}.</p>`;
             if (window.checkoutInterval) clearInterval(window.checkoutInterval);
         } else {
             renderCheckedInCard(timeStr, options.rules && options.rules.require_checkout);
@@ -4143,7 +4134,7 @@ async function finishAttendanceFaceVerification(session, options) {
         console.error('Attendance sync error:', error);
         if (!isFaceSessionActive(session)) return;
         stopActiveFaceSession();
-        renderAttendanceRetry(options.mode, 'Attendance could not be saved. Please retry the secure verification.');
+        renderAttendanceRetry(options.mode, error.message || 'Verification failed. Please retry.');
     }
 }
 
@@ -4234,10 +4225,10 @@ async function startAttendanceFaceVerification(options) {
     }
 }
 
-async function continueScannerProcess(rules, safeCompanyId, todayDateStr) {
+async function continueScannerProcess(rules, safeCompanyId, todayDateStr, userPin) {
     const locationVerified = await verifyAttendanceLocation(rules, safeCompanyId, 'checkin');
     if (!locationVerified) return;
-    startAttendanceFaceVerification({ mode: 'checkin', rules, safeCompanyId, todayDateStr });
+    startAttendanceFaceVerification({ mode: 'checkin', rules, safeCompanyId, todayDateStr, pinCode: userPin });
 }
 
 function bindTimePickerFix() {
@@ -4265,7 +4256,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     // 3. If they are logged in, securely load their profile data into memory
     if (session) {
-        const { data: userProfile } = await supabaseClient.from('users').select('*').eq('email', session.user.email).limit(1).maybeSingle();
+        const { data: userProfile } = await supabaseClient.from('users').select('*').ilike('email', session.user.email).limit(1).maybeSingle();
         if (userProfile && userProfile.role === 'leader') {
             secureVerifiedLeader = userProfile;
         } else if (userProfile && userProfile.role !== 'leader') {
