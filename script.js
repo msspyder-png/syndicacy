@@ -549,23 +549,41 @@ async function handleLeaderAuth() {
             window.location.href = 'leader-otp.html';
             return;
         }
-        // 2. Fetch the user's workspace profile securely
-        const { data: user, error: profileError } = await supabaseClient
+        // 2. Fetch or auto-provision the user's workspace profile securely
+        let { data: user, error: profileError } = await supabaseClient
             .from('users')
             .select('*')
             .eq('email', emailInput)
             .limit(1)
             .maybeSingle();
 
+        // SELF-HEALING FIX: If auth succeeded but the profile row is missing, create it instantly
+        if (!user) {
+            const today = getUniversalDate();
+            const newCompanyId = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
+            
+            const { data: newProfile, error: insertError } = await supabaseClient
+                .from('users')
+                .insert([{ 
+                    email: emailInput, 
+                    role: 'leader', 
+                    joined_date: today, 
+                    company_id: newCompanyId 
+                }])
+                .select()
+                .single();
+                
+            if (!insertError) user = newProfile;
+        }
+
         if (user) {
             if (!user.company_id) {
                 user.company_id = "COMP_" + Math.random().toString(36).substr(2, 9).toUpperCase();
                 await supabaseClient.from('users').update({ company_id: user.company_id }).eq('id', user.id);
             }
-            // Supabase Auth automatically stored the secure session token! We just redirect.
             window.location.href = 'leader-dashboard.html';
         } else {
-            openInfoModal("Access Denied", "No leader profile found.");
+            openInfoModal("Access Denied", "Could not provision leader profile.");
             enterButton.disabled = false;
             enterButton.innerText = "Enter";
             enterButton.style.backgroundColor = "#1a1a1a"; 
