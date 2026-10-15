@@ -1499,10 +1499,11 @@ async function loadTeamLedger() {
 
 if (staffError) throw staffError;
         // Fetch all settings so the unified analytics engine operates perfectly
-        const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
+               const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
+        const { data: attendance, error: attError } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
+        if (attError) throw attError;
         
-        tableBody.innerHTML = ""; 
-
+        tableBody.innerHTML = "";
         if (!staff || staff.length === 0) {
             tableBody.innerHTML = `<tr><td colspan="5" style="padding: 20px; text-align: center; color: #888;">No active staff found.</td></tr>`;
             return;
@@ -1982,8 +1983,13 @@ async function loadTeamDirectory() {
     await ensureSupabase();
 
     try {
-        const { data } = await supabaseClient.from('users').select('id, name, email, role, joined_date, company_id, pending_deletion_at, setup_completed').neq('role', 'leader').eq('company_id', leader.company_id);
-        directoryList.innerHTML = ""; 
+        const { data, error } = await supabaseClient.from('users').select('id, name, email, role, joined_date, company_id, pending_deletion_at, setup_completed').neq('role', 'leader').eq('company_id', leader.company_id);
+        if (error) {
+            console.error('Directory load failed:', error);
+            directoryList.innerHTML = `<p style="font-size: 12px; color: #ef4444; padding: 20px; text-align: center;">Could not load team: ${error.message}</p>`;
+            return;
+        }
+        directoryList.innerHTML = "";
         if (!data || data.length === 0) {
             directoryList.innerHTML = `<p style="font-size: 12px; color: #888; padding: 20px; text-align: center;">No staff members yet.</p>`;
             return;
