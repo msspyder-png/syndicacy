@@ -1491,9 +1491,13 @@ async function loadTeamLedger() {
     await ensureSupabase();
 
     try {
-      const { data } = await supabaseClient.from('users').select('id, name, email, role, joined_date, company_id, pending_deletion_at, setup_completed').neq('role', 'leader').eq('company_id', leader.company_id);
-        const { data: attendance } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
-        
+     const { data: staff, error: staffError } = await supabaseClient
+    .from('users')
+    .select('id, name, email, role, joined_date, company_id, pending_deletion_at, setup_completed')
+    .neq('role', 'leader')
+    .eq('company_id', leader.company_id);
+
+if (staffError) throw staffError;
         // Fetch all settings so the unified analytics engine operates perfectly
         const { data: settings } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
