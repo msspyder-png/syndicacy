@@ -1287,7 +1287,7 @@ async function loadTodayAttendance() {
     const todayStr = getUniversalDate();
 
     try {
-        const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+       const { data: staffMembers, error: staffErr } = await supabaseClient.from('users').select('id, name, email, role, joined_date, company_id, pending_deletion_at, setup_completed').neq('role', 'leader').eq('company_id', leader.company_id);
         if (staffErr) throw staffErr;
 
         const { data: attendanceLogs, error: attErr } = await supabaseClient.from('checkins').select('*').eq('date', todayStr).eq('company_id', leader.company_id);
@@ -1491,7 +1491,7 @@ async function loadTeamLedger() {
     await ensureSupabase();
 
     try {
-        const { data: staff } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+      const { data } = await supabaseClient.from('users').select('id, name, email, role, joined_date, company_id, pending_deletion_at, setup_completed').neq('role', 'leader').eq('company_id', leader.company_id);
         const { data: attendance } = await supabaseClient.from('checkins').select('*').eq('company_id', leader.company_id);
         
         // Fetch all settings so the unified analytics engine operates perfectly
@@ -1883,7 +1883,7 @@ function changeMonth(offset) {
     loadIndividualAnalytics(); 
 }
 
-a// --- BIOMETRIC CREDENTIALS ENGINE ---
+// --- BIOMETRIC CREDENTIALS ENGINE ---
 async function generateBiometricSetupLink() {
     if (!currentViewedUser) return;
     
@@ -1978,7 +1978,7 @@ async function loadTeamDirectory() {
     await ensureSupabase();
 
     try {
-        const { data } = await supabaseClient.from('users').select('*').neq('role', 'leader').eq('company_id', leader.company_id);
+        const { data } = await supabaseClient.from('users').select('id, name, email, role, joined_date, company_id, pending_deletion_at, setup_completed').neq('role', 'leader').eq('company_id', leader.company_id);
         directoryList.innerHTML = ""; 
         if (!data || data.length === 0) {
             directoryList.innerHTML = `<p style="font-size: 12px; color: #888; padding: 20px; text-align: center;">No staff members yet.</p>`;
@@ -3892,21 +3892,17 @@ async function startDailyScanner() {
         const { data: rules, error: rulesErr } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
         if (rulesErr) throw rulesErr;
 
-       if (rules && rules.require_pin) {
-            openPromptModal(
-                "SECURITY CHECK",
-                "Enter the 4-digit Daily Access PIN provided by your Manager:",
-                "text",
-                "",
-                async function(userPin) {
-                    // Browser no longer checks if the PIN is right. It just sends it.
-                    continueScannerProcess(rules, safeCompanyId, todayDateStr, userPin);
-                }
-            );
-            return; 
+        // 1. Holiday Check
+        if (rules && rules.holidays) {
+            let holidayArray = [];
+            try { holidayArray = JSON.parse(rules.holidays); } catch(e){}
+            if (holidayArray.includes(todayDateStr)) {
+                openInfoModal("Scanner Locked", "Today has been declared an official Holiday by your organization.");
+                return;
+            }
         }
-        
-        continueScannerProcess(rules, safeCompanyId, todayDateStr, null);
+
+        // 2. Schedule & Window Check
         let allowedStart = rules && rules.check_in_start ? rules.check_in_start : "09:00";
         let allowedEnd = rules && rules.check_in_end ? rules.check_in_end : "10:00";
         let lateHours = rules && rules.late_arrival_hours ? parseInt(rules.late_arrival_hours) : 0;
@@ -3965,6 +3961,7 @@ async function startDailyScanner() {
             return; 
         }
 
+        // 3. Collect PIN (Validated strictly in the Server Vault)
         if (rules && rules.require_pin) {
             openPromptModal(
                 "SECURITY CHECK",
@@ -3972,22 +3969,13 @@ async function startDailyScanner() {
                 "text",
                 "",
                 async function(userPin) {
-                    let actualDbPin = rules.daily_pin;
-                    if (actualDbPin && actualDbPin.includes(':')) {
-                        actualDbPin = actualDbPin.split(':')[1];
-                    }
-
-                    if (userPin !== actualDbPin) {
-                        openInfoModal("Verification Failed", "Incorrect Access PIN. Check-in aborted.");
-                        return;
-                    }
-                    continueScannerProcess(rules, safeCompanyId, todayDateStr, now);
+                    continueScannerProcess(rules, safeCompanyId, todayDateStr, userPin);
                 }
             );
             return; 
         }
         
-        continueScannerProcess(rules, safeCompanyId, todayDateStr, now);
+        continueScannerProcess(rules, safeCompanyId, todayDateStr, null);
 
     } catch (err) {
         openInfoModal("Error", "System verification failed.");
@@ -4104,18 +4092,28 @@ async function finishAttendanceFaceVerification(session, options) {
             liveCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
         }
 
-        // 1. Generate Turnstile Token (Placeholder integration)
-        // Note: For full Turnstile, inject <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script> into your HTML head
+        // 1. Generate Invisible Turnstile Token in a clean hidden container
         let turnstileToken = "development-bypass-token"; 
         if (typeof turnstile !== 'undefined') {
-             turnstileToken = await new Promise(resolve => {
-                 turnstile.render(document.body, { sitekey: '0x4AAAAAAFUfuleYnhBml357', callback: resolve }); // Replace with real SiteKey
-             });
+            const tempContainer = document.createElement('div');
+            tempContainer.style.display = 'none';
+            document.body.appendChild(tempContainer);
+            turnstileToken = await new Promise((resolve) => {
+                const widgetId = turnstile.render(tempContainer, {
+                    sitekey: '0x4AAAAAAFUfuleYnhBml357',
+                    callback: (token) => {
+                        turnstile.remove(widgetId);
+                        tempContainer.remove();
+                        resolve(token);
+                    }
+                });
+            });
         }
 
-        // 2. Cryptographically Sign the Payload locally
-        const signaturePayload = `${currentStaff.email}:${options.mode}:${liveCoords?.lat || 0}:${session.challenge.frames.length}`;
-        const signature = await generateSignature(signaturePayload, "syndicacy-default-secret-key"); // Must match backend environment variable
+        // 2. Cryptographically Sign the Payload with a 60-Second Timestamp Lock
+        const requestTimestamp = Date.now();
+        const signaturePayload = `${currentStaff.email}:${options.mode}:${liveCoords?.lat || 0}:${session.challenge.frames.length}:${requestTimestamp}`;
+        const signature = await generateSignature(signaturePayload, "syndicacy-default-secret-key");
 
         const payload = {
             mode: options.mode,
@@ -4126,6 +4124,7 @@ async function finishAttendanceFaceVerification(session, options) {
             gps_coords: liveCoords,
             pin_code: options.pinCode || null,
             turnstile_token: turnstileToken,
+            request_timestamp: requestTimestamp,
             signature: signature
         };
 
