@@ -528,7 +528,24 @@ async function handleLeaderAuth() {
             password: passInput
         });
 
-        if (authError) {
+       if (authError) {
+            // Check if this email already belongs to an existing user before starting OTP signup
+            const { data: existingProfile } = await supabaseClient
+                .from('users')
+                .select('id')
+                .eq('email', emailInput)
+                .limit(1)
+                .maybeSingle();
+
+            if (existingProfile) {
+                openInfoModal("Login Failed", "Incorrect password for this account.");
+                enterButton.disabled = false;
+                enterButton.innerText = "Enter";
+                enterButton.style.backgroundColor = "#1a1a1a";
+                enterButton.style.cursor = "pointer";
+                return;
+            }
+
             enterButton.innerText = "3. Sending Server OTP...";
             sessionStorage.setItem("pendingEmail", emailInput);
             sessionStorage.setItem("pendingPass", passInput);
@@ -543,6 +560,7 @@ async function handleLeaderAuth() {
                 enterButton.disabled = false;
                 enterButton.innerText = "Enter";
                 enterButton.style.backgroundColor = "#1a1a1a"; 
+                enterButton.style.cursor = "pointer";
                 return;
             }
 
@@ -868,10 +886,11 @@ async function loadPendingInvites() {
                     <button class="google-btn" style="padding: 6px 12px; font-size: 11px; border: 1px solid #ccc; flex: 1; margin: 0;" onclick="copySpecificLink('${exactLink}')">Copy Link</button>
                     <button class="google-btn" style="padding: 6px 12px; font-size: 11px; border: 1px dashed #ccc; opacity: 0.6; flex: 1; margin: 0;" onclick="openInfoModal('Biometrics Required', 'This employee has not completed their facial scan yet. They must open their invite link to scan their face before you can approve them.')">Approve</button>
                 `;
-            } else if (invite.status === 'scanned') {
+           } else if (invite.status === 'scanned') {
                 statusText = "BIOMETRICS READY - WAITING FOR APPROVAL";
                 statusColor = "#4ade80"; 
-                btnHtml = `<button class="main-btn" style="padding: 6px 12px; font-size: 11px; background-color: #4ade80; color: black; border: none; cursor: pointer; flex: 1; margin: 0;" onclick="approveInvite('${invite.id}', '${invite.name}')">Approve Now</button>`;
+                const safeInviteName = (invite.name || '').replace(/'/g, "\\'");
+                btnHtml = `<button class="main-btn" style="padding: 6px 12px; font-size: 11px; background-color: #4ade80; color: black; border: none; cursor: pointer; flex: 1; margin: 0;" onclick="approveInvite('${invite.id}', '${safeInviteName}')">Approve Now</button>`;
             }
 
             btnHtml += `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 28px; height: 28px; flex-shrink: 0; margin: 0;" onclick="deleteInvite('${invite.id}', '${invite.name.replace(/'/g, "\\'")}')">×</button>`;
@@ -2425,14 +2444,15 @@ function markSecondSaturdays() {
 
 async function loadSettings() {
     const startInput = document.getElementById('check-in-start');
-    const leader = getLeader();
+    let leader = getLeader();
     if (!startInput || !leader) return;
     await ensureSupabase();
 
     try {
         const { data: fresh } = await supabaseClient.from('users').select('*').eq('email', leader.email).limit(1).maybeSingle();
         if (fresh) { 
-            leader = fresh; 
+            leader = fresh;
+            secureVerifiedLeader = fresh;
             sessionStorage.setItem('loggedInLeader', JSON.stringify(fresh)); 
         }
     } catch(e) {}
@@ -2700,6 +2720,12 @@ async function saveSettings() {
             
             const isCtActive = document.getElementById('toggle-custom-time') ? document.getElementById('toggle-custom-time').checked : true;
             payload.custom_schedules = JSON.stringify({ active: isCtActive, data: customSchedules });
+        }
+
+        if (mapSavedLat && mapSavedLng) {
+            payload.office_lat = mapSavedLat;
+            payload.office_lng = mapSavedLng;
+            payload.office_radius = mapSavedRadius || 150;
         }
 
         if (document.getElementById('locations-list-container')) {
@@ -2984,7 +3010,7 @@ function injectMapDependencies() {
 }
 
 function injectMapModalHTML() {
-    if (document.getElementById('gps-map-modal') || !window.location.pathname.includes('settings')) return;
+    if (document.getElementById('gps-map-modal') || (!window.location.pathname.includes('settings') && !window.location.pathname.includes('locations'))) return;
     
     const mapModalHtml = `
         <div id="gps-map-modal" class="modal-bg" style="z-index: 10000; display: none;">
@@ -3185,13 +3211,14 @@ async function handleStaffLogin() {
 }
 
 async function loadStaffDashboard() {
+    if (!document.getElementById('status-card') && !document.getElementById('staff-analytics-calendar')) return;
     await ensureSupabase();
-    const sessionData = sessionStorage.getItem('loggedInStaff');
-    if (!sessionData) return; 
-
-    currentStaff = JSON.parse(sessionData);
-
-    if (supabaseClient) {
+    if (!currentStaff) {
+        const sessionData = sessionStorage.getItem('loggedInStaff');
+        if (!sessionData) return;
+        currentStaff = JSON.parse(sessionData);
+    }
+    if (supabaseClient && currentStaff?.email) {
         try {
             const { data: freshStaff } = await supabaseClient
                 .from('users')
@@ -3202,7 +3229,6 @@ async function loadStaffDashboard() {
                 
             if (freshStaff) {
                 currentStaff = freshStaff;
-                sessionStorage.setItem('loggedInStaff', JSON.stringify(freshStaff));
             }
         } catch(e) {}
     }
@@ -4212,12 +4238,13 @@ async function startAttendanceFaceVerification(options) {
                     }
                     const detection = detections[0];
                     drawSingleFace(session, detection);
-                    const distance = getFaceDistance(detection.descriptor, savedDescriptor);
+                   const distance = getFaceDistance(detection.descriptor, savedDescriptor);
                     if (distance > FACE_MATCH_MAX_DISTANCE) {
                         setFaceScanStatus(session, 'FACE NOT VERIFIED. USE THE REGISTERED EMPLOYEE FACE.');
                         return;
                     }
                     session.identityVerified = true;
+                    session.cachedDescriptor = detection.descriptor;
                     updatePassiveLiveness(session, detection);
                 } else {
                     const detections = await faceapi.detectAllFaces(video).withFaceLandmarks();
@@ -4228,6 +4255,7 @@ async function startAttendanceFaceVerification(options) {
                         if (session.challenge) { session.challenge.startTime = Date.now(); session.challenge.frames = []; }
                         return;
                     }
+                    detections[0].descriptor = session.cachedDescriptor;
                     drawSingleFace(session, detections[0]);
                     updatePassiveLiveness(session, detections[0]);
                 }
@@ -4273,7 +4301,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     
     // 1. Identify the current page and define which pages are allowed without logging in
     const currentPage = window.location.pathname.split('/').pop() || 'index.html';
-    const publicPages = ['index.html', 'leader.html', 'staff.html', 'join.html', 'leader-otp.html', ''];
+    const publicPages = ['index.html', 'leader.html', 'staff.html', 'join.html', 'leader-otp.html', 'setup.html', ''];
 
     // 2. ROUTE GUARD: If there is no secure session and they are on a private page, kick them out
     if (!session && !publicPages.includes(currentPage)) {
@@ -4313,7 +4341,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         });
     });
     
-    loadTodayPIN(); 
+   loadTodayPIN(); 
+    loadLocationsPage();
     loadStaffDashboard(); 
 });
 
@@ -4321,10 +4350,11 @@ let workspaceLocations = [];
 let activeLocationEditId = null;
 
 async function loadLocationsPage() {
+    if (!document.getElementById('locations-list-container')) return;
     const leader = getLeader();
     if (!leader) return;
     await ensureSupabase();
-
+    workspaceLocations = [];
     try {
         const { data, error } = await supabaseClient.from('settings').select('*').eq('company_id', leader.company_id).limit(1).maybeSingle();
         
@@ -4441,19 +4471,25 @@ function openLocationMap(id) {
 }
 
 async function confirmMapLocation() {
-    if (!activeLocationEditId) return; 
-    
+    if (!map) return;
+
     const center = map.getCenter();
-    const radius = document.getElementById('radius-slider').value;
+    const radius = parseInt(document.getElementById('radius-slider').value, 10);
     const saveBtn = document.getElementById('save-map-btn');
     saveBtn.innerText = "Saving...";
     saveBtn.disabled = true;
 
-    const locIndex = workspaceLocations.findIndex(l => l.id === activeLocationEditId);
-    if (locIndex !== -1) {
-        workspaceLocations[locIndex].lat = center.lat;
-        workspaceLocations[locIndex].lng = center.lng;
-        workspaceLocations[locIndex].radius = parseInt(radius);
+    mapSavedLat = center.lat;
+    mapSavedLng = center.lng;
+    mapSavedRadius = radius;
+
+    if (activeLocationEditId) {
+        const locIndex = workspaceLocations.findIndex(l => l.id === activeLocationEditId);
+        if (locIndex !== -1) {
+            workspaceLocations[locIndex].lat = center.lat;
+            workspaceLocations[locIndex].lng = center.lng;
+            workspaceLocations[locIndex].radius = radius;
+        }
     }
 
     await saveSettings();
@@ -4748,13 +4784,13 @@ async function generateHistoricalTable() {
 
     await ensureSupabase();
     
-    const leader = getLeader();
-    const sessionStaff = sessionStorage.getItem('loggedInStaff') ? JSON.parse(sessionStorage.getItem('loggedInStaff')) : null;
+   const leader = getLeader();
+    const sessionStaff = currentStaff || (sessionStorage.getItem('loggedInStaff') ? JSON.parse(sessionStorage.getItem('loggedInStaff')) : null);
     
     const targetEmail = new URLSearchParams(window.location.search).get('email');
     if (!targetEmail || (!leader && !sessionStaff)) return;
     
-    if (sessionStaff && targetEmail !== sessionStaff.email) {
+    if (!leader && sessionStaff && targetEmail !== sessionStaff.email) {
         tableBody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px; color:red;">Access Denied.</td></tr>';
         return;
     }
