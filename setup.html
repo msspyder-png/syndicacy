@@ -58,7 +58,7 @@
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
                 video.srcObject = stream;
                 
-               video.onplay = async () => {
+              video.onplay = async () => {
                     aiStatus.innerText = "VERIFYING IDENTITY...";
                     const interval = setInterval(async () => {
                         try {
@@ -68,51 +68,54 @@
                                 aiStatus.innerText = "FACE DETECTED. SECURING ACCOUNT...";
                                 stream.getTracks().forEach(track => track.stop());
                                 
-                                // Send data to the Edge Function
+                                await ensureSupabase();
+
+                                // 1. Send data to the Edge Function WITH the required Authorization header
                                 const res = await fetch('https://qimabxbtbvgayayzvnoj.supabase.co/functions/v1/biometric-setup', {
                                     method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
+                                    headers: { 
+                                        'Content-Type': 'application/json',
+                                        'Authorization': 'Bearer ' + supabaseKey,
+                                        'apikey': supabaseKey
+                                    },
                                     body: JSON.stringify({
                                         token: token,
                                         live_face_descriptor: Array.from(detections[0].descriptor)
                                     })
                                 });
                                 
-                                if (!res.ok) {
-                                    const text = await res.text();
-                                    throw new Error(text);
-                                }
-                                
                                 const data = await res.json();
-                                if (data.error) {
-                                    alert(data.error);
-                                    window.location.reload();
-                                    return;
+                                if (!res.ok || data.error) {
+                                    throw new Error(data.error || data.message || "Biometric verification failed.");
                                 }
 
-                                // Safely parse the silent Supabase link
-                                let safeLink = data.action_link || "";
-                                if (safeLink.includes('#')) {
-                                    safeLink = safeLink.replace('#', '?');
-                                } else if (!safeLink.includes('?') && safeLink.includes('&')) {
-                                    safeLink = safeLink.replace('&', '?');
-                                }
-                                
-                                const authUrl = new URL(safeLink, window.location.origin);
+                                // 2. Extract the recovery token from the Supabase action_link
+                                const authUrl = new URL(data.action_link.replace('#', '?'), window.location.origin);
+                                const tokenHash = authUrl.searchParams.get('token') || authUrl.searchParams.get('token_hash');
                                 const accessToken = authUrl.searchParams.get('access_token');
                                 const refreshToken = authUrl.searchParams.get('refresh_token');
-                                
-                                if (!accessToken) {
+
+                                if (tokenHash) {
+                                    const { error: otpError } = await supabaseClient.auth.verifyOtp({
+                                        token_hash: tokenHash,
+                                        type: 'recovery'
+                                    });
+                                    if (otpError) throw otpError;
+                                } else if (accessToken) {
+                                    const { error: sessionError } = await supabaseClient.auth.setSession({
+                                        access_token: accessToken,
+                                        refresh_token: refreshToken
+                                    });
+                                    if (sessionError) throw sessionError;
+                                } else {
                                     throw new Error("Could not read security token from server link.");
                                 }
-                                
-                                const { error: sessionError } = await supabaseClient.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-                                if (sessionError) throw sessionError;
-                                
+
+                                // 3. Save the employee's new password and sign out cleanly
                                 const { error: updateError } = await supabaseClient.auth.updateUser({ password: newPassword });
                                 if (updateError) throw updateError;
                                 
-                                await supabaseClient.auth.signOut(); // Log out so they must log in manually the first time
+                                await supabaseClient.auth.signOut();
                                 
                                 document.getElementById('setup-form').style.display = 'none';
                                 document.getElementById('success-state').style.display = 'block';
