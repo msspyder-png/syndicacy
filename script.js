@@ -2696,6 +2696,9 @@ async function saveSettings() {
             payload.check_in_end = document.getElementById('check-in-end').value;
             payload.require_gps = document.getElementById('require-gps').checked;
             payload.require_pin = document.getElementById('require-pin').checked;
+            if (document.getElementById('workspace-timezone')) {
+                payload.timezone = document.getElementById('workspace-timezone').value;
+            }
             
             if (document.getElementById('require-checkout')) {
                 payload.require_checkout = document.getElementById('require-checkout').checked;
@@ -2732,12 +2735,11 @@ async function saveSettings() {
             payload.locations = JSON.stringify(workspaceLocations);
         }
 
-        if (existingData) {
+       if (existingData) {
             await supabaseClient.from('settings').update(payload).eq('id', existingData.id);
         } else {
             await supabaseClient.from('settings').insert([payload]);
         }
-
         if (subtitle) {
             subtitle.innerText = "All changes saved ✓";
             subtitle.style.color = "#4ade80"; 

@@ -58,43 +58,69 @@
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
                 video.srcObject = stream;
                 
-                video.onplay = async () => {
+               video.onplay = async () => {
                     aiStatus.innerText = "VERIFYING IDENTITY...";
                     const interval = setInterval(async () => {
-                        const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
-                        if (detections.length === 1) {
-                            clearInterval(interval);
-                            aiStatus.innerText = "FACE DETECTED. SECURING ACCOUNT...";
-                            stream.getTracks().forEach(track => track.stop());
-                            
-                            // Send data to the Edge Function
-                            const res = await fetch('https://qimabxbtbvgayayzvnoj.supabase.co/functions/v1/biometric-setup', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    token: token,
-                                    live_face_descriptor: Array.from(detections[0].descriptor)
-                                })
-                            });
-                            
-                            const data = await res.json();
-                            if (data.error) {
-                                alert(data.error);
-                                window.location.reload();
-                                return;
-                            }
+                        try {
+                            const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+                            if (detections.length === 1) {
+                                clearInterval(interval);
+                                aiStatus.innerText = "FACE DETECTED. SECURING ACCOUNT...";
+                                stream.getTracks().forEach(track => track.stop());
+                                
+                                // Send data to the Edge Function
+                                const res = await fetch('https://qimabxbtbvgayayzvnoj.supabase.co/functions/v1/biometric-setup', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        token: token,
+                                        live_face_descriptor: Array.from(detections[0].descriptor)
+                                    })
+                                });
+                                
+                                if (!res.ok) {
+                                    const text = await res.text();
+                                    throw new Error(text);
+                                }
+                                
+                                const data = await res.json();
+                                if (data.error) {
+                                    alert(data.error);
+                                    window.location.reload();
+                                    return;
+                                }
 
-                            // The Magic: Parse the silent Supabase link, log in instantly, and save the password
-                            const authUrl = new URL(data.action_link.replace('#', '?'));
-                            const accessToken = authUrl.searchParams.get('access_token');
-                            const refreshToken = authUrl.searchParams.get('refresh_token');
-                            
-                            await supabaseClient.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
-                            await supabaseClient.auth.updateUser({ password: newPassword });
-                            await supabaseClient.auth.signOut(); // Log out so they must log in manually the first time
-                            
-                            document.getElementById('setup-form').style.display = 'none';
-                            document.getElementById('success-state').style.display = 'block';
+                                // Safely parse the silent Supabase link
+                                let safeLink = data.action_link || "";
+                                if (safeLink.includes('#')) {
+                                    safeLink = safeLink.replace('#', '?');
+                                } else if (!safeLink.includes('?') && safeLink.includes('&')) {
+                                    safeLink = safeLink.replace('&', '?');
+                                }
+                                
+                                const authUrl = new URL(safeLink, window.location.origin);
+                                const accessToken = authUrl.searchParams.get('access_token');
+                                const refreshToken = authUrl.searchParams.get('refresh_token');
+                                
+                                if (!accessToken) {
+                                    throw new Error("Could not read security token from server link.");
+                                }
+                                
+                                const { error: sessionError } = await supabaseClient.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+                                if (sessionError) throw sessionError;
+                                
+                                const { error: updateError } = await supabaseClient.auth.updateUser({ password: newPassword });
+                                if (updateError) throw updateError;
+                                
+                                await supabaseClient.auth.signOut(); // Log out so they must log in manually the first time
+                                
+                                document.getElementById('setup-form').style.display = 'none';
+                                document.getElementById('success-state').style.display = 'block';
+                            }
+                        } catch (err) {
+                            clearInterval(interval);
+                            alert("Setup failed: " + err.message);
+                            window.location.reload();
                         }
                     }, 500);
                 };
