@@ -6,7 +6,7 @@
     <title>Secure Setup - SYNDICACY</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@vladmandic/human@3.3.6/dist/human.js"></script>
 </head>
 <body style="display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: #f4f4f4; margin: 0; font-family: -apple-system, sans-serif;">
 
@@ -44,90 +44,136 @@
             const token = new URLSearchParams(window.location.search).get('token');
             if (!token) { alert("Invalid link."); return; }
 
-            document.getElementById('start-btn').style.display = 'none';
-            document.getElementById('camera-container').style.display = 'block';
-            
+            const startBtn = document.getElementById('start-btn');
+            const cameraContainer = document.getElementById('camera-container');
             const video = document.getElementById('video');
             const aiStatus = document.getElementById('ai-status');
-            
-            await ensureFaceModels();
-            aiStatus.innerText = "TURNING ON CAMERA...";
-            aiStatus.style.color = "#4ade80";
+
+            startBtn.style.display = 'none';
+            cameraContainer.style.display = 'block';
+            aiStatus.innerText = "PREPARING SECURE VERIFICATION...";
+            aiStatus.style.color = "#f59e0b";
+
+            const session = createFaceSession(video, cameraContainer, aiStatus, (msg) => {
+                alert("Setup failed: " + msg);
+                window.location.reload();
+            });
 
             try {
+                const human = await ensureFaceModels();
+                if (!isFaceSessionActive(session)) return;
+
+                aiStatus.innerText = "TURNING ON CAMERA...";
+                aiStatus.style.color = "#4ade80";
+
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
-                video.srcObject = stream;
-                
-              video.onplay = async () => {
-                    aiStatus.innerText = "VERIFYING IDENTITY...";
-                    const interval = setInterval(async () => {
+                if (!isFaceSessionActive(session)) {
+                    stream.getTracks().forEach(t => t.stop());
+                    return;
+                }
+                session.stream = stream;
+
+                const beginSetupDetection = () => {
+                    if (!isFaceSessionActive(session) || session.started) return;
+                    session.started = true;
+                    createFaceCanvas(session);
+                    setFaceScanStatus(session, "VERIFYING LIVENESS: BLINK 3 TIMES...", "#4ade80");
+
+                    setupPassiveLivenessChallenge(session, async (face, frames) => {
+                        if (!isFaceSessionActive(session) || session.submitting) return;
+                        session.submitting = true;
+                        setFaceScanStatus(session, "FACE & LIVENESS VERIFIED. SECURING ACCOUNT...", "#4ade80");
+                        stopFaceSessionCamera(session);
+
                         try {
-                            const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
-                            if (detections.length === 1) {
-                                clearInterval(interval);
-                                aiStatus.innerText = "FACE DETECTED. SECURING ACCOUNT...";
-                                stream.getTracks().forEach(track => track.stop());
-                                
-                                await ensureSupabase();
+                            await ensureSupabase();
 
-                                // 1. Send data to the Edge Function WITH the required Authorization header
-                                const res = await fetch('https://qimabxbtbvgayayzvnoj.supabase.co/functions/v1/biometric-setup', {
-                                    method: 'POST',
-                                    headers: { 
-                                        'Content-Type': 'application/json',
-                                        'Authorization': 'Bearer ' + supabaseKey,
-                                        'apikey': supabaseKey
-                                    },
-                                    body: JSON.stringify({
-                                        token: token,
-                                        live_face_descriptor: Array.from(detections[0].descriptor)
-                                    })
-                                });
-                                
-                                const data = await res.json();
-                                if (!res.ok || data.error) {
-                                    throw new Error(data.error || data.message || "Biometric verification failed.");
-                                }
-
-                                // 2. Extract the recovery token from the Supabase action_link
-                                const authUrl = new URL(data.action_link.replace('#', '?'), window.location.origin);
-                                const tokenHash = authUrl.searchParams.get('token') || authUrl.searchParams.get('token_hash');
-                                const accessToken = authUrl.searchParams.get('access_token');
-                                const refreshToken = authUrl.searchParams.get('refresh_token');
-
-                                if (tokenHash) {
-                                    const { error: otpError } = await supabaseClient.auth.verifyOtp({
-                                        token_hash: tokenHash,
-                                        type: 'recovery'
-                                    });
-                                    if (otpError) throw otpError;
-                                } else if (accessToken) {
-                                    const { error: sessionError } = await supabaseClient.auth.setSession({
-                                        access_token: accessToken,
-                                        refresh_token: refreshToken
-                                    });
-                                    if (sessionError) throw sessionError;
-                                } else {
-                                    throw new Error("Could not read security token from server link.");
-                                }
-
-                                // 3. Save the employee's new password and sign out cleanly
-                                const { error: updateError } = await supabaseClient.auth.updateUser({ password: newPassword });
-                                if (updateError) throw updateError;
-                                
-                                await supabaseClient.auth.signOut();
-                                
-                                document.getElementById('setup-form').style.display = 'none';
-                                document.getElementById('success-state').style.display = 'block';
+                            const res = await fetch('https://qimabxbtbvgayayzvnoj.supabase.co/functions/v1/biometric-setup', {
+                                method: 'POST',
+                                headers: { 
+                                    'Content-Type': 'application/json',
+                                    'Authorization': 'Bearer ' + supabaseKey,
+                                    'apikey': supabaseKey
+                                },
+                                body: JSON.stringify({
+                                    token: token,
+                                    live_face_descriptor: Array.from(session.cachedDescriptor),
+                                    liveness_evidence: frames
+                                })
+                            });
+                            
+                            const data = await res.json();
+                            if (!res.ok || data.error) {
+                                throw new Error(data.error || data.message || "Biometric verification failed.");
                             }
+
+                            const authUrl = new URL(data.action_link.replace('#', '?'), window.location.origin);
+                            const tokenHash = authUrl.searchParams.get('token') || authUrl.searchParams.get('token_hash');
+                            const accessToken = authUrl.searchParams.get('access_token');
+                            const refreshToken = authUrl.searchParams.get('refresh_token');
+
+                            if (tokenHash) {
+                                const { error: otpError } = await supabaseClient.auth.verifyOtp({
+                                    token_hash: tokenHash,
+                                    type: 'recovery'
+                                });
+                                if (otpError) throw otpError;
+                            } else if (accessToken) {
+                                const { error: sessionError } = await supabaseClient.auth.setSession({
+                                    access_token: accessToken,
+                                    refresh_token: refreshToken
+                                });
+                                if (sessionError) throw sessionError;
+                            } else {
+                                throw new Error("Could not read security token from server link.");
+                            }
+
+                            const { error: updateError } = await supabaseClient.auth.updateUser({ password: newPassword });
+                            if (updateError) throw updateError;
+                            
+                            await supabaseClient.auth.signOut();
+                            completeFaceSession(session);
+                            
+                            document.getElementById('setup-form').style.display = 'none';
+                            document.getElementById('success-state').style.display = 'block';
                         } catch (err) {
-                            clearInterval(interval);
+                            stopActiveFaceSession();
                             alert("Setup failed: " + err.message);
                             window.location.reload();
                         }
-                    }, 500);
+                    });
+
+                    startFaceDetectionLoop(session, async () => {
+                        const res = await human.detect(video);
+                        if (!isFaceSessionActive(session)) return;
+                        const faces = res.face || [];
+                        if (faces.length !== 1) {
+                            clearFaceCanvas(session);
+                            setFaceScanStatus(session, faces.length > 1 ? "ONLY ONE FACE MAY BE IN FRAME." : "FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.");
+                            return;
+                        }
+                        const face = faces[0];
+                        if (!session.identityVerified) {
+                            const normDesc = normalizeHumanDescriptor(face.embedding);
+                            if (!normDesc) return;
+                            session.identityVerified = true;
+                            session.cachedDescriptor = normDesc;
+                        }
+                        drawSingleFace(session, face);
+                        updatePassiveLiveness(session, face);
+                    });
+                };
+
+                video.onplay = beginSetupDetection;
+                video.srcObject = stream;
+                video.onloadedmetadata = async () => {
+                    try {
+                        await video.play();
+                        beginSetupDetection();
+                    } catch (e) {}
                 };
             } catch (err) {
+                stopActiveFaceSession();
                 alert("Camera access denied or failed.");
                 window.location.reload();
             }
