@@ -12,7 +12,7 @@
 
     <div class="form-card" style="width: 100%; max-width: 400px; text-align: center; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.05);">
         <h2 style="font-size: 22px; margin-bottom: 10px; color: #1a1a1a;">Biometric Security</h2>
-        <p style="font-size: 13px; color: #888; margin-bottom: 25px;">Set your password and verify your face to secure your account.</p>
+        <p style="font-size: 13px; color: #888; margin-bottom: 25px;">Set your password and blink when randomly prompted to secure your account.</p>
 
         <div id="setup-form">
             <input type="password" id="new-password" class="input-field" placeholder="Create a secure password" style="width: 100%; margin-bottom: 20px; box-sizing: border-box;">
@@ -20,7 +20,7 @@
             <div id="camera-container" style="display: none; position: relative; width: 240px; height: 240px; margin: 0 auto 20px auto; border-radius: 50%; overflow: hidden; border: 4px solid #1a1a1a; background-color: #000;">
                 <video id="video" autoplay muted playsinline style="object-fit: cover; width: 100%; height: 100%;"></video>
             </div>
-            <p id="ai-status" style="font-size: 11px; font-weight: bold; margin-bottom: 15px; color: #888;"></p>
+            <p id="ai-status" style="font-size: 12px; font-weight: bold; margin-bottom: 15px; color: #888; min-height: 18px;"></p>
 
             <button id="start-btn" class="main-btn" onclick="startSetupScan()" style="width: 100%; padding: 15px; font-size: 14px; background-color: #1a1a1a; color: white;">Save Password & Scan Face</button>
         </div>
@@ -33,16 +33,43 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script src="script.js?v=3000"></script>
     <script>
+        function showSetupRetryUI(message) {
+            stopActiveFaceSession();
+            const cameraContainer = document.getElementById('camera-container');
+            const startBtn = document.getElementById('start-btn');
+            const aiStatus = document.getElementById('ai-status');
+            if (cameraContainer) cameraContainer.style.display = 'none';
+            if (aiStatus) {
+                aiStatus.innerText = message;
+                aiStatus.style.color = '#ef4444';
+            }
+            if (startBtn) {
+                startBtn.style.display = 'block';
+                startBtn.disabled = false;
+                startBtn.innerText = 'Retry Save Password & Scan Face';
+            }
+            openInfoModal("Verification Incomplete", message);
+        }
+
         async function startSetupScan() {
-            if (!window.isSecureContext) { alert("Camera requires a secure HTTPS connection."); return; }
+            if (!window.isSecureContext) {
+                openInfoModal("HTTPS Required", "Camera access requires a secure HTTPS connection.");
+                return;
+            }
             
             const newPassword = document.getElementById('new-password').value;
-            if (newPassword.length < 6) { alert("Password must be at least 6 characters."); return; }
+            if (newPassword.length < 6) {
+                openInfoModal("Weak Password", "Password must be at least 6 characters long.");
+                return;
+            }
             
             const token = new URLSearchParams(window.location.search).get('token');
-            if (!token) { alert("Invalid link."); return; }
+            if (!token) {
+                openInfoModal("Invalid Link", "This security link is missing its verification token.");
+                return;
+            }
 
             const startBtn = document.getElementById('start-btn');
             const cameraContainer = document.getElementById('camera-container');
@@ -50,13 +77,13 @@
             const aiStatus = document.getElementById('ai-status');
 
             startBtn.style.display = 'none';
+            startBtn.disabled = true;
             cameraContainer.style.display = 'block';
             aiStatus.innerText = "PREPARING SECURE VERIFICATION...";
             aiStatus.style.color = "#f59e0b";
 
             const session = createFaceSession(video, cameraContainer, aiStatus, (msg) => {
-                alert("Setup failed: " + msg);
-                window.location.reload();
+                showSetupRetryUI(msg);
             });
 
             try {
@@ -77,12 +104,12 @@
                     if (!isFaceSessionActive(session) || session.started) return;
                     session.started = true;
                     createFaceCanvas(session);
-                    setFaceScanStatus(session, "VERIFYING LIVENESS: BLINK 3 TIMES...", "#4ade80");
+                    setFaceScanStatus(session, "HOLD STILL... WAIT FOR RANDOM BLINK PROMPT", "#f59e0b");
 
                     setupPassiveLivenessChallenge(session, async (face, frames) => {
                         if (!isFaceSessionActive(session) || session.submitting) return;
                         session.submitting = true;
-                        setFaceScanStatus(session, "FACE & LIVENESS VERIFIED. SECURING ACCOUNT...", "#4ade80");
+                        setFaceScanStatus(session, "3/3 BLINKS VERIFIED. SECURING ACCOUNT...", "#4ade80");
                         stopFaceSessionCamera(session);
 
                         try {
@@ -137,9 +164,7 @@
                             document.getElementById('setup-form').style.display = 'none';
                             document.getElementById('success-state').style.display = 'block';
                         } catch (err) {
-                            stopActiveFaceSession();
-                            alert("Setup failed: " + err.message);
-                            window.location.reload();
+                            showSetupRetryUI(err.message || "Verification failed. Please try again.");
                         }
                     });
 
@@ -160,7 +185,7 @@
                             session.cachedDescriptor = normDesc;
                         }
                         drawSingleFace(session, face);
-                        updatePassiveLiveness(session, face);
+                        updatePassiveLiveness(session, face, res.gesture);
                     });
                 };
 
@@ -173,9 +198,7 @@
                     } catch (e) {}
                 };
             } catch (err) {
-                stopActiveFaceSession();
-                alert("Camera access denied or failed.");
-                window.location.reload();
+                showSetupRetryUI("Camera access denied or failed. Please allow camera access and try again.");
             }
         }
     </script>
