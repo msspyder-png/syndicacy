@@ -22,18 +22,19 @@
             <h2 class="title" style="font-size: 24px; margin-bottom: 5px;">Welcome, <span id="emp-name">Guest</span></h2>
             <p style="font-size: 14px; color: #888; margin-bottom: 30px;">You've been invited to join as: <strong id="emp-role" style="color: #1a1a1a;">Role</strong></p>
             
-            <div style="background-color: #f9f9f9; border: 1px solid #eaeaea; padding: 15px; border-radius: 8px; margin-bottom: 30px; text-align: left; font-size: 12px; color: #555; line-height: 1.5;">
+            <div style="background-color: #f9f9f9; border: 1px solid #eaeaea; padding: 15px; border-radius: 8px; margin-bottom: 25px; text-align: left; font-size: 12px; color: #555; line-height: 1.5;">
                 <strong>Next Step: Live Biometric Setup</strong><br>
                 To protect your account, ensure you are in a well-lit area. The system will randomly prompt you to blink 3 times (you'll have 3 seconds per prompt) to verify live presence. Keep only your face in frame.
             </div>
-            <div id="camera-container" style="display: none; margin-bottom: 20px; position: relative;">
-                <video id="video" width="100%" height="auto" autoplay muted playsinline style="border-radius: 8px; border: 2px solid #1a1a1a; background-color: #000;"></video>
-                <p id="ai-status" style="font-size: 11px; color: #f59e0b; font-weight: bold; margin-top: 10px;">LOADING AI MODELS...</p>
-                <button class="google-btn" style="width: 100%; margin-top: 12px; padding: 10px; font-size: 12px;" onclick="cancelFaceScan()">Cancel Scan</button>
+
+            <div id="camera-container" style="display: none; position: relative; width: 240px; height: 240px; margin: 0 auto 15px auto; border-radius: 50%; overflow: hidden; border: 4px solid #1a1a1a; background-color: #000; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+                <video id="video" autoplay muted playsinline style="object-fit: cover; width: 100%; height: 100%;"></video>
             </div>
+            <p id="ai-status" style="font-size: 12px; color: #888; font-weight: bold; margin-bottom: 15px; min-height: 18px;"></p>
+            <button id="cancel-scan-btn" class="google-btn" style="display: none; width: 100%; margin-bottom: 12px; padding: 10px; font-size: 12px;" onclick="cancelInviteFaceScan()">Cancel Scan</button>
 
             <p id="registration-scan-message" class="face-scan-message" aria-live="polite"></p>
-            <button id="start-btn" class="main-btn form-btn" onclick="startFaceScan()">Start Secure Face Scan</button>
+            <button id="start-btn" class="main-btn form-btn" onclick="startInviteFaceScan()">Start Secure Face Scan</button>
         </div>
 
         <div id="error-state" style="display: none;">
@@ -43,7 +44,172 @@
 
     </div>
 
-    <script src="script.js?v=3000"></script>
-    
+    <script src="script.js?v=4000"></script>
+    <script>
+        function cancelInviteFaceScan() {
+            stopActiveFaceSession();
+            const cameraContainer = document.getElementById('camera-container');
+            const cancelBtn = document.getElementById('cancel-scan-btn');
+            const startBtn = document.getElementById('start-btn');
+            const aiStatus = document.getElementById('ai-status');
+            const message = document.getElementById('registration-scan-message');
+            if (cameraContainer) cameraContainer.style.display = 'none';
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            if (aiStatus) aiStatus.innerText = '';
+            if (startBtn) {
+                startBtn.style.display = 'block';
+                startBtn.innerText = 'Start Secure Face Scan';
+                startBtn.disabled = false;
+            }
+            if (message) message.innerText = 'Verification cancelled. You can start again whenever you are ready.';
+        }
+
+        function showInviteRetryUI(msg) {
+            stopActiveFaceSession();
+            const cameraContainer = document.getElementById('camera-container');
+            const cancelBtn = document.getElementById('cancel-scan-btn');
+            const startBtn = document.getElementById('start-btn');
+            const aiStatus = document.getElementById('ai-status');
+            if (cameraContainer) cameraContainer.style.display = 'none';
+            if (cancelBtn) cancelBtn.style.display = 'none';
+            if (aiStatus) {
+                aiStatus.innerText = msg;
+                aiStatus.style.color = '#ef4444';
+            }
+            if (startBtn) {
+                startBtn.style.display = 'block';
+                startBtn.disabled = false;
+                startBtn.innerText = 'Retry Secure Face Scan';
+            }
+            openInfoModal("Verification Incomplete", msg);
+        }
+
+        async function startInviteFaceScan() {
+            if (!window.isSecureContext) {
+                openInfoModal("HTTPS Required", "Camera access requires a secure HTTPS connection.");
+                return;
+            }
+
+            const startBtn = document.getElementById('start-btn');
+            const cancelBtn = document.getElementById('cancel-scan-btn');
+            const cameraContainer = document.getElementById('camera-container');
+            const video = document.getElementById('video');
+            const aiStatus = document.getElementById('ai-status');
+            const scanMessage = document.getElementById('registration-scan-message');
+
+            if (scanMessage) scanMessage.innerText = '';
+            startBtn.style.display = 'none';
+            startBtn.disabled = true;
+            cameraContainer.style.display = 'block';
+            if (cancelBtn) cancelBtn.style.display = 'block';
+
+            aiStatus.innerText = "PREPARING SECURE VERIFICATION...";
+            aiStatus.style.color = "#f59e0b";
+
+            const session = createFaceSession(video, cameraContainer, aiStatus, (msg) => {
+                showInviteRetryUI(msg);
+            });
+
+            try {
+                const human = await ensureFaceModels();
+                if (!isFaceSessionActive(session)) return;
+
+                aiStatus.innerText = "TURNING ON CAMERA...";
+                aiStatus.style.color = "#4ade80";
+
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+                if (!isFaceSessionActive(session)) {
+                    stream.getTracks().forEach(t => t.stop());
+                    return;
+                }
+                session.stream = stream;
+
+                const beginInviteDetection = () => {
+                    if (!isFaceSessionActive(session) || session.started) return;
+                    session.started = true;
+                    createFaceCanvas(session);
+                    setFaceScanStatus(session, "HOLD STILL... WAIT FOR RANDOM BLINK PROMPT", "#f59e0b");
+
+                    setupPassiveLivenessChallenge(session, async (face) => {
+                        if (!isFaceSessionActive(session) || session.submitting) return;
+                        session.submitting = true;
+                        if (session.intervalId) clearInterval(session.intervalId);
+                        if (session.timeoutId) clearTimeout(session.timeoutId);
+
+                        // Capture snapshot for Boss approval preview BEFORE stopping the video stream
+                        const canvasSnapshot = document.createElement('canvas');
+                        canvasSnapshot.width = session.video.videoWidth || 320;
+                        canvasSnapshot.height = session.video.videoHeight || 240;
+                        canvasSnapshot.getContext('2d').drawImage(session.video, 0, 0, canvasSnapshot.width, canvasSnapshot.height);
+                        const imageBase64 = canvasSnapshot.toDataURL('image/jpeg', 0.7);
+
+                        const descriptorArray = session.cachedDescriptor || normalizeHumanDescriptor(face.embedding);
+                        const faceDataString = JSON.stringify(Array.from(descriptorArray));
+
+                        setFaceScanStatus(session, "3/3 BLINKS VERIFIED. SAVING DATA...", "#4ade80");
+                        stopFaceSessionCamera(session);
+                        if (cancelBtn) cancelBtn.style.display = 'none';
+
+                        try {
+                            await ensureSupabase();
+                            const inviteId = new URLSearchParams(window.location.search).get('id');
+                            const { data, error } = await supabaseClient
+                                .from('staff_invites')
+                                .update({ face_data: faceDataString, face_image: imageBase64, status: 'scanned' })
+                                .eq('id', inviteId)
+                                .eq('status', 'pending')
+                                .select('id');
+
+                            if (error) throw error;
+                            if (!data || data.length !== 1) throw new Error('This invitation is no longer available.');
+
+                            completeFaceSession(session);
+                            cameraContainer.style.display = 'none';
+                            document.getElementById('success-state').innerHTML = `
+                                <div style="text-align: center; color: #4ade80; margin-bottom: 20px;">
+                                    <svg viewBox="0 0 24 24" width="60" height="60" stroke="currentColor" stroke-width="2" fill="none"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                </div>
+                                <h2 class="title" style="font-size: 24px; margin-bottom: 5px;">Live Presence Saved</h2>
+                                <p style="font-size: 14px; color: #888;">Your verified face scan has been sent to your boss for approval. You can close this page.</p>
+                            `;
+                        } catch (err) {
+                            showInviteRetryUI(err.message || "We could not save your scan. Please check your connection and try again.");
+                        }
+                    });
+
+                    startFaceDetectionLoop(session, async () => {
+                        const res = await human.detect(video);
+                        if (!isFaceSessionActive(session)) return;
+                        const faces = res.face || [];
+                        if (faces.length !== 1) {
+                            clearFaceCanvas(session);
+                            setFaceScanStatus(session, faces.length > 1 ? "ONLY ONE FACE MAY BE IN FRAME." : "FACE NOT FOUND. LOOK STRAIGHT AT THE CAMERA.");
+                            return;
+                        }
+                        const face = faces[0];
+                        if (!session.identityVerified) {
+                            const normDesc = normalizeHumanDescriptor(face.embedding);
+                            if (!normDesc) return;
+                            session.identityVerified = true;
+                            session.cachedDescriptor = normDesc;
+                        }
+                        drawSingleFace(session, face);
+                        updatePassiveLiveness(session, face, res.gesture);
+                    });
+                };
+
+                video.onplay = beginInviteDetection;
+                video.srcObject = stream;
+                video.onloadedmetadata = async () => {
+                    try {
+                        await video.play();
+                        beginInviteDetection();
+                    } catch (e) {}
+                };
+            } catch (err) {
+                showInviteRetryUI("Camera access denied or failed. Please allow camera access and try again.");
+            }
+        }
+    </script>
 </body>
 </html>

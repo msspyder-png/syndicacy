@@ -2774,10 +2774,26 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
-    const leader = getLeader();
-    if (!leader) return;
-    
     await ensureSupabase();
+    let leader = getLeader();
+
+    // Fallback: if saveSettings() was triggered before DOMContentLoaded finished populating secureVerifiedLeader, fetch it now
+    if (!leader && supabaseClient) {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session?.user?.email) {
+            const { data: profile } = await supabaseClient
+                .from('users')
+                .select('*')
+                .ilike('email', session.user.email)
+                .limit(1)
+                .maybeSingle();
+            if (profile) {
+                secureVerifiedLeader = profile;
+                leader = profile;
+            }
+        }
+    }
+    if (!leader) return;
 
     const subtitle = document.querySelector('.dash-header .subtitle');
     let safeCompanyId = leader.company_id;
@@ -2790,7 +2806,12 @@ async function saveSettings() {
             sessionStorage.setItem('loggedInLeader', JSON.stringify(leader));
         }
 
-        const { data: existingData } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
+        const { data: existingData } = await supabaseClient
+            .from('settings')
+            .select('*')
+            .eq('company_id', safeCompanyId)
+            .limit(1)
+            .maybeSingle();
 
         if (document.getElementById('check-in-start')) {
             const startVal = document.getElementById('check-in-start').value;
@@ -2816,18 +2837,16 @@ async function saveSettings() {
 
             document.querySelectorAll('#exception-list div').forEach(row => {
                 const inputs = row.querySelectorAll('input');
-                if(inputs.length >= 3) {
+                if (inputs.length >= 3) {
                     const exDate = inputs[0].value;
                     const exStart = inputs[1].value;
                     const exEnd = inputs[2].value;
 
-                    // Mathematically block any date that is today or in the past
                     if (exDate && exDate <= todayStr) {
                         invalidDateExc = true;
                     }
-
-                    if(exStart && exEnd) {
-                        if (exStart >= exEnd) invalidExc = true;
+                    if (exStart && exEnd && exStart >= exEnd) {
+                        invalidExc = true;
                     }
                 }
             });
@@ -2844,7 +2863,7 @@ async function saveSettings() {
                             const rows = list.children;
                             const lastRow = rows[rows.length - 1];
                             const inputs = lastRow.querySelectorAll('input');
-                            if(inputs.length >= 3) {
+                            if (inputs.length >= 3) {
                                 inputs[0].value = exc.date;
                                 inputs[1].value = exc.start;
                                 inputs[2].value = exc.end;
@@ -2869,7 +2888,7 @@ async function saveSettings() {
                             const rows = list.children;
                             const lastRow = rows[rows.length - 1];
                             const inputs = lastRow.querySelectorAll('input');
-                            if(inputs.length >= 3) {
+                            if (inputs.length >= 3) {
                                 inputs[0].value = exc.date;
                                 inputs[1].value = exc.start;
                                 inputs[2].value = exc.end;
@@ -2883,7 +2902,6 @@ async function saveSettings() {
             }
         }
 
-        let originalText = subtitle ? subtitle.innerText : "Organizational parameters";
         if (subtitle && !subtitle.innerText.includes("Saving") && !subtitle.innerText.includes("blocked")) {
             subtitle.innerText = "Saving changes to cloud...";
             subtitle.style.color = "#f59e0b"; 
@@ -2893,6 +2911,9 @@ async function saveSettings() {
 
         if (existingData) {
             payload = { ...existingData };
+            // CRITICAL FIX: Never send primary key `id` or `created_at` inside an UPDATE payload
+            delete payload.id;
+            delete payload.created_at;
         }
 
         if (document.getElementById('check-in-start')) {
@@ -2906,13 +2927,13 @@ async function saveSettings() {
             
             if (document.getElementById('require-checkout')) {
                 payload.require_checkout = document.getElementById('require-checkout').checked;
-                payload.late_arrival_hours = parseInt(document.getElementById('late-arrival-hours').value);
+                payload.late_arrival_hours = parseInt(document.getElementById('late-arrival-hours').value, 10) || 0;
             }
             
             let exceptionsArray = [];
             document.querySelectorAll('#exception-list div').forEach(row => {
                 const inputs = row.querySelectorAll('input');
-                if(inputs.length >= 3 && inputs[0].value && inputs[1].value && inputs[2].value) {
+                if (inputs.length >= 3 && inputs[0].value && inputs[1].value && inputs[2].value) {
                     exceptionsArray.push({
                         date: inputs[0].value,
                         start: inputs[1].value,
@@ -2939,11 +2960,39 @@ async function saveSettings() {
             payload.locations = JSON.stringify(workspaceLocations);
         }
 
-       if (existingData) {
-            await supabaseClient.from('settings').update(payload).eq('id', existingData.id);
-        } else {
-            await supabaseClient.from('settings').insert([payload]);
-        }
+        // Helper that automatically retries if a column (e.g., `timezone`) doesn't exist in your Supabase table yet
+        const writeSettingsWithFallback = async (dataToWrite) => {
+            let currentPayload = { ...dataToWrite };
+            for (let attempt = 0; attempt < 4; attempt++) {
+                let res;
+                if (existingData) {
+                    res = await supabaseClient
+                        .from('settings')
+                        .update(currentPayload)
+                        .eq('company_id', safeCompanyId);
+                } else {
+                    res = await supabaseClient
+                        .from('settings')
+                        .insert([currentPayload]);
+                }
+                if (!res.error) return null;
+
+                // If Supabase says a column doesn't exist in `settings`, strip that column and retry immediately
+                const colMatch = res.error.message && res.error.message.match(/column ["']?([a-zA-Z0-9_]+)["']?/i);
+                const missingCol = colMatch ? colMatch[1] : null;
+                if (missingCol && missingCol in currentPayload) {
+                    console.warn(`Stripping missing column '${missingCol}' from settings save payload.`);
+                    delete currentPayload[missingCol];
+                    continue;
+                }
+                return res.error;
+            }
+            return null;
+        };
+
+        const saveError = await writeSettingsWithFallback(payload);
+        if (saveError) throw saveError;
+
         if (subtitle) {
             subtitle.innerText = "All changes saved ✓";
             subtitle.style.color = "#4ade80"; 
@@ -2955,7 +3004,7 @@ async function saveSettings() {
     } catch (err) {
         console.error("Error saving settings to cloud:", err);
         if (subtitle) {
-            subtitle.innerText = "Error saving changes";
+            subtitle.innerText = "Error saving changes: " + (err.message || "Database error");
             subtitle.style.color = "red";
         }
     }
