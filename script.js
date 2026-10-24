@@ -5609,6 +5609,9 @@ function injectSyncAIWidget() {
     const isDashboard = document.querySelector('.bottom-nav');
     if (!isDashboard) return;
 
+    // Prevent duplicate injections
+    if (document.getElementById('sync-ai-widget')) return;
+
     const widgetHtml = `
         <div id="sync-ai-widget">
             <div id="sync-ai-chat-window">
@@ -5617,7 +5620,7 @@ function injectSyncAIWidget() {
                         <span style="display:inline-block; width:8px; height:8px; background:#4ade80; border-radius:50%; box-shadow: 0 0 5px #4ade80;"></span>
                         Sync AI
                     </span>
-                    <span style="cursor: pointer; color: #888;" onclick="toggleSyncAI()">×</span>
+                    <span style="cursor: pointer; color: #888; font-size: 20px; padding: 0 5px;" onclick="toggleSyncAI()">×</span>
                 </div>
                 <div class="sync-chat-messages" id="sync-chat-messages">
                     <div class="sync-msg ai">Hi! I'm Sync AI. Need help understanding any SYNDICACY features or rules?</div>
@@ -5631,8 +5634,8 @@ function injectSyncAIWidget() {
                 </div>
             </div>
             
-            <div id="sync-ai-button" onmousedown="startDragSyncAI(event)" ontouchstart="startDragSyncAI(event)">
-                <!-- INJECTED SVG LOGO -->
+            <!-- Added explicit onclick handler here -->
+            <div id="sync-ai-button" onmousedown="startDragSyncAI(event)" ontouchstart="startDragSyncAI(event)" onclick="handleSyncClick(event)">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="100%" height="100%" style="border-radius:50%;">
                   <defs>
                     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -5695,27 +5698,46 @@ function injectSyncAIWidget() {
     document.body.insertAdjacentHTML('beforeend', widgetHtml);
 }
 
-// Ensure the widget loads when the DOM is ready
-const originalDOMContentLoaded = window.onload;
+// Inject on load if missed
 window.addEventListener('DOMContentLoaded', () => {
     injectSyncAIWidget();
 });
-
-function toggleSyncAI() {
-    const win = document.getElementById('sync-ai-chat-window');
-    win.style.display = win.style.display === 'flex' ? 'none' : 'flex';
+// Fallback if DOM already loaded
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    injectSyncAIWidget();
 }
 
-// Draggable Logic
+// Fixed Toggle Logic (forces the browser to read the computed style)
+function toggleSyncAI() {
+    const win = document.getElementById('sync-ai-chat-window');
+    if (!win) return;
+    
+    const currentState = window.getComputedStyle(win).display;
+    if (currentState === 'none') {
+        win.style.display = 'flex';
+    } else {
+        win.style.display = 'none';
+    }
+}
+
+// Separate click handler to prevent drag-click cancellation
+function handleSyncClick(e) {
+    if (syncDragDidMove) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+    }
+    toggleSyncAI();
+}
+
 let isDraggingSync = false;
 let syncDragDidMove = false;
-let syncStartX, syncStartY;
-let syncStartRight, syncStartBottom;
+let syncStartX, syncStartY, syncStartRight, syncStartBottom;
 
 function startDragSyncAI(e) {
     const widget = document.getElementById('sync-ai-widget');
     isDraggingSync = true;
-    syncDragDidMove = false;
+    syncDragDidMove = false; // Reset drag state on click down
     
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -5741,8 +5763,8 @@ function onDragSyncAI(e) {
     const deltaX = syncStartX - clientX;
     const deltaY = syncStartY - clientY;
     
-    // Threshold to distinguish between a tap/click and a drag
-    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+    // Threshold set to 5px to avoid accidental tiny drags registering as a move
+    if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
         syncDragDidMove = true;
         if(e.cancelable) e.preventDefault();
         const widget = document.getElementById('sync-ai-widget');
@@ -5757,10 +5779,7 @@ function endDragSyncAI() {
     document.removeEventListener('touchmove', onDragSyncAI);
     document.removeEventListener('mouseup', endDragSyncAI);
     document.removeEventListener('touchend', endDragSyncAI);
-    
-    if (!syncDragDidMove) {
-        toggleSyncAI();
-    }
+    // Removed toggleSyncAI() from here! It's now handled safely by handleSyncClick
 }
 
 async function sendSyncMessage() {
@@ -5771,21 +5790,18 @@ async function sendSyncMessage() {
     const chatBox = document.getElementById('sync-chat-messages');
     const typing = document.getElementById('sync-typing');
 
-    // Append User Message
     chatBox.insertBefore(createSyncMsgBubble(msg, 'user'), typing);
     inputEl.value = '';
     chatBox.scrollTop = chatBox.scrollHeight;
 
-    // Show AI Loading State
     typing.style.display = 'flex';
     chatBox.scrollTop = chatBox.scrollHeight;
 
-    // Get Active User Context
     let userEmail = "unknown";
     let userRole = "staff";
-    const leader = getLeader();
+    const leader = typeof getLeader === 'function' ? getLeader() : null;
     if (leader) { userEmail = leader.email; userRole = "leader"; }
-    else if (currentStaff) { userEmail = currentStaff.email; userRole = "staff"; }
+    else if (typeof currentStaff !== 'undefined' && currentStaff) { userEmail = currentStaff.email; userRole = "staff"; }
 
     try {
         await ensureSupabase();
