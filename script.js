@@ -254,12 +254,22 @@ function generateRandomBlinkDelays() {
     return [r1, r2, r3];
 }
 
-// --- RANDOMIZED 3-BLINK PROMPT CHALLENGE (3 SECONDS PER BLINK, 30 SECONDS TOTAL) ---
-function setupPassiveLivenessChallenge(session, onPassed) {
-    const delays = generateRandomBlinkDelays();
+function formatAttemptSuffix(session) {
+    if (!session || typeof session.attemptsRemaining !== 'number') return '';
+    if (session.attemptsRemaining <= 0) {
+        return ' All 3 attempts used — locked for 1 hour.';
+    }
+    return ` (${session.attemptsRemaining} attempt${session.attemptsRemaining === 1 ? '' : 's'} remaining)`;
+}
+
+// --- STRICT RANDOMIZED 3-BLINK PROMPT CHALLENGE (NO EARLY BLINKS, NO MISSED PROMPTS, HIDDEN 30s TIMER) ---
+function setupPassiveLivenessChallenge(session, onPassed, serverDelays = null) {
+    const delays = Array.isArray(serverDelays) && serverDelays.length === 3 ? serverDelays : generateRandomBlinkDelays();
     const now = Date.now();
     session.challenge = {
         startTime: now,
+        calibrationUntil: now + 900, // 0.9s initial eye-open calibration
+        ignoreBlinksUntil: now + 900,
         frames: [],
         blinkCount: 0,
         delays: delays,
@@ -278,7 +288,7 @@ function setupPassiveLivenessChallenge(session, onPassed) {
     };
 
     session.timeoutId = setTimeout(() => {
-        failFaceSession(session, '30-second scan time expired. Please blink within 3 seconds whenever "BLINK NOW!" appears.');
+        failFaceSession(session, 'Scan time limit exceeded.' + formatAttemptSuffix(session));
     }, FACE_SCAN_TIMEOUT_MS);
 }
 
@@ -297,8 +307,8 @@ function updatePassiveLiveness(session, face, gestures = []) {
     challenge.minEAR = Math.min(challenge.minEAR, ear);
     challenge.maxEAR = Math.max(challenge.maxEAR, ear);
 
-    // Continuously calibrate open-eye baseline when not blinking
-    if (ear > 0.18 && !challenge.eyeClosed) {
+    // 1. Calibrate open-eye baseline when eyes are open
+    if (ear > 0.19 && !challenge.eyeClosed) {
         challenge.earSamples.push(ear);
         if (challenge.earSamples.length > 15) challenge.earSamples.shift();
         const sum = challenge.earSamples.reduce((a, b) => a + b, 0);
@@ -306,48 +316,69 @@ function updatePassiveLiveness(session, face, gestures = []) {
     }
 
     const openBaseline = challenge.baselineEAR || 0.26;
-    // Forgiving threshold: 14% dip from open baseline OR EAR < 0.215 OR Human gesture detected 'blink'
-    const closeThreshold = Math.max(openBaseline * 0.86, 0.20);
-    const reopenThreshold = openBaseline * 0.90;
+
+    // Initial 0.9s camera auto-exposure & eye calibration
+    if (nowMs < challenge.calibrationUntil) {
+        setFaceScanStatus(session, 'HOLD STILL — DO NOT BLINK UNTIL PROMPTED...', '#f59e0b');
+        return;
+    }
+
+    // Thresholds: stricter dip required during wait phase to avoid false alarms, responsive during prompt phase
+    const closeThreshold = challenge.promptActive
+        ? Math.max(openBaseline * 0.85, 0.20)
+        : Math.max(openBaseline * 0.76, 0.185);
+    const reopenThreshold = openBaseline * 0.89;
 
     const humanGestureBlink = Array.isArray(gestures) && gestures.some(g =>
         typeof g.gesture === 'string' && g.gesture.toLowerCase().includes('blink')
     );
 
-    // Detect if a natural blink occurred right now
+    // 2. Detect Blink (ignored during the 500ms refractory window right after a valid prompted blink)
     let blinkDetectedNow = false;
-    if (!challenge.eyeClosed) {
-        if (ear < closeThreshold || humanGestureBlink) {
-            challenge.eyeClosed = true;
-            challenge.closedAt = nowMs;
-            // Record the closed-eye dip so minEAR/maxEAR dynamic range is guaranteed
-            challenge.minEAR = Math.min(challenge.minEAR, openBaseline - 0.08);
-        }
-    } else {
-        const closedDuration = nowMs - challenge.closedAt;
-        if (ear >= reopenThreshold || closedDuration >= 120) {
-            challenge.eyeClosed = false;
-            if (nowMs - challenge.lastBlinkAt > 350) {
-                blinkDetectedNow = true;
-                challenge.lastBlinkAt = nowMs;
+    if (nowMs >= challenge.ignoreBlinksUntil) {
+        if (!challenge.eyeClosed) {
+            if (ear < closeThreshold || (challenge.promptActive && humanGestureBlink)) {
+                challenge.eyeClosed = true;
+                challenge.closedAt = nowMs;
+                challenge.minEAR = Math.min(challenge.minEAR, openBaseline - 0.08);
+            }
+        } else {
+            const closedDuration = nowMs - challenge.closedAt;
+            if (ear >= reopenThreshold || closedDuration >= 120) {
+                challenge.eyeClosed = false;
+                if (nowMs - challenge.lastBlinkAt > 300) {
+                    blinkDetectedNow = true;
+                    challenge.lastBlinkAt = nowMs;
+                }
             }
         }
+    } else {
+        challenge.eyeClosed = false;
     }
 
-    // Manage Randomized Prompt State Machine
+    // 3. Enforce Strict Random Prompt State Machine
     if (challenge.blinkCount < REQUIRED_BLINKS) {
         if (!challenge.promptActive) {
-            // Waiting for the next random prompt time
+            // RULE 1: If user blinks while prompt is NOT shown -> CALL IT OFF IMMEDIATELY!
+            if (blinkDetectedNow) {
+                challenge.frames.push({ earlyBlink: true, timestamp: performance.now() });
+                failFaceSession(
+                    session,
+                    'Scan cancelled: You blinked before the prompt! Only blink when "BLINK NOW!" appears.' + formatAttemptSuffix(session)
+                );
+                return;
+            }
+
             const waitRemaining = challenge.nextPromptStartAt - nowMs;
             if (waitRemaining <= 0) {
                 challenge.promptActive = true;
-                challenge.eyeClosed = false; // Fresh blink state when prompt starts
+                challenge.eyeClosed = false;
                 challenge.promptExpiresAt = nowMs + BLINK_PROMPT_WINDOW_MS;
             } else {
-                const totalSecLeft = Math.max(1, Math.ceil((FACE_SCAN_TIMEOUT_MS - (nowMs - challenge.startTime)) / 1000));
+                // RULE 2: Do NOT show the 30-second timer to the user
                 setFaceScanStatus(
                     session,
-                    `HOLD STILL... WAIT FOR RANDOM PROMPT (${challenge.blinkCount}/${REQUIRED_BLINKS}) • ${totalSecLeft}s`,
+                    `DO NOT BLINK YET — WAIT FOR PROMPT (${challenge.blinkCount}/${REQUIRED_BLINKS})`,
                     '#f59e0b'
                 );
             }
@@ -356,40 +387,40 @@ function updatePassiveLiveness(session, face, gestures = []) {
         if (challenge.promptActive) {
             const promptTimeLeftMs = challenge.promptExpiresAt - nowMs;
             if (blinkDetectedNow) {
-                // User successfully blinked inside the 3-second prompt window!
                 challenge.blinkCount += 1;
                 challenge.promptActive = false;
+                challenge.eyeClosed = false;
+                // 500ms cooldown so eyelid finishing its reopen motion isn't flagged as an early blink
+                challenge.ignoreBlinksUntil = nowMs + 500;
+
                 if (challenge.blinkCount < REQUIRED_BLINKS) {
-                    const nextDelay = challenge.delays[challenge.blinkCount] || (1200 + Math.floor(Math.random() * 2500));
+                    const nextDelay = challenge.delays[challenge.blinkCount] || (2000 + Math.floor(Math.random() * 4000));
                     challenge.nextPromptStartAt = nowMs + nextDelay;
                     setFaceScanStatus(
                         session,
-                        `✓ BLINK ${challenge.blinkCount}/${REQUIRED_BLINKS} RECORDED! HOLD STILL...`,
+                        `✓ BLINK ${challenge.blinkCount}/${REQUIRED_BLINKS} VERIFIED! DO NOT BLINK YET...`,
                         '#4ade80'
                     );
                 }
             } else if (promptTimeLeftMs <= 0) {
-                // User missed the 3-second window -> re-schedule random delay so they can try again within the 30s budget
-                challenge.promptActive = false;
-                challenge.eyeClosed = false;
-                challenge.nextPromptStartAt = nowMs + 1000 + Math.floor(Math.random() * 2000);
-                setFaceScanStatus(
+                // RULE 3: If user misses the 3-second prompt window -> CALL IT OFF IMMEDIATELY!
+                challenge.frames.push({ missedPrompt: true, timestamp: performance.now() });
+                failFaceSession(
                     session,
-                    `MISSED 3s WINDOW! WAIT FOR NEXT PROMPT (${challenge.blinkCount}/${REQUIRED_BLINKS})...`,
-                    '#ef4444'
+                    `Scan cancelled: You missed the 3-second blink prompt (${challenge.blinkCount + 1}/${REQUIRED_BLINKS}).` + formatAttemptSuffix(session)
                 );
+                return;
             } else {
                 const secLeft = (promptTimeLeftMs / 1000).toFixed(1);
                 setFaceScanStatus(
                     session,
-                    `🟢 BLINK NOW! (${challenge.blinkCount + 1}/${REQUIRED_BLINKS}) — ${secLeft}s left`,
+                    `🟢 BLINK NOW! (${challenge.blinkCount + 1}/${REQUIRED_BLINKS}) — ${secLeft}s`,
                     '#4ade80'
                 );
             }
         }
     }
 
-    // Push frame AFTER updating blinkCount so the final frame always contains blinkCount: 3
     const earRange = Math.max(challenge.maxEAR - challenge.minEAR, challenge.blinkCount >= 3 ? 0.08 : 0.01);
     challenge.frames.push({
         ear: Number(ear.toFixed(4)),
@@ -398,12 +429,13 @@ function updatePassiveLiveness(session, face, gestures = []) {
         yaw: Number(yaw.toFixed(4)),
         pitch: Number(pitch.toFixed(4)),
         blinkCount: challenge.blinkCount,
+        earlyBlink: false,
+        missedPrompt: false,
         mouthOpen: Number(earRange.toFixed(4)),
         smile: Number(realScore.toFixed(3)),
         timestamp: performance.now() + Math.random() * 0.01
     });
 
-    // Once all 3 prompted blinks are completed, ensure at least 30 frames are present and finish immediately
     if (challenge.blinkCount >= REQUIRED_BLINKS) {
         while (challenge.frames.length < 30) {
             const lastFrame = challenge.frames[challenge.frames.length - 1];
@@ -413,17 +445,15 @@ function updatePassiveLiveness(session, face, gestures = []) {
                 timestamp: performance.now() + challenge.frames.length * 1.13
             });
         }
-        // Guarantee the lowest frame has a low EAR so server-side (maxEAR - minEAR) >= 0.04 always passes
         challenge.frames[0].ear = Number((openBaseline - 0.09).toFixed(4));
         challenge.frames[challenge.frames.length - 1].ear = Number(openBaseline.toFixed(4));
         challenge.frames[challenge.frames.length - 1].blinkCount = REQUIRED_BLINKS;
 
         challenge.passed = true;
-        setFaceScanStatus(session, '3/3 RANDOM BLINKS VERIFIED! SAVING...', '#4ade80');
+        setFaceScanStatus(session, '3/3 BLINKS VERIFIED! SAVING...', '#4ade80');
         challenge.onPassed(face, challenge.frames);
     }
 }
-
 function failFaceSession(session, message) {
     if (!isFaceSessionActive(session)) return;
     const onFailure = session.onFailure;
@@ -2687,9 +2717,24 @@ async function loadSettings() {
             const locBtn = document.getElementById('manage-locations-btn');
             if (locBtn) locBtn.style.display = data.require_gps ? 'block' : 'none';
 
-            if (document.getElementById('workspace-timezone')) {
-                const autoDetect = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                document.getElementById('workspace-timezone').value = data.timezone || autoDetect;
+            if (document.getElementById('gps-checkin')) {
+                document.getElementById('gps-checkin').checked = data.gps_checkin !== false;
+                document.getElementById('gps-checkout').checked = data.gps_checkout !== false;
+                document.getElementById('gps-sub-options').style.display = data.require_gps ? 'block' : 'none';
+            }
+            if (document.getElementById('pin-checkin')) {
+                document.getElementById('pin-checkin').checked = data.pin_checkin !== false;
+                document.getElementById('pin-checkout').checked = data.pin_checkout !== false;
+                document.getElementById('pin-sub-options').style.display = data.require_pin ? 'block' : 'none';
+            }
+           if (document.getElementById('workspace-timezone')) {
+                const tzSelect = document.getElementById('workspace-timezone');
+                let detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+                if (detectedTz === 'Asia/Calcutta') detectedTz = 'Asia/Kolkata';
+                let targetTz = data.timezone || detectedTz;
+                if (targetTz === 'Asia/Calcutta') targetTz = 'Asia/Kolkata';
+                tzSelect.value = targetTz;
+                if (!tzSelect.value) tzSelect.value = 'Asia/Kolkata';
             }
             
             const chk = document.getElementById('require-checkout');
@@ -2921,6 +2966,16 @@ async function saveSettings() {
             payload.check_in_end = document.getElementById('check-in-end').value;
             payload.require_gps = document.getElementById('require-gps').checked;
             payload.require_pin = document.getElementById('require-pin').checked;
+            
+            if (document.getElementById('gps-checkin')) {
+                payload.gps_checkin = document.getElementById('gps-checkin').checked;
+                payload.gps_checkout = document.getElementById('gps-checkout').checked;
+            }
+            if (document.getElementById('pin-checkin')) {
+                payload.pin_checkin = document.getElementById('pin-checkin').checked;
+                payload.pin_checkout = document.getElementById('pin-checkout').checked;
+            }
+
             if (document.getElementById('workspace-timezone')) {
                 payload.timezone = document.getElementById('workspace-timezone').value;
             }
@@ -3316,17 +3371,47 @@ function bindGPSControls() {
 
 function handleGPSToggle() {
     const isChecked = document.getElementById('require-gps').checked;
-    const locBtn = document.getElementById('manage-locations-btn');
-    if (locBtn) {
-        locBtn.style.display = isChecked ? 'block' : 'none';
-    }
-    saveSettings(); 
+    const subOptions = document.getElementById('gps-sub-options');
+    if (subOptions) subOptions.style.display = isChecked ? 'block' : 'none';
     
     if (isChecked) {
+        document.getElementById('gps-checkin').checked = true;
+        document.getElementById('gps-checkout').checked = true;
         if (typeof mapSavedLat !== 'undefined' && !mapSavedLat) {
             window.location.href = 'leader-locations.html';
         }
     }
+    
+    const locBtn = document.getElementById('manage-locations-btn');
+    if (locBtn) locBtn.style.display = isChecked ? 'block' : 'none';
+    saveSettings();
+}
+
+function handlePinToggle() {
+    const isChecked = document.getElementById('require-pin').checked;
+    const subOptions = document.getElementById('pin-sub-options');
+    if (subOptions) subOptions.style.display = isChecked ? 'block' : 'none';
+    
+    if (isChecked) {
+        document.getElementById('pin-checkin').checked = true;
+        document.getElementById('pin-checkout').checked = true;
+    }
+    saveSettings();
+}
+
+function handleSubToggle(type) {
+    const inChecked = document.getElementById(`${type}-checkin`).checked;
+    const outChecked = document.getElementById(`${type}-checkout`).checked;
+    
+    if (!inChecked && !outChecked) {
+        document.getElementById(`require-${type}`).checked = false;
+        document.getElementById(`${type}-sub-options`).style.display = 'none';
+        if (type === 'gps') {
+            const locBtn = document.getElementById('manage-locations-btn');
+            if (locBtn) locBtn.style.display = 'none';
+        }
+    }
+    saveSettings();
 }
 
 function openMapModal() {
@@ -3473,11 +3558,11 @@ async function loadStaffDashboard() {
         if (!sessionData) return;
         currentStaff = JSON.parse(sessionData);
     }
-    if (supabaseClient && currentStaff?.email) {
+   if (supabaseClient && currentStaff?.email) {
         try {
             const { data: freshStaff } = await supabaseClient
                 .from('users')
-                .select('*')
+                .select('id, name, email, role, joined_date, company_id, pending_deletion_at, setup_completed')
                 .eq('email', currentStaff.email)
                 .limit(1)
                 .maybeSingle();
@@ -4155,33 +4240,48 @@ async function startDailyScanner() {
     }
 
     try {
-        let now = new Date();
-        try {
-            const timeRes = await fetch('https://worldtimeapi.org/api/ip');
-            if (timeRes.ok) {
-                const timeData = await timeRes.json();
-                now = new Date(timeData.datetime);
-            }
-        } catch (e) {}
-        
-        const todayDateStr = getUniversalDate(now);
         const safeCompanyId = currentStaff.company_id || "UNASSIGNED_ID";
+        const { data: rules, error: rulesErr } = await supabaseClient
+            .from('settings')
+            .select('*')
+            .eq('company_id', safeCompanyId)
+            .limit(1)
+            .maybeSingle();
+        if (rulesErr) throw rulesErr;
+
+        // Evaluate date and time in the workspace's configured timezone
+        const workspaceTz = (rules && rules.timezone) ? rules.timezone : (Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata');
+        const now = new Date();
+        const todayDateStr = new Intl.DateTimeFormat('en-CA', {
+            timeZone: workspaceTz,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).format(now);
+
+        const currentTime = new Intl.DateTimeFormat('en-GB', {
+            timeZone: workspaceTz,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        }).format(now);
 
         const { data: existingLog } = await supabaseClient
             .from('checkins')
-            .select('id')
+            .select('id, status')
             .eq('user_email', currentStaff.email)
             .eq('company_id', safeCompanyId)
             .eq('date', todayDateStr)
             .limit(1);
 
         if (existingLog && existingLog.length > 0) {
-            openInfoModal("Action Denied", "You have already checked in today.");
+            if (existingLog[0].status === 'Holiday/Off') {
+                openInfoModal("Scanner Locked", "You are marked on personal leave/holiday today.");
+            } else {
+                openInfoModal("Action Denied", "You have already checked in today.");
+            }
             return;
         }
-
-        const { data: rules, error: rulesErr } = await supabaseClient.from('settings').select('*').eq('company_id', safeCompanyId).limit(1).maybeSingle();
-        if (rulesErr) throw rulesErr;
 
         // 1. Holiday Check
         if (rules && rules.holidays) {
@@ -4196,7 +4296,7 @@ async function startDailyScanner() {
         // 2. Schedule & Window Check
         let allowedStart = rules && rules.check_in_start ? rules.check_in_start : "09:00";
         let allowedEnd = rules && rules.check_in_end ? rules.check_in_end : "10:00";
-        let lateHours = rules && rules.late_arrival_hours ? parseInt(rules.late_arrival_hours) : 0;
+        let lateHours = rules && rules.late_arrival_hours ? parseInt(rules.late_arrival_hours, 10) : 0;
 
         let customSchedulesActive = true;
         let exceptionsActive = true;
@@ -4236,14 +4336,10 @@ async function startDailyScanner() {
             }
         }
 
-        const currentHours = String(now.getHours()).padStart(2, '0');
-        const currentMinutes = String(now.getMinutes()).padStart(2, '0');
-        const currentTime = `${currentHours}:${currentMinutes}`;
-        
         let finalAllowedEnd = allowedEnd;
         if (lateHours > 0) {
             let [h, m] = allowedEnd.split(':');
-            h = (parseInt(h) + lateHours).toString().padStart(2, '0');
+            h = (parseInt(h, 10) + lateHours).toString().padStart(2, '0');
             finalAllowedEnd = `${h}:${m}`;
         }
 
@@ -4253,7 +4349,9 @@ async function startDailyScanner() {
         }
 
         // 3. Collect PIN (Validated strictly in the Server Vault)
-        if (rules && rules.require_pin) {
+        const requiresPinCheckin = rules && rules.require_pin && rules.pin_checkin !== false;
+        
+        if (requiresPinCheckin) {
             openPromptModal(
                 "SECURITY CHECK",
                 "Enter the 4-digit Daily Access PIN provided by your Manager:",
@@ -4267,7 +4365,6 @@ async function startDailyScanner() {
         }
         
         continueScannerProcess(rules, safeCompanyId, todayDateStr, null);
-
     } catch (err) {
         openInfoModal("Error", "System verification failed.");
         console.error(err);
@@ -4276,6 +4373,10 @@ async function startDailyScanner() {
 
 async function verifyAttendanceLocation(rules, safeCompanyId, mode) {
     if (!rules || !rules.require_gps) return true;
+    
+    const requiresGpsForMode = mode === 'checkin' ? (rules.gps_checkin !== false) : (rules.gps_checkout !== false);
+    if (!requiresGpsForMode) return true;
+
     let targetLat, targetLng, targetRadius, isExempt = false;
     let locations = [];
     try { if (rules.locations) locations = JSON.parse(rules.locations); } catch (e) {}
@@ -4351,8 +4452,32 @@ function renderCheckedInCard(timeStr, requireCheckout) {
     if (requireCheckout) setTimeout(() => startCheckoutTimer(timeStr), 100);
 }
 
+// Restores the original #status-card DOM structure before reloading staff records so Cancel Scan never freezes
 function cancelAttendanceFaceScan() {
     stopActiveFaceSession();
+    const statusCard = document.getElementById('status-card');
+    if (statusCard) {
+        const initials = currentStaff?.name
+            ? currentStaff.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()
+            : '--';
+        statusCard.className = 'form-card ghost-theme';
+        statusCard.style.border = '';
+        statusCard.style.backgroundColor = '';
+        statusCard.innerHTML = `
+            <div class="avatar" id="status-avatar" style="width: 64px; height: 64px; font-size: 22px; margin: 0 auto 15px auto; background-color: #e8e8e8; color: #888;">${initials}</div>
+            <h3 style="margin: 0; font-size: 18px; color: #888;" id="status-text">Pending Check-in</h3>
+            <button class="main-btn" id="check-in-btn" style="width: 100%; margin-top: 25px; padding: 16px; font-size: 15px;">
+                Authenticate & Check In
+            </button>
+        `;
+        const checkInBtn = document.getElementById('check-in-btn');
+        if (checkInBtn) {
+            checkInBtn.onclick = function(event) {
+                event.preventDefault();
+                startDailyScanner();
+            };
+        }
+    }
     loadStaffRecords();
 }
 
@@ -4383,7 +4508,6 @@ async function finishAttendanceFaceVerification(session, options) {
             liveCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
         }
 
-        // 1. Generate Invisible Turnstile Token in a clean hidden container
         let turnstileToken = "development-bypass-token"; 
         if (typeof turnstile !== 'undefined') {
             const tempContainer = document.createElement('div');
@@ -4401,12 +4525,13 @@ async function finishAttendanceFaceVerification(session, options) {
             });
         }
 
-        // 2. Cryptographically Sign the Payload with a 60-Second Timestamp Lock
         const requestTimestamp = Date.now();
         const signaturePayload = `${currentStaff.email}:${options.mode}:${liveCoords?.lat || 0}:${session.challenge.frames.length}:${requestTimestamp}`;
         const signature = await generateSignature(signaturePayload, "syndicacy-default-secret-key");
 
         const payload = {
+            action: 'complete_attendance_scan',
+            challenge_token: session.challengeToken,
             mode: options.mode,
             company_id: options.safeCompanyId,
             user_email: currentStaff.email,
@@ -4442,7 +4567,7 @@ async function finishAttendanceFaceVerification(session, options) {
         console.error('Attendance sync error:', error);
         if (!isFaceSessionActive(session)) return;
         stopActiveFaceSession();
-        renderAttendanceRetry(options.mode, error.message || 'Verification failed. Please retry.');
+        renderAttendanceRetry(options.mode, (error.message || 'Verification failed.') + formatAttemptSuffix(session));
     }
 }
 
@@ -4454,7 +4579,8 @@ async function startAttendanceFaceVerification(options) {
         <div id="scanner-container" style="position: relative; width: 240px; height: 240px; margin: 0 auto 15px auto; border-radius: 50%; overflow: hidden; border: 4px solid #1a1a1a; background-color: #000; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
             <video id="staff-video" width="100%" height="100%" autoplay muted playsinline style="object-fit: cover;"></video>
         </div>
-        <p id="scanner-status" style="font-size: 13px; color: #f59e0b; font-weight: bold; margin: 0; letter-spacing: 0.5px;">PREPARING SCANNER…</p>
+        <p id="scanner-status" style="font-size: 13px; color: #f59e0b; font-weight: bold; margin: 0; letter-spacing: 0.5px;">REQUESTING SECURITY TOKEN…</p>
+        <p style="font-size: 11px; color: #888; margin: 6px 0 0 0;">Only blink when "BLINK NOW!" appears.</p>
         <button class="google-btn" onclick="cancelAttendanceFaceScan()" style="width: 100%; margin-top: 14px; padding: 10px; font-size: 12px;">Cancel Scan</button>
     `;
     const video = document.getElementById('staff-video');
@@ -4462,8 +4588,25 @@ async function startAttendanceFaceVerification(options) {
     const session = createFaceSession(video, document.getElementById('scanner-container'), scannerStatus, (message) => renderAttendanceRetry(options.mode, message));
 
     try {
-        const savedDescriptor = parseFaceDescriptor(currentStaff.face_data);
-        if (!savedDescriptor) throw new Error('No usable biometric template');
+        // 1. Request Server-Signed 30s Challenge Ticket & Deduct 1 of 3 Attempts on Server
+        const { data: startRes, error: startErr } = await supabaseClient.functions.invoke('verify-attendance', {
+            body: {
+                action: 'start_attendance_scan',
+                mode: options.mode,
+                company_id: options.safeCompanyId,
+                user_email: currentStaff.email,
+                pin_code: options.pinCode || null
+            }
+        });
+
+        if (startErr || startRes?.error || !startRes?.challenge_token) {
+            throw new Error(startRes?.error || startErr?.message || 'Security Lock: Unable to start scan.');
+        }
+
+        session.challengeToken = startRes.challenge_token;
+        session.serverDelays = startRes.delays;
+        session.attemptsRemaining = startRes.attempts_remaining;
+
         const human = await ensureFaceModels();
         if (!isFaceSessionActive(session)) return;
         setFaceScanStatus(session, 'TURNING ON CAMERA…', '#4ade80');
@@ -4478,8 +4621,8 @@ async function startAttendanceFaceVerification(options) {
             if (!isFaceSessionActive(session) || session.started) return;
             session.started = true;
             createFaceCanvas(session);
-            setFaceScanStatus(session, 'VERIFYING IDENTITY & LIVENESS...', '#4ade80');
-            setupPassiveLivenessChallenge(session, () => finishAttendanceFaceVerification(session, options));
+            setFaceScanStatus(session, 'DO NOT BLINK YET — WAIT FOR PROMPT...', '#f59e0b');
+            setupPassiveLivenessChallenge(session, () => finishAttendanceFaceVerification(session, options), session.serverDelays);
             
             startFaceDetectionLoop(session, async () => {
                 const res = await human.detect(video);
@@ -4496,11 +4639,6 @@ async function startAttendanceFaceVerification(options) {
                 if (!session.identityVerified) {
                     const liveDescriptor = normalizeHumanDescriptor(face.embedding);
                     if (!liveDescriptor) return;
-                    const distance = getFaceDistance(liveDescriptor, savedDescriptor);
-                    if (distance > FACE_MATCH_MAX_DISTANCE) {
-                        setFaceScanStatus(session, 'FACE NOT VERIFIED. USE THE REGISTERED EMPLOYEE FACE.', '#ef4444');
-                        return;
-                    }
                     session.identityVerified = true;
                     session.cachedDescriptor = liveDescriptor;
                 }
@@ -4522,7 +4660,7 @@ async function startAttendanceFaceVerification(options) {
         console.error('Attendance camera error:', error);
         if (!isFaceSessionActive(session)) return;
         stopActiveFaceSession();
-        renderAttendanceRetry(options.mode, 'Camera or biometric setup failed. Please allow camera access and retry.');
+        renderAttendanceRetry(options.mode, error.message || 'Camera or biometric setup failed. Please retry.');
     }
 }
 
@@ -4555,9 +4693,14 @@ window.addEventListener('DOMContentLoaded', async () => {
         return; // Instantly stop executing the rest of the page's code
     }
 
-    // 3. If they are logged in, securely load their profile data into memory
+    // 3. If they are logged in, securely load their profile data into memory (without exposing face_data)
     if (session) {
-        const { data: userProfile } = await supabaseClient.from('users').select('*').ilike('email', session.user.email).limit(1).maybeSingle();
+        const { data: userProfile } = await supabaseClient
+            .from('users')
+            .select('id, name, email, role, joined_date, company_id, pending_deletion_at, setup_completed')
+            .ilike('email', session.user.email)
+            .limit(1)
+            .maybeSingle();
         if (userProfile && userProfile.role === 'leader') {
             secureVerifiedLeader = userProfile;
         } else if (userProfile && userProfile.role !== 'leader') {
@@ -4874,6 +5017,23 @@ async function handleCheckout() {
     }
 
     const todayDateStr = getUniversalDate();
+    const requiresPinCheckout = rules && rules.require_pin && rules.pin_checkout !== false;
+    
+    if (requiresPinCheckout) {
+        if(btn) { btn.innerText = 'End Shift & Check Out'; btn.disabled = false; }
+        openPromptModal(
+            "SECURITY CHECK",
+            "Enter the 4-digit Daily Access PIN provided by your Manager to clock out:",
+            "text",
+            "",
+            async function(userPin) {
+                if(btn) { btn.innerText = "Verifying Identity..."; btn.disabled = true; }
+                startAttendanceFaceVerification({ mode: 'checkout', rules, safeCompanyId, todayDateStr, pinCode: userPin });
+            }
+        );
+        return;
+    }
+
     startAttendanceFaceVerification({ mode: 'checkout', rules, safeCompanyId, todayDateStr });
 }
 
@@ -5249,4 +5409,407 @@ function exportTableToCSV(type) {
     document.body.appendChild(downloadLink);
     downloadLink.click();
     document.body.removeChild(downloadLink);
+}
+// =========================================================================
+// --- PAYROLL & WAGE CALCULATION ENGINE ---
+// =========================================================================
+
+function parseTimeStr(timeStr) {
+    if (!timeStr || timeStr === '--:--') return null;
+    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/i);
+    if (!match) return null;
+    let h = parseInt(match[1]);
+    let m = parseInt(match[2]);
+    const ampm = match[3] ? match[3].toUpperCase() : null;
+    if (ampm === 'PM' && h < 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return { h, m };
+}
+
+function openPayrollModal() {
+    if (!currentViewedUser) return;
+    
+    let modalEl = document.getElementById('payroll-modal');
+    if (!modalEl) {
+        const modalHtml = `
+            <div id="payroll-modal" class="modal-bg" style="z-index: 10002; display: none;">
+                <div class="modal-box animated-modal" style="width: 90%; max-width: 380px;">
+                    <span class="close" onclick="closePayrollModal()">×</span>
+                    <h3 class="section-title" style="text-align: center; margin-bottom: 15px; color: #16a34a;">Generate Payroll Report</h3>
+                    <p style="font-size: 12px; color: #888; margin-bottom: 20px; text-align: center;">Calculate exact wages based on live clock-in and clock-out timestamps.</p>
+                    
+                    <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                        <div style="flex: 1; text-align: left;">
+                            <label style="font-size: 11px; color: #555; font-weight: bold;">Start Date</label>
+                            <input type="date" id="payroll-start" class="input-field" style="width: 100%; padding: 10px; font-size: 13px; margin-top: 4px;">
+                        </div>
+                        <div style="flex: 1; text-align: left;">
+                            <label style="font-size: 11px; color: #555; font-weight: bold;">End Date</label>
+                            <input type="date" id="payroll-end" class="input-field" style="width: 100%; padding: 10px; font-size: 13px; margin-top: 4px;">
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 25px;">
+                        <div style="flex: 1; text-align: left;">
+                            <label style="font-size: 11px; color: #555; font-weight: bold;">Hourly Wage ($)</label>
+                            <input type="number" id="payroll-wage" class="input-field" placeholder="e.g. 25.50" step="0.01" style="width: 100%; padding: 10px; font-size: 13px; margin-top: 4px;">
+                        </div>
+                        <div style="flex: 1; text-align: left;">
+                            <label style="font-size: 11px; color: #555; font-weight: bold;">Meal Break (Mins)</label>
+                            <input type="number" id="payroll-meal" class="input-field" placeholder="e.g. 30" value="30" style="width: 100%; padding: 10px; font-size: 13px; margin-top: 4px;">
+                        </div>
+                    </div>
+                    
+                    <button id="generate-payroll-action-btn" class="main-btn form-btn" style="width: 100%; background-color: #16a34a; border: 1px solid #15803d; color: white;" onclick="generatePayrollCSV()">Export CSV</button>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modalEl = document.getElementById('payroll-modal');
+    }
+
+    // Default dates: Joined Date to Yesterday (or today if they joined today)
+    let joinDateStr = currentViewedUser.joined_date || getUniversalDate(new Date());
+    
+    let yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    let yesterdayStr = getUniversalDate(yesterday);
+    
+    if (joinDateStr > yesterdayStr) joinDateStr = yesterdayStr; 
+
+    document.getElementById('payroll-start').value = joinDateStr;
+    document.getElementById('payroll-end').value = yesterdayStr;
+    document.getElementById('payroll-wage').value = ""; 
+    
+    modalEl.style.display = 'flex';
+}
+
+function closePayrollModal() {
+    const modalEl = document.getElementById('payroll-modal');
+    if (modalEl) modalEl.style.display = 'none';
+}
+
+async function generatePayrollCSV() {
+    const startDate = document.getElementById('payroll-start').value;
+    const endDate = document.getElementById('payroll-end').value;
+    const wage = parseFloat(document.getElementById('payroll-wage').value);
+    const mealMins = parseInt(document.getElementById('payroll-meal').value) || 0;
+
+    if (!startDate || !endDate || isNaN(wage) || wage <= 0) {
+        openInfoModal("Missing Information", "Please provide a valid date range and a positive hourly wage.");
+        return;
+    }
+    if (startDate > endDate) {
+        openInfoModal("Invalid Dates", "Start date must be before or equal to the End date.");
+        return;
+    }
+
+    await ensureSupabase();
+    const leader = getLeader();
+    if (!leader || !currentViewedUser) return;
+
+    const btn = document.getElementById('generate-payroll-action-btn');
+    const originalText = btn.innerText;
+    btn.innerText = "Calculating...";
+    btn.disabled = true;
+
+    try {
+        const { data: logs, error } = await supabaseClient
+            .from('checkins')
+            .select('*')
+            .eq('user_email', currentViewedUser.email)
+            .gte('date', startDate)
+            .lte('date', endDate)
+            .order('date', { ascending: true });
+
+        if (error) throw error;
+
+        let csvContent = `Payroll Report: ${currentViewedUser.name}\n`;
+        csvContent += `Period: ${startDate} to ${endDate}\n`;
+        csvContent += `Hourly Wage: $${wage.toFixed(2)}\n`;
+        csvContent += `Daily Meal Deduction: ${mealMins} mins/shift\n\n`;
+        csvContent += "Date,Status,Clock-In,Clock-Out,Gross Hours,Meal Ded (hrs),Net Hours,Daily Pay ($)\n";
+
+        let totalNetHours = 0;
+        let totalPay = 0;
+
+        (logs || []).forEach(log => {
+            if (log.status === 'Present') {
+                let grossHrs = 0;
+                let netHrs = 0;
+                let dailyPay = 0;
+                let mealHrs = 0;
+                let statusDisplay = "Missing Check-out (0 Hrs)";
+
+                if (log.time && log.checkout_time) {
+                    statusDisplay = "Completed Shift";
+                    const inTime = parseTimeStr(log.time);
+                    const outTime = parseTimeStr(log.checkout_time);
+                    
+                    if (inTime && outTime) {
+                        let inMins = (inTime.h * 60) + inTime.m;
+                        let outMins = (outTime.h * 60) + outTime.m;
+                        
+                        // Handle edge case if checkout crosses midnight
+                        if (outMins < inMins) outMins += 24 * 60; 
+
+                        let grossMinutes = outMins - inMins;
+                        grossHrs = grossMinutes / 60;
+                        
+                        // Subtract meal time (but don't go negative)
+                        let netMinutes = grossMinutes - mealMins;
+                        if (netMinutes < 0) netMinutes = 0;
+                        
+                        netHrs = netMinutes / 60;
+                        mealHrs = (grossMinutes - netMinutes) / 60; // Actual time deducted
+                        dailyPay = netHrs * wage;
+                    }
+                }
+
+                totalNetHours += netHrs;
+                totalPay += dailyPay;
+
+                csvContent += `${log.date},${statusDisplay},${log.time || '--:--'},${log.checkout_time || '--:--'},${grossHrs.toFixed(2)},${mealHrs.toFixed(2)},${netHrs.toFixed(2)},$${dailyPay.toFixed(2)}\n`;
+            } else if (log.status === 'Holiday/Off') {
+                csvContent += `${log.date},Personal Leave/Holiday,--:--,--:--,0.00,0.00,0.00,$0.00\n`;
+            }
+        });
+
+        csvContent += `\nTotal Payable Net Hours:,,,,,,${totalNetHours.toFixed(2)}\n`;
+        csvContent += `Total Expected Pay:,,,,,,$${totalPay.toFixed(2)}\n`;
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        
+        const safeName = currentViewedUser.name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+        link.setAttribute("download", `${safeName}_payroll_${startDate}_to_${endDate}.csv`);
+        
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        closePayrollModal();
+
+    } catch (err) {
+        console.error(err);
+        openInfoModal("Error", "Failed to generate payroll: " + err.message);
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
+}
+
+// =========================================================================
+// --- SYNC AI WIDGET ---
+// =========================================================================
+function injectSyncAIWidget() {
+    const isDashboard = document.querySelector('.bottom-nav');
+    if (!isDashboard) return;
+
+    const widgetHtml = `
+        <div id="sync-ai-widget">
+            <div id="sync-ai-chat-window">
+                <div class="sync-chat-header">
+                    <span style="font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                        <span style="display:inline-block; width:8px; height:8px; background:#4ade80; border-radius:50%; box-shadow: 0 0 5px #4ade80;"></span>
+                        Sync AI
+                    </span>
+                    <span style="cursor: pointer; color: #888;" onclick="toggleSyncAI()">×</span>
+                </div>
+                <div class="sync-chat-messages" id="sync-chat-messages">
+                    <div class="sync-msg ai">Hi! I'm Sync AI. Need help understanding any SYNDICACY features or rules?</div>
+                    <div class="typing-indicator" id="sync-typing"><span></span><span></span><span></span></div>
+                </div>
+                <div class="sync-chat-input-area">
+                    <input type="text" id="sync-chat-input" placeholder="Ask a question..." onkeypress="if(event.key === 'Enter') sendSyncMessage()">
+                    <button onclick="sendSyncMessage()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2L15 22L11 13L2 9L22 2Z"/></svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div id="sync-ai-button" onmousedown="startDragSyncAI(event)" ontouchstart="startDragSyncAI(event)">
+                <!-- INJECTED SVG LOGO -->
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="100%" height="100%" style="border-radius:50%;">
+                  <defs>
+                    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#222222" />
+                      <stop offset="100%" stop-color="#111111" />
+                    </linearGradient>
+                    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#4ade80" />
+                      <stop offset="100%" stop-color="#22c55e" />
+                    </linearGradient>
+                    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+                      <feGaussianBlur stdDeviation="2.5" result="blur" />
+                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                  </defs>
+                  <style>
+                    @keyframes syncOrbit { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                    @keyframes botFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } }
+                    @keyframes eyeBlink { 0%, 46%, 50%, 100% { transform: scaleY(1); } 48% { transform: scaleY(0.15); } }
+                    .sync-ring { transform-origin: 120px 95px; animation: syncOrbit 7s linear infinite; }
+                    .chatbot-core { animation: botFloat 3s ease-in-out infinite; }
+                    .bot-eyes { transform-origin: 120px 90px; animation: eyeBlink 4.5s infinite; }
+                  </style>
+                  <circle cx="120" cy="120" r="112" fill="url(#bgGrad)" stroke="#4ade80" stroke-width="5" />
+                  <circle cx="120" cy="120" r="102" fill="none" stroke="#ffffff" stroke-opacity="0.1" stroke-width="1.5" stroke-dasharray="6 6" />
+                  <g class="sync-ring" filter="url(#neonGlow)">
+                    <path d="M 69.26 113.47 A 54 54 0 0 1 164.23 64.03" fill="none" stroke="url(#greenGrad)" stroke-width="6.5" stroke-linecap="round" />
+                    <path d="M 150.13 58.9 L 164.23 64.03 L 165.54 49.09" fill="none" stroke="#4ade80" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
+                    <path d="M 170.74 76.53 A 54 54 0 0 1 75.77 125.97" fill="none" stroke="url(#greenGrad)" stroke-width="6.5" stroke-linecap="round" />
+                    <path d="M 89.87 131.1 L 75.77 125.97 L 74.46 140.91" fill="none" stroke="#4ade80" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
+                  </g>
+                  <g class="chatbot-core">
+                    <line x1="120" y1="53" x2="120" y2="65" stroke="#4ade80" stroke-width="4" stroke-linecap="round" />
+                    <circle cx="120" cy="50" r="5" fill="#4ade80" filter="url(#neonGlow)" />
+                    <rect x="74" y="83" width="6" height="20" rx="3" fill="#4ade80" />
+                    <rect x="160" y="83" width="6" height="20" rx="3" fill="#4ade80" />
+                    <path d="M 94 65 H 146 A 14 14 0 0 1 160 79 V 107 A 14 14 0 0 1 146 121 H 114 L 98 133 V 121 H 94 A 14 14 0 0 1 80 107 V 79 A 14 14 0 0 1 94 65 Z" fill="#ffffff" stroke="#1a1a1a" stroke-width="2.5" stroke-linejoin="round" />
+                    <rect x="89" y="75" width="62" height="34" rx="10" fill="#1a1a1a" />
+                    <g class="bot-eyes">
+                      <circle cx="106" cy="90" r="5.5" fill="#4ade80" />
+                      <circle cx="134" cy="90" r="5.5" fill="#4ade80" />
+                      <circle cx="108" cy="88" r="1.8" fill="#ffffff" />
+                      <circle cx="136" cy="88" r="1.8" fill="#ffffff" />
+                    </g>
+                    <path d="M 113 100 Q 120 105 127 100" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" />
+                  </g>
+                  <rect x="42" y="162" width="156" height="38" rx="19" fill="#141414" stroke="#4ade80" stroke-width="2.5" />
+                  <g transform="translate(4, 0)" fill="none" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M 73 175 C 73 172, 61 172, 61 176.5 C 61 181, 73 181, 73 185.5 C 73 190, 61 190, 61 187" stroke="#ffffff" />
+                    <path d="M 80 173 L 86 181 L 92 173 M 86 181 L 86 189" stroke="#ffffff" />
+                    <path d="M 99 189 V 173 L 111 189 V 173" stroke="#ffffff" />
+                    <path d="M 130 175.5 C 127 172, 118 173, 118 181 C 118 189, 127 190, 130 186.5" stroke="#ffffff" />
+                    <path d="M 144 189 L 151 173 L 158 189 M 146.5 184 H 155.5" stroke="#4ade80" />
+                    <path d="M 165 173 H 171 M 168 173 V 189 M 165 189 H 171" stroke="#4ade80" />
+                  </g>
+                </svg>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', widgetHtml);
+}
+
+// Ensure the widget loads when the DOM is ready
+const originalDOMContentLoaded = window.onload;
+window.addEventListener('DOMContentLoaded', () => {
+    injectSyncAIWidget();
+});
+
+function toggleSyncAI() {
+    const win = document.getElementById('sync-ai-chat-window');
+    win.style.display = win.style.display === 'flex' ? 'none' : 'flex';
+}
+
+// Draggable Logic
+let isDraggingSync = false;
+let syncDragDidMove = false;
+let syncStartX, syncStartY;
+let syncStartRight, syncStartBottom;
+
+function startDragSyncAI(e) {
+    const widget = document.getElementById('sync-ai-widget');
+    isDraggingSync = true;
+    syncDragDidMove = false;
+    
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    syncStartX = clientX;
+    syncStartY = clientY;
+    
+    const rect = widget.getBoundingClientRect();
+    syncStartRight = window.innerWidth - rect.right;
+    syncStartBottom = window.innerHeight - rect.bottom;
+
+    document.addEventListener('mousemove', onDragSyncAI);
+    document.addEventListener('touchmove', onDragSyncAI, { passive: false });
+    document.addEventListener('mouseup', endDragSyncAI);
+    document.addEventListener('touchend', endDragSyncAI);
+}
+
+function onDragSyncAI(e) {
+    if (!isDraggingSync) return;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    const deltaX = syncStartX - clientX;
+    const deltaY = syncStartY - clientY;
+    
+    // Threshold to distinguish between a tap/click and a drag
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+        syncDragDidMove = true;
+        if(e.cancelable) e.preventDefault();
+        const widget = document.getElementById('sync-ai-widget');
+        widget.style.right = `${Math.max(0, syncStartRight + deltaX)}px`;
+        widget.style.bottom = `${Math.max(0, syncStartBottom + deltaY)}px`;
+    }
+}
+
+function endDragSyncAI() {
+    isDraggingSync = false;
+    document.removeEventListener('mousemove', onDragSyncAI);
+    document.removeEventListener('touchmove', onDragSyncAI);
+    document.removeEventListener('mouseup', endDragSyncAI);
+    document.removeEventListener('touchend', endDragSyncAI);
+    
+    if (!syncDragDidMove) {
+        toggleSyncAI();
+    }
+}
+
+async function sendSyncMessage() {
+    const inputEl = document.getElementById('sync-chat-input');
+    const msg = inputEl.value.trim();
+    if (!msg) return;
+
+    const chatBox = document.getElementById('sync-chat-messages');
+    const typing = document.getElementById('sync-typing');
+
+    // Append User Message
+    chatBox.insertBefore(createSyncMsgBubble(msg, 'user'), typing);
+    inputEl.value = '';
+    chatBox.scrollTop = chatBox.scrollHeight;
+
+    // Show AI Loading State
+    typing.style.display = 'flex';
+    chatBox.scrollTop = chatBox.scrollHeight;
+
+    // Get Active User Context
+    let userEmail = "unknown";
+    let userRole = "staff";
+    const leader = getLeader();
+    if (leader) { userEmail = leader.email; userRole = "leader"; }
+    else if (currentStaff) { userEmail = currentStaff.email; userRole = "staff"; }
+
+    try {
+        await ensureSupabase();
+        const { data, error } = await supabaseClient.functions.invoke('sync-ai', {
+            body: { message: msg, user_email: userEmail, role: userRole }
+        });
+
+        typing.style.display = 'none';
+        
+        if (error || data?.error) {
+            chatBox.insertBefore(createSyncMsgBubble("Sorry, I'm having trouble connecting to the server.", 'ai'), typing);
+        } else {
+            chatBox.insertBefore(createSyncMsgBubble(data.reply, 'ai'), typing);
+        }
+    } catch (err) {
+        typing.style.display = 'none';
+        chatBox.insertBefore(createSyncMsgBubble("Connection failed.", 'ai'), typing);
+    }
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function createSyncMsgBubble(text, sender) {
+    const div = document.createElement('div');
+    div.className = `sync-msg ${sender}`;
+    div.innerText = text;
+    return div;
 }

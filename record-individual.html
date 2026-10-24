@@ -88,11 +88,13 @@
                 <span><span style="color: #a855f7; font-size: 14px;">■</span> Late Arrival</span>
             </div>
             
-            <!-- Redirects to the new plain table page -->
-            <button id="toggle-history-btn" class="google-btn" style="width: 100%; border-style: dashed; margin-top: 20px; padding: 12px; font-size: 13px;" onclick="window.location.href='record-history.html?email=' + encodeURIComponent(currentViewedUser.email)">📄 View Detailed Historical Table</button>
+           <!-- Redirects to the new plain table page & Payroll Generator -->
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button id="toggle-history-btn" class="google-btn" style="flex: 1; border-style: dashed; padding: 12px; font-size: 13px;" onclick="window.location.href='record-history.html?email=' + encodeURIComponent(currentViewedUser.email)">📄 View History</button>
+                <button id="payroll-report-btn" class="main-btn" style="flex: 1; padding: 12px; font-size: 13px; background-color: #16a34a; border: 1px solid #15803d; color: white;" onclick="openPayrollModal()">💵 Generate Payroll Report</button>
+            </div>
         </div>
     </div>
-
     <!-- CONFIRM MODAL -->
     <div id="confirm-modal" class="modal-bg" style="z-index: 10000;">
         <div class="modal-box animated-modal" style="width: 90%; max-width: 320px;">
@@ -105,7 +107,6 @@
             </div>
         </div>
     </div>
-
-    <script src="script.js?v=1020"></script>
+<script src="script.js?v=6000"></script>
 </body>
 </html>

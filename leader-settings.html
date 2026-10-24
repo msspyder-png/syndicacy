@@ -63,7 +63,7 @@
                 <input type="time" id="check-in-end" class="input-field" value="10:00" style="width: 50%;" onchange="saveSettings()">
             </div>
 
-            <!-- PASTE THE NEW TIMEZONE DROPDOWN HERE -->
+           <!-- PASTE THE NEW TIMEZONE DROPDOWN HERE -->
             <label class="form-label">Workspace Timezone</label>
             <select id="workspace-timezone" class="input-field" style="margin-bottom: 15px;" onchange="saveSettings()">
                 <option value="America/New_York">Eastern Time (US)</option>
@@ -71,7 +71,8 @@
                 <option value="America/Denver">Mountain Time (US)</option>
                 <option value="America/Los_Angeles">Pacific Time (US)</option>
                 <option value="Europe/London">London (GMT)</option>
-                <option value="Asia/Calcutta">India (IST)</option>
+                <option value="Asia/Kolkata">India (IST)</option>
+                <option value="Asia/Calcutta">India (IST - Legacy)</option>
                 <option value="Asia/Dubai">Dubai (GST)</option>
                 <option value="Asia/Singapore">Singapore (SGT)</option>
                 <option value="Australia/Sydney">Sydney (AEST)</option>
@@ -164,8 +165,7 @@
             <div style="padding: 12px; background-color: #f9f9f9; border-left: 3px solid #1a1a1a; margin-bottom: 20px; font-size: 11px; color: #555; line-height: 1.4; border-radius: 0 4px 4px 0;">
                 <strong style="color: #1a1a1a;">SECURITY ADVISORY:</strong> Maintaining both 2-Step and 3-Step authentication is highly recommended. Disabling these protocols removes anti-spoofing protections and compromises the integrity of your organization's data.
             </div>
-
-            <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+<div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 14px; font-weight: 600;">2-Step: Geospatial Verification</span>
@@ -175,15 +175,32 @@
                 </div>
                 
                 <label class="switch">
-                    <!-- Updated to trigger the map if turned ON -->
                     <input type="checkbox" id="require-gps" onchange="handleGPSToggle()">
                     <span class="slider"></span>
                 </label>
             </div>
+
+            <!-- GPS SUB-OPTIONS -->
+            <div id="gps-sub-options" style="display: none; padding-left: 20px; border-left: 2px solid #eaeaea; margin-bottom: 15px; margin-left: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <span style="font-size: 13px; color: #555;">Verify on Check-in</span>
+                    <label class="switch" style="transform: scale(0.8); transform-origin: right;">
+                        <input type="checkbox" id="gps-checkin" onchange="handleSubToggle('gps')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 13px; color: #555;">Verify on Check-out</span>
+                    <label class="switch" style="transform: scale(0.8); transform-origin: right;">
+                        <input type="checkbox" id="gps-checkout" onchange="handleSubToggle('gps')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
             
             <button id="manage-locations-btn" class="google-btn" style="width: 100%; margin-bottom: 25px; border-style: dashed; font-size: 13px; display: none;" onclick="window.location.href='leader-locations.html'">📍 Manage GPS Workplaces</button>
 
-            <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="setting-row" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 14px; font-weight: 600;">3-Step: Dynamic Access</span>
@@ -193,13 +210,28 @@
                 </div>
                 
                 <label class="switch">
-                    <input type="checkbox" id="require-pin" onchange="saveSettings()">
+                    <input type="checkbox" id="require-pin" onchange="handlePinToggle()">
                     <span class="slider"></span>
                 </label>
             </div>
-        </div>
 
-    </div>
+            <!-- PIN SUB-OPTIONS -->
+            <div id="pin-sub-options" style="display: none; padding-left: 20px; border-left: 2px solid #eaeaea; margin-bottom: 15px; margin-left: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <span style="font-size: 13px; color: #555;">Require PIN on Check-in</span>
+                    <label class="switch" style="transform: scale(0.8); transform-origin: right;">
+                        <input type="checkbox" id="pin-checkin" onchange="handleSubToggle('pin')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 13px; color: #555;">Require PIN on Check-out</span>
+                    <label class="switch" style="transform: scale(0.8); transform-origin: right;">
+                        <input type="checkbox" id="pin-checkout" onchange="handleSubToggle('pin')">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
 
     <!-- INFO MODAL -->
     <div id="info-modal" class="modal-bg">
@@ -262,6 +294,6 @@
         </a>
     </nav>
 
-  <script src="script.js?v=4000"></script>
+<script src="script.js?v=6000"></script>
 </body>
 </html>

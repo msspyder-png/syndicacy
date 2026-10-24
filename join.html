@@ -24,7 +24,7 @@
             
             <div style="background-color: #f9f9f9; border: 1px solid #eaeaea; padding: 15px; border-radius: 8px; margin-bottom: 25px; text-align: left; font-size: 12px; color: #555; line-height: 1.5;">
                 <strong>Next Step: Live Biometric Setup</strong><br>
-                To protect your account, ensure you are in a well-lit area. The system will randomly prompt you to blink 3 times (you'll have 3 seconds per prompt) to verify live presence. Keep only your face in frame.
+                Ensure you are in a well-lit area. <strong>ONLY blink when "BLINK NOW!" appears</strong> (you have 3 seconds per prompt). Blinking early or missing a prompt cancels the attempt. You have 3 attempts per hour.
             </div>
 
             <div id="camera-container" style="display: none; position: relative; width: 240px; height: 240px; margin: 0 auto 15px auto; border-radius: 50%; overflow: hidden; border: 4px solid #1a1a1a; background-color: #000; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
@@ -43,8 +43,7 @@
         </div>
 
     </div>
-
-    <script src="script.js?v=4000"></script>
+<script src="script.js?v=6000"></script>
     <script>
         function cancelInviteFaceScan() {
             stopActiveFaceSession();
@@ -61,7 +60,7 @@
                 startBtn.innerText = 'Start Secure Face Scan';
                 startBtn.disabled = false;
             }
-            if (message) message.innerText = 'Verification cancelled. You can start again whenever you are ready.';
+            if (message) message.innerText = 'Verification cancelled. Note: Starting a scan uses 1 of your 3 hourly attempts.';
         }
 
         function showInviteRetryUI(msg) {
@@ -81,12 +80,18 @@
                 startBtn.disabled = false;
                 startBtn.innerText = 'Retry Secure Face Scan';
             }
-            openInfoModal("Verification Incomplete", msg);
+            openInfoModal("Attempt Failed", msg);
         }
 
         async function startInviteFaceScan() {
             if (!window.isSecureContext) {
                 openInfoModal("HTTPS Required", "Camera access requires a secure HTTPS connection.");
+                return;
+            }
+
+            const inviteId = new URLSearchParams(window.location.search).get('id');
+            if (!inviteId) {
+                openInfoModal("Invalid Link", "Missing invitation ID.");
                 return;
             }
 
@@ -103,7 +108,7 @@
             cameraContainer.style.display = 'block';
             if (cancelBtn) cancelBtn.style.display = 'block';
 
-            aiStatus.innerText = "PREPARING SECURE VERIFICATION...";
+            aiStatus.innerText = "REQUESTING SECURITY TOKEN...";
             aiStatus.style.color = "#f59e0b";
 
             const session = createFaceSession(video, cameraContainer, aiStatus, (msg) => {
@@ -111,6 +116,30 @@
             });
 
             try {
+                await ensureSupabase();
+
+                // 1. Request Server-Signed 30s Challenge & Deduct 1 of 3 Hourly Attempts on Server
+                const startRes = await fetch('https://qimabxbtbvgayayzvnoj.supabase.co/functions/v1/biometric-setup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + supabaseKey,
+                        'apikey': supabaseKey
+                    },
+                    body: JSON.stringify({
+                        action: 'start_invite_scan',
+                        invite_id: inviteId
+                    })
+                });
+                const startData = await startRes.json();
+                if (!startRes.ok || startData.error) {
+                    throw new Error(startData.error || "Unable to start biometric scan.");
+                }
+
+                session.challengeToken = startData.challenge_token;
+                session.serverDelays = startData.delays;
+                session.attemptsRemaining = startData.attempts_remaining;
+
                 const human = await ensureFaceModels();
                 if (!isFaceSessionActive(session)) return;
 
@@ -128,15 +157,14 @@
                     if (!isFaceSessionActive(session) || session.started) return;
                     session.started = true;
                     createFaceCanvas(session);
-                    setFaceScanStatus(session, "HOLD STILL... WAIT FOR RANDOM BLINK PROMPT", "#f59e0b");
+                    setFaceScanStatus(session, "DO NOT BLINK YET — WAIT FOR PROMPT...", "#f59e0b");
 
-                    setupPassiveLivenessChallenge(session, async (face) => {
+                    setupPassiveLivenessChallenge(session, async (face, frames) => {
                         if (!isFaceSessionActive(session) || session.submitting) return;
                         session.submitting = true;
                         if (session.intervalId) clearInterval(session.intervalId);
                         if (session.timeoutId) clearTimeout(session.timeoutId);
 
-                        // Capture snapshot for Boss approval preview BEFORE stopping the video stream
                         const canvasSnapshot = document.createElement('canvas');
                         canvasSnapshot.width = session.video.videoWidth || 320;
                         canvasSnapshot.height = session.video.videoHeight || 240;
@@ -144,24 +172,32 @@
                         const imageBase64 = canvasSnapshot.toDataURL('image/jpeg', 0.7);
 
                         const descriptorArray = session.cachedDescriptor || normalizeHumanDescriptor(face.embedding);
-                        const faceDataString = JSON.stringify(Array.from(descriptorArray));
 
                         setFaceScanStatus(session, "3/3 BLINKS VERIFIED. SAVING DATA...", "#4ade80");
                         stopFaceSessionCamera(session);
                         if (cancelBtn) cancelBtn.style.display = 'none';
 
                         try {
-                            await ensureSupabase();
-                            const inviteId = new URLSearchParams(window.location.search).get('id');
-                            const { data, error } = await supabaseClient
-                                .from('staff_invites')
-                                .update({ face_data: faceDataString, face_image: imageBase64, status: 'scanned' })
-                                .eq('id', inviteId)
-                                .eq('status', 'pending')
-                                .select('id');
-
-                            if (error) throw error;
-                            if (!data || data.length !== 1) throw new Error('This invitation is no longer available.');
+                            const completeRes = await fetch('https://qimabxbtbvgayayzvnoj.supabase.co/functions/v1/biometric-setup', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': 'Bearer ' + supabaseKey,
+                                    'apikey': supabaseKey
+                                },
+                                body: JSON.stringify({
+                                    action: 'complete_invite_scan',
+                                    invite_id: inviteId,
+                                    challenge_token: session.challengeToken,
+                                    live_face_descriptor: Array.from(descriptorArray),
+                                    face_image: imageBase64,
+                                    liveness_evidence: frames
+                                })
+                            });
+                            const completeData = await completeRes.json();
+                            if (!completeRes.ok || completeData.error) {
+                                throw new Error(completeData.error || "Could not verify and save scan.");
+                            }
 
                             completeFaceSession(session);
                             cameraContainer.style.display = 'none';
@@ -173,9 +209,9 @@
                                 <p style="font-size: 14px; color: #888;">Your verified face scan has been sent to your boss for approval. You can close this page.</p>
                             `;
                         } catch (err) {
-                            showInviteRetryUI(err.message || "We could not save your scan. Please check your connection and try again.");
+                            showInviteRetryUI((err.message || "We could not save your scan.") + formatAttemptSuffix(session));
                         }
-                    });
+                    }, session.serverDelays);
 
                     startFaceDetectionLoop(session, async () => {
                         const res = await human.detect(video);
@@ -207,7 +243,7 @@
                     } catch (e) {}
                 };
             } catch (err) {
-                showInviteRetryUI("Camera access denied or failed. Please allow camera access and try again.");
+                showInviteRetryUI(err.message || "Camera access denied or failed.");
             }
         }
     </script>
