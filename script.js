@@ -2967,8 +2967,8 @@ async function saveSettings() {
             payload.require_gps = document.getElementById('require-gps').checked;
             payload.require_pin = document.getElementById('require-pin').checked;
             
-            if (document.getElementById('gps-checkin')) {
-                payload.gps_checkin = document.getElementById('require_gps').checked;
+           if (document.getElementById('gps-checkin')) {
+                payload.gps_checkin = document.getElementById('gps-checkin').checked;
                 payload.gps_checkout = document.getElementById('gps-checkout').checked;
             }
             if (document.getElementById('pin-checkin')) {
