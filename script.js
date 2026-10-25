@@ -2718,7 +2718,7 @@ async function loadSettings() {
             if (locBtn) locBtn.style.display = data.require_gps ? 'block' : 'none';
 
             if (document.getElementById('gps-checkin')) {
-                document.getElementById('gps-checkin').checked = data.gps_checkin !== false;
+                document.getElementById('gps-checkin').checked = data.require_gps !== false;
                 document.getElementById('gps-checkout').checked = data.gps_checkout !== false;
                 document.getElementById('gps-sub-options').style.display = data.require_gps ? 'block' : 'none';
             }
@@ -4374,7 +4374,7 @@ async function startDailyScanner() {
 async function verifyAttendanceLocation(rules, safeCompanyId, mode) {
     if (!rules || !rules.require_gps) return true;
     
-    const requiresGpsForMode = mode === 'checkin' ? (rules.gps_checkin !== false) : (rules.gps_checkout !== false);
+    const requiresGpsForMode = mode === 'checkin' ? (rules.require_gps !== false) : (rules.gps_checkout !== false);
     if (!requiresGpsForMode) return true;
 
     let targetLat, targetLng, targetRadius, isExempt = false;
