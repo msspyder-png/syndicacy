@@ -224,7 +224,7 @@
                         <span class="slider"></span>
                     </label>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-size: 13px; color: #555;">Require PIN on Check-out</span>
                     <label class="switch" style="transform: scale(0.8); transform-origin: right;">
                         <input type="checkbox" id="pin-checkout" onchange="handleSubToggle('pin')">
@@ -232,6 +232,8 @@
                     </label>
                 </div>
             </div>
+            
+        
 
     <!-- INFO MODAL -->
     <div id="info-modal" class="modal-bg">
@@ -269,7 +271,9 @@
             <button class="main-btn form-btn" style="width: 100%; background-color: #1a1a1a; color: white;" onclick="saveCustomTime()">Save Custom Schedule</button>
         </div>
     </div>
-    
+    <!-- NEW SECURE LOGOUT BUTTON -->
+        <button class="google-btn" style="width: 100%; color: #dc2626; border-color: #fca5a5; background-color: #fef2f2; margin-top: 10px; margin-bottom: 20px;" onclick="handleLeaderLogout()">Secure Log Out</button>
+    </div> <!-- This is the closing div for dashboard-content -->
     <!-- BOTTOM NAV -->
     <nav class="bottom-nav" style="position: fixed; bottom: 0; left: 0; width: 100%; z-index: 9999; background: #ffffff;">
         <a href="leader-dashboard.html" class="nav-item">

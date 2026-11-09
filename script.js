@@ -769,8 +769,18 @@ async function handleLeaderAuth() {
                 .limit(1)
                 .maybeSingle();
 
-            if (existingProfile) {
+           if (existingProfile) {
                 openInfoModal("Login Failed", "Incorrect password for this account.");
+                enterButton.disabled = false;
+                enterButton.innerText = "Enter";
+                enterButton.style.backgroundColor = "#1a1a1a";
+                enterButton.style.cursor = "pointer";
+                return;
+            }
+
+            // NEW: STRICT 8-CHARACTER CHECK FOR NEW ACCOUNTS
+            if (passInput.length < 8) {
+                openInfoModal("Weak Password", "For your security, new passwords must be at least 8 characters long.");
                 enterButton.disabled = false;
                 enterButton.innerText = "Enter";
                 enterButton.style.backgroundColor = "#1a1a1a";
@@ -919,6 +929,57 @@ async function verifyOTP() {
         // Display the actual server error message instead of a generic one
         openInfoModal("Verification Failed", criticalError.message || "Incorrect or expired OTP.");
     }
+}
+async function requestPasswordReset() {
+    const emailInput = document.getElementById('user-email').value.trim().toLowerCase();
+    if (!emailInput) {
+        openInfoModal("Missing Email", "Please enter your registered email address in the box first.");
+        return;
+    }
+    await ensureSupabase();
+    
+    const btn = document.querySelector('.form-btn');
+    const origText = btn.innerText;
+    btn.innerText = "Sending Link...";
+    btn.disabled = true;
+
+    // Verify it's actually a leader account to prevent spam
+    const { data: existingProfile } = await supabaseClient
+        .from('users')
+        .select('role')
+        .eq('email', emailInput)
+        .limit(1)
+        .maybeSingle();
+
+    if (!existingProfile || existingProfile.role !== 'leader') {
+        openInfoModal("Not Found", "No active leader account found with this email.");
+        btn.innerText = origText;
+        btn.disabled = false;
+        return;
+    }
+
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(emailInput, {
+        redirectTo: window.location.origin + '/leader.html'
+    });
+
+    btn.innerText = origText;
+    btn.disabled = false;
+
+    if (error) {
+        openInfoModal("Error", "Failed to send reset link: " + error.message);
+    } else {
+        openInfoModal("Link Sent", "A secure password reset link has been sent to your inbox.");
+    }
+}
+
+async function handleLeaderLogout() {
+    await ensureSupabase();
+    // VITAL: Wipe all local caching to prevent AI/Session bleeding across accounts
+    sessionStorage.clear();
+    localStorage.clear(); 
+    secureVerifiedLeader = null;
+    await supabaseClient.auth.signOut();
+    window.location.replace('index.html');
 }
 
 function toggleCustomRole() {
@@ -4680,7 +4741,32 @@ function bindTimePickerFix() {
 window.addEventListener('DOMContentLoaded', async () => {
     await ensureSupabase();
 
-    // SECURITY FIX: Validate the cryptographically signed JWT token with the server
+    // NEW: Catch Password Reset Flow natively via modal
+    supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+            openPromptModal(
+                "Reset Password", 
+                "Enter your new secure password (minimum 8 characters):", 
+                "password", 
+                "", 
+                async function(newPass) {
+                    if (!newPass || newPass.length < 8) {
+                        openInfoModal("Weak Password", "Password must be at least 8 characters long. Refresh the page to try again.");
+                        return;
+                    }
+                    const { error } = await supabaseClient.auth.updateUser({ password: newPass });
+                    if (error) {
+                        openInfoModal("Error", "Failed to update: " + error.message);
+                    } else {
+                        openInfoModal("Success", "Password updated successfully! You can now log in.");
+                        await supabaseClient.auth.signOut(); // Clear recovery token
+                    }
+                }
+            );
+        }
+    });
+
+    // SECURITY FIX: Validate the cryptographically signed JWT token...
     const { data: { session } } = await supabaseClient.auth.getSession();
     
     // 1. Identify the current page and define which pages are allowed without logging in
