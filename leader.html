@@ -19,9 +19,17 @@
             
      <input type="email" id="user-email" class="input-field" placeholder="Enter email">
             
-            <input type="password" id="user-pass" class="input-field" placeholder="Create/enter password (min 8 chars)">
+          <input type="password" id="user-pass" class="input-field" placeholder="Create/enter password (min 8 chars)">
             
-            <button class="main-btn form-btn" onclick="handleLeaderAuth()">Enter</button>
+            <!-- NEW LIABILITY SHIELD CHECKBOX -->
+            <div style="width: 260px; text-align: left; margin-top: 10px; margin-bottom: 5px; display: flex; align-items: flex-start; gap: 8px;">
+                <input type="checkbox" id="liability-checkbox" style="margin-top: 3px; cursor: pointer; flex-shrink: 0;" onchange="document.getElementById('enter-btn').disabled = !this.checked; document.getElementById('enter-btn').style.opacity = this.checked ? '1' : '0.5';">
+                <label for="liability-checkbox" style="font-size: 10px; color: #555; line-height: 1.4; cursor: pointer;">
+                    I agree to the Terms of Service and acknowledge my legal responsibility as an Employer to provide alternative, non-biometric timekeeping accommodations for employees who decline facial scanning.
+                </label>
+            </div>
+            
+            <button id="enter-btn" class="main-btn form-btn" onclick="handleLeaderAuth()" style="opacity: 0.5;" disabled>Enter</button>
             
             <!-- NEW FORGOT PASSWORD LINK -->
             <div style="width: 100%; text-align: right; margin-top: -5px; padding-right: 5px; box-sizing: border-box;">

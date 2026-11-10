@@ -735,12 +735,30 @@ function toggleCustomTimeUI() {
 async function handleLeaderAuth() {
     await ensureSupabase();
     try {
-     const emailInput = document.getElementById('user-email').value.trim().toLowerCase();
+        const emailInput = document.getElementById('user-email').value.trim().toLowerCase();
         const passInput = document.getElementById('user-pass').value;
         const enterButton = document.querySelector('.form-btn'); 
 
-        if (emailInput === "" || passInput === "") {
-            openInfoModal("Missing Details", "Please enter both an email and a password!");
+  if (emailInput === "" || passInput === "") {
+            openInfoModal("Missing Details", "Please enter both an email and a password.");
+            return;
+        }
+
+        // STRICT EMPLOYER LIABILITY CHECK
+        const liabilityCheck = document.getElementById('liability-checkbox');
+        if (liabilityCheck && !liabilityCheck.checked) {
+            openInfoModal("Missing Consent", "You must acknowledge the employer liability terms before continuing.");
+            return;
+        }
+
+        // BROWSER-SIDE RATE LIMITING (Anti-Brute Force)
+        const lockoutKey = 'lockout_' + emailInput;
+        const attemptsKey = 'attempts_' + emailInput;
+        const lockoutTime = localStorage.getItem(lockoutKey);
+        
+        if (lockoutTime && Date.now() < parseInt(lockoutTime)) {
+            const minsLeft = Math.ceil((parseInt(lockoutTime) - Date.now()) / 60000);
+            openInfoModal("Too Many Attempts", `Account access temporarily locked due to multiple failed attempts. Please try again in ${minsLeft} minute(s).`);
             return;
         }
 
@@ -752,7 +770,7 @@ async function handleLeaderAuth() {
         enterButton.disabled = true;
         enterButton.style.backgroundColor = "#888888"; 
         enterButton.style.cursor = "wait"; 
-        enterButton.innerText = "1. Authenticating...";
+        enterButton.innerText = "Authenticating...";
 
         // 1. Securely verify login with Supabase Auth
         const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
@@ -760,8 +778,16 @@ async function handleLeaderAuth() {
             password: passInput
         });
 
-       if (authError) {
-            // Check if this email already belongs to an existing user before starting OTP signup
+        if (authError) {
+            // Check backend rate limit from Supabase
+            if (authError.status === 429 || authError.message.toLowerCase().includes("rate limit")) {
+                localStorage.setItem(lockoutKey, Date.now() + (5 * 60 * 1000)); // 5 min lock
+                openInfoModal("Too Many Attempts", "For your security, we have temporarily blocked further login attempts. Please try again in 5 minutes.");
+                enterButton.disabled = false; enterButton.innerText = "Enter"; enterButton.style.backgroundColor = "#1a1a1a"; enterButton.style.cursor = "pointer";
+                return;
+            }
+
+            // Check if this email already belongs to an existing user
             const { data: existingProfile } = await supabaseClient
                 .from('users')
                 .select('id')
@@ -769,26 +795,28 @@ async function handleLeaderAuth() {
                 .limit(1)
                 .maybeSingle();
 
-           if (existingProfile) {
-                openInfoModal("Login Failed", "Incorrect password for this account.");
-                enterButton.disabled = false;
-                enterButton.innerText = "Enter";
-                enterButton.style.backgroundColor = "#1a1a1a";
-                enterButton.style.cursor = "pointer";
+            if (existingProfile) {
+                // GENERIC ERROR: Do not reveal that the password was wrong.
+                let attempts = parseInt(localStorage.getItem(attemptsKey) || '0') + 1;
+                localStorage.setItem(attemptsKey, attempts);
+                if (attempts >= 5) {
+                    localStorage.setItem(lockoutKey, Date.now() + (5 * 60 * 1000)); // Lock for 5 mins
+                    localStorage.removeItem(attemptsKey);
+                }
+                
+                openInfoModal("Authentication Failed", "Invalid email or password.");
+                enterButton.disabled = false; enterButton.innerText = "Enter"; enterButton.style.backgroundColor = "#1a1a1a"; enterButton.style.cursor = "pointer";
                 return;
             }
 
-            // NEW: STRICT 8-CHARACTER CHECK FOR NEW ACCOUNTS
+            // STRICT 8-CHARACTER CHECK FOR NEW ACCOUNTS (Hybrid Sign-up flow)
             if (passInput.length < 8) {
                 openInfoModal("Weak Password", "For your security, new passwords must be at least 8 characters long.");
-                enterButton.disabled = false;
-                enterButton.innerText = "Enter";
-                enterButton.style.backgroundColor = "#1a1a1a";
-                enterButton.style.cursor = "pointer";
+                enterButton.disabled = false; enterButton.innerText = "Enter"; enterButton.style.backgroundColor = "#1a1a1a"; enterButton.style.cursor = "pointer";
                 return;
             }
 
-            enterButton.innerText = "3. Sending Server OTP...";
+            enterButton.innerText = "Sending Server OTP...";
             sessionStorage.setItem("pendingEmail", emailInput);
             sessionStorage.setItem("pendingPass", passInput);
 
@@ -798,17 +826,23 @@ async function handleLeaderAuth() {
             });
 
             if (otpError) {
-                openInfoModal("Email Error", "Failed to send OTP: " + otpError.message);
-                enterButton.disabled = false;
-                enterButton.innerText = "Enter";
-                enterButton.style.backgroundColor = "#1a1a1a"; 
-                enterButton.style.cursor = "pointer";
+                if (otpError.status === 429) {
+                    openInfoModal("Too Many Attempts", "Please wait a moment before requesting another code.");
+                } else {
+                    openInfoModal("Email Error", "Failed to send OTP. Please check your network or try again later.");
+                }
+                enterButton.disabled = false; enterButton.innerText = "Enter"; enterButton.style.backgroundColor = "#1a1a1a"; enterButton.style.cursor = "pointer";
                 return;
             }
 
             window.location.href = 'leader-otp.html';
             return;
         }
+        
+        // Clear attempts on success
+        localStorage.removeItem(attemptsKey);
+        localStorage.removeItem(lockoutKey);
+
         // 2. Fetch or auto-provision the user's workspace profile securely
         let { data: user, error: profileError } = await supabaseClient
             .from('users')
@@ -843,14 +877,13 @@ async function handleLeaderAuth() {
             }
             window.location.href = 'leader-dashboard.html';
         } else {
-            openInfoModal("Access Denied", "Could not provision leader profile.");
-            enterButton.disabled = false;
-            enterButton.innerText = "Enter";
-            enterButton.style.backgroundColor = "#1a1a1a"; 
+            // GENERIC MESSAGE
+            openInfoModal("Authentication Failed", "Invalid email or password.");
+            enterButton.disabled = false; enterButton.innerText = "Enter"; enterButton.style.backgroundColor = "#1a1a1a"; 
         }
 
     } catch (criticalError) {
-        openInfoModal("System Crash", "APP CRASHED! Error: " + criticalError.message);
+        openInfoModal("System Error", "An unexpected error occurred. Please try again.");
         document.querySelector('.form-btn').disabled = false;
         document.querySelector('.form-btn').innerText = "Enter";
         document.querySelector('.form-btn').style.backgroundColor = "#1a1a1a"; 
@@ -933,160 +966,27 @@ async function verifyOTP() {
 async function requestPasswordReset() {
     const emailInput = document.getElementById('user-email').value.trim().toLowerCase();
     if (!emailInput) {
-        openInfoModal("Missing Email", "Please enter your registered email address in the box first.");
+        openInfoModal("Missing Email", "Please enter your email address in the box first.");
         return;
     }
     await ensureSupabase();
     
     const btn = document.querySelector('.form-btn');
     const origText = btn.innerText;
-    btn.innerText = "Sending Link...";
+    btn.innerText = "Processing...";
     btn.disabled = true;
 
-    // Verify it's actually a leader account to prevent spam
-    const { data: existingProfile } = await supabaseClient
-        .from('users')
-        .select('role')
-        .eq('email', emailInput)
-        .limit(1)
-        .maybeSingle();
-
-    if (!existingProfile || existingProfile.role !== 'leader') {
-        openInfoModal("Not Found", "No active leader account found with this email.");
-        btn.innerText = origText;
-        btn.disabled = false;
-        return;
-    }
-
-    const { error } = await supabaseClient.auth.resetPasswordForEmail(emailInput, {
+    // Security: We intentionally DO NOT verify if the email exists publicly.
+    // If it exists, Supabase sends it. If it doesn't, Supabase silently ignores it.
+    await supabaseClient.auth.resetPasswordForEmail(emailInput, {
         redirectTo: window.location.origin + '/leader.html'
     });
 
     btn.innerText = origText;
     btn.disabled = false;
 
-    if (error) {
-        openInfoModal("Error", "Failed to send reset link: " + error.message);
-    } else {
-        openInfoModal("Link Sent", "A secure password reset link has been sent to your inbox.");
-    }
-}
-
-async function handleLeaderLogout() {
-    await ensureSupabase();
-    // VITAL: Wipe all local caching to prevent AI/Session bleeding across accounts
-    sessionStorage.clear();
-    localStorage.clear(); 
-    secureVerifiedLeader = null;
-    await supabaseClient.auth.signOut();
-    window.location.replace('index.html');
-}
-
-function toggleCustomRole() {
-    const roleSelect = document.getElementById('staff-role');
-    const customRoleContainer = document.getElementById('custom-role-container');
-    if (roleSelect && customRoleContainer) {
-        if (roleSelect.value === 'other') {
-            customRoleContainer.style.display = 'block';
-        } else {
-            customRoleContainer.style.display = 'none';
-        }
-    }
-}
-
-function filterDirectory() {
-    const searchQuery = document.getElementById('staff-search').value.toLowerCase();
-    const staffCards = document.querySelectorAll('#directory-list .directory-card');
-    
-    staffCards.forEach(card => {
-        const name = card.querySelector('.staff-name').innerText.toLowerCase();
-        const role = card.querySelector('.staff-role').innerText.toLowerCase();
-        if (name.includes(searchQuery) || role.includes(searchQuery)) {
-            card.style.display = 'flex';
-        } else {
-            card.style.display = 'none';
-        }
-    });
-}
-
-async function generateInvite() {
-    await ensureSupabase();
-    const leader = getLeader();
-    if (!leader) { openInfoModal("Session Expired", "Please log in again."); return null; }
-
-    const nameEl = document.getElementById('staff-name');
-    const emailEl = document.getElementById('staff-email');
-    const roleSelectEl = document.getElementById('staff-role');
-    
-    if (!nameEl || !emailEl || !roleSelectEl) return null;
-    
-    const name = nameEl.value.trim();
-    const email = emailEl.value.trim().toLowerCase(); 
-    let role = roleSelectEl.value === 'other' ? document.getElementById('custom-role').value.trim() : roleSelectEl.value;
-    
-    if (!name || !email || !role || roleSelectEl.value === "") {
-        openInfoModal("Missing Info", "Please complete all fields."); 
-        return null;
-    }
-
-    if (leader.email && email === leader.email.toLowerCase()) {
-        openInfoModal("Action Denied", "You cannot invite yourself. This email is already registered to your leader account.");
-        return null;
-    }
-    
-    if (!supabaseClient) { 
-        openInfoModal("Connection Error", "Database connection is not ready."); 
-        return null; 
-    }
-
-    try {
-        // Safe check using limit(1) to prevent silent query failure
-        const { data: existingUser } = await supabaseClient.from('users')
-            .select('email')
-            .ilike('email', email)
-            .limit(1);
-
-        if (existingUser && existingUser.length > 0) {
-            openInfoModal("Email in Use", "An active employee already exists in the workspace with this email address.");
-            return null;
-        }
-        
-        // Safe check for existing pending invites
-        const { data: existingInvite } = await supabaseClient.from('staff_invites')
-            .select('id')
-            .ilike('email', email)
-            .in('status', ['pending', 'scanned'])
-            .limit(1);
-            
-        if (existingInvite && existingInvite.length > 0) {
-            openInfoModal("Email in Use", "A pending invitation has already been sent to this email address.");
-            return null;
-        }
-
-        const { data, error } = await supabaseClient
-            .from('staff_invites')
-            .insert([{ email: email, name: name, role: role, status: 'pending', company_id: leader.company_id }])
-            .select();
-            
-        if (error) throw error;
-
-        const baseUrl = window.location.origin; 
-        const generatedLink = `${baseUrl}/join.html?id=${data[0].id}`;
-        
-        nameEl.value = ""; 
-        emailEl.value = ""; 
-        roleSelectEl.selectedIndex = 0;
-        const customRoleEl = document.getElementById('custom-role-container');
-        if (customRoleEl) customRoleEl.style.display = 'none';
-        
-        loadPendingInvites();
-        
-        return { link: generatedLink, name: name, email: email, role: role };
-        
-    } catch (error) {
-        openInfoModal("Error", "Error creating invite: " + error.message);
-        return null;
-    }
+    // Generic success message prevents account reconnaissance
+    openInfoModal("Request Received", "If your email is registered with a Leader account, a password reset link has been sent to your inbox.");
 }
 
 async function copyInviteLink() {
@@ -1285,7 +1185,7 @@ async function approveInvite(inviteId, employeeName) {
                  throw new Error(authCreationError?.message || authData?.error || "Failed to create authentication profile.");
             }
 
-            // 2. USP: Insert only the 128-point face_data math. Omit face_image entirely.
+// 2. USP: Insert only the 128-point face_data math and the legal consent timestamp.
             const { error: insertError } = await supabaseClient
                 .from('users')
                 .insert([{
@@ -1294,7 +1194,8 @@ async function approveInvite(inviteId, employeeName) {
                     joined_date: today,
                     name: inviteData.name,
                     face_data: inviteData.face_data,
-                    company_id: inviteData.company_id
+                    company_id: inviteData.company_id,
+                    bipa_consent_timestamp: inviteData.bipa_consent_timestamp
                 }]);
                 
             if (insertError) throw insertError;
@@ -3567,94 +3468,78 @@ let staffAnalyticsDate = new Date();
 
 async function handleStaffLogin() {
     await ensureSupabase();
-    const email = document.getElementById('staff-email').value.trim();
+    const email = document.getElementById('staff-email').value.trim().toLowerCase();
     const pass = document.getElementById('staff-pass').value;
     const loginBtn = document.querySelector('.form-btn');
 
-    if (!email || !pass || !supabaseClient) return;
+    if (!email || !pass) {
+        openInfoModal("Missing Details", "Please enter both an email and a password.");
+        return;
+    }
+    
+    // BROWSER-SIDE RATE LIMITING (Anti-Brute Force)
+    const lockoutKey = 'staff_lockout_' + email;
+    const attemptsKey = 'staff_attempts_' + email;
+    const lockoutTime = localStorage.getItem(lockoutKey);
+    
+    if (lockoutTime && Date.now() < parseInt(lockoutTime)) {
+        const minsLeft = Math.ceil((parseInt(lockoutTime) - Date.now()) / 60000);
+        openInfoModal("Too Many Attempts", `Account access temporarily locked due to multiple failed attempts. Please try again in ${minsLeft} minute(s).`);
+        return;
+    }
+
+    if (!supabaseClient) return;
 
     loginBtn.innerText = "Verifying...";
     loginBtn.disabled = true;
 
     try {
-            // 1. Authenticate securely
-            const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
-                email: email,
-                password: pass
-            });
+        // 1. Authenticate securely
+        const { data: authData, error: authError } = await supabaseClient.auth.signInWithPassword({
+            email: email,
+            password: pass
+        });
 
-            if (authError) {
-                openInfoModal("Login Failed", "Incorrect email or password.");
-                loginBtn.innerText = "Login";
-                loginBtn.disabled = false;
-                return;
-            }
-
-            // 2. Fetch profile data
-            const { data: user, error } = await supabaseClient.from('users').select('*').eq('email', email).limit(1).maybeSingle();
-            if (error) throw error;
-
-            // 3. Set session and redirect
-            if (user) {
-                // Supabase Auth automatically stored the secure session token! We just redirect.
-                window.location.href = 'staff-dashboard.html';
+        if (authError) {
+            // Check backend rate limit
+            if (authError.status === 429 || authError.message.toLowerCase().includes("rate limit")) {
+                localStorage.setItem(lockoutKey, Date.now() + (5 * 60 * 1000));
+                openInfoModal("Too Many Attempts", "For your security, we have temporarily blocked further login attempts. Please try again in 5 minutes.");
             } else {
-                openInfoModal("Login Failed", "User profile not found.");
-                loginBtn.innerText = "Login";
-                loginBtn.disabled = false;
+                let attempts = parseInt(localStorage.getItem(attemptsKey) || '0') + 1;
+                localStorage.setItem(attemptsKey, attempts);
+                if (attempts >= 5) {
+                    localStorage.setItem(lockoutKey, Date.now() + (5 * 60 * 1000));
+                    localStorage.removeItem(attemptsKey);
+                }
+                // GENERIC ERROR MESSAGE
+                openInfoModal("Authentication Failed", "Invalid email or password.");
             }
-        } catch (err) {
-            console.error("Staff Login Crash:", err);
-            openInfoModal("Database Error", err.message);
+            loginBtn.innerText = "Login";
+            loginBtn.disabled = false;
+            return;
+        }
+        
+        // Clear limits on success
+        localStorage.removeItem(attemptsKey);
+        localStorage.removeItem(lockoutKey);
+
+        // 2. Fetch profile data
+        const { data: user, error } = await supabaseClient.from('users').select('*').eq('email', email).limit(1).maybeSingle();
+        
+        // 3. Set session and redirect
+        if (user && user.role !== 'leader') {
+            window.location.href = 'staff-dashboard.html';
+        } else {
+            // GENERIC ERROR MESSAGE (Even if auth worked but profile missing/wrong role)
+            openInfoModal("Authentication Failed", "Invalid email or password.");
             loginBtn.innerText = "Login";
             loginBtn.disabled = false;
         }
-}
-
-async function loadStaffDashboard() {
-    if (!document.getElementById('status-card') && !document.getElementById('staff-analytics-calendar')) return;
-    await ensureSupabase();
-    if (!currentStaff) {
-        const sessionData = sessionStorage.getItem('loggedInStaff');
-        if (!sessionData) return;
-        currentStaff = JSON.parse(sessionData);
-    }
-   if (supabaseClient && currentStaff?.email) {
-        try {
-            const { data: freshStaff } = await supabaseClient
-                .from('users')
-                .select('id, name, email, role, joined_date, company_id, pending_deletion_at, setup_completed')
-                .eq('email', currentStaff.email)
-                .limit(1)
-                .maybeSingle();
-                
-            if (freshStaff) {
-                currentStaff = freshStaff;
-            }
-        } catch(e) {}
-    }
-    if (!currentStaff.company_id) {
-        currentStaff.company_id = "UNASSIGNED_ID";
-    }
-
-    loadStaffRecords();
-
-    const checkInBtn = document.getElementById('check-in-btn');
-    if (checkInBtn) {
-        checkInBtn.onclick = function(event) {
-            event.preventDefault(); 
-            startDailyScanner();
-        };
-    }
-
-   const logOutBtn = document.getElementById("secure-logout-btn");
-    if (logOutBtn) {
-        logOutBtn.onclick = async function(e) {
-            e.preventDefault();
-            stopActiveFaceSession();
-            await supabaseClient.auth.signOut(); // Securely end the JWT session
-            window.location.href = 'index.html';
-        };
+    } catch (err) {
+        openInfoModal("System Error", "An unexpected error occurred. Please try again.");
+        loginBtn.innerText = "Login";
+        loginBtn.disabled = false;
     }
 }
 
