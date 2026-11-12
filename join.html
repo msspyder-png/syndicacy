@@ -260,17 +260,36 @@
         <p style="font-size: 12px; color: #555; line-height: 1.5; margin-bottom: 18px;">
             <strong>Retention:</strong> Your biometric data will be permanently destroyed upon termination of employment or after 3 years of inactivity, whichever comes first.
         </p>
+    <div style="background-color: #f9f9f9; padding: 12px; border: 1px solid #eaeaea; border-radius: 6px; margin-bottom: 15px; text-align: left;">
+            <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="age-verification-cb" style="margin-top: 2px; cursor: pointer;" onchange="toggleConsentProceed()">
+                <span style="font-size: 11px; color: #1a1a1a; font-weight: 500; line-height: 1.4;">
+                    I certify under penalty of law that I am at least 18 years of age, or that I possess valid legal parental/guardian authorization to enroll in this biometric system.
+                </span>
+            </label>
+        </div>
+
         <div style="background-color: #f9f9f9; padding: 10px; border: 1px solid #eaeaea; border-radius: 6px; margin-bottom: 20px; font-size: 11px; color: #888;">
-            By clicking "I Agree", you electronically sign this written release and consent to our <a href="https://syndicacy.tech/privacy" target="_blank" style="color: #3b82f6;">Biometric Privacy Policy</a>.
+            By clicking "I Agree", you electronically sign this written release under BIPA compliance standards and consent to our <a href="https://syndicacy.tech/privacy" target="_blank" style="color: #3b82f6;">Biometric Privacy Policy</a>.
         </div>
         <div style="display: flex; gap: 10px;">
             <button class="google-btn" style="flex: 1; padding: 12px; font-size: 13px;" onclick="declineConsent()">I Decline</button>
-            <button class="main-btn form-btn" style="flex: 1; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white;" id="consent-agree-btn">I Agree</button>
+            <button class="main-btn form-btn" style="flex: 1; margin: 0; padding: 12px; font-size: 13px; background-color: #1a1a1a; color: white; opacity: 0.5; cursor: not-allowed;" id="consent-agree-btn" disabled>I Agree</button>
         </div>
     </div>
 </div>
 
 <script>
+    function toggleConsentProceed() {
+        const cb = document.getElementById('age-verification-cb');
+        const btn = document.getElementById('consent-agree-btn');
+        if (cb && btn) {
+            btn.disabled = !cb.checked;
+            btn.style.opacity = cb.checked ? '1' : '0.5';
+            btn.style.cursor = cb.checked ? 'pointer' : 'not-allowed';
+        }
+    }
+
     function openConsentModal(type) {
         const modal = document.getElementById('bipa-consent-modal');
         const agreeBtn = document.getElementById('consent-agree-btn');

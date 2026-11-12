@@ -2102,7 +2102,44 @@ function changeMonth(offset) {
     analyticsDate.setMonth(analyticsDate.getMonth() + offset);
     loadIndividualAnalytics(); 
 }
+function promptRevokeBiometricConsent() {
+    openConfirmModal(
+        "Revoke Biometric Consent",
+        "Are you absolutely sure? This will instantly and permanently delete your facial geometry data from our servers. Your portal access will be revoked, and you will need to contact your manager for alternative manual timekeeping.",
+        async function() {
+            await executeBiometricRevocation();
+        }
+    );
+}
 
+async function executeBiometricRevocation() {
+    await ensureSupabase();
+    if (!currentStaff) return;
+
+    try {
+        // 1. Permanently nullify face_data and flag the account as revoked (setup_completed = false)
+        const { error } = await supabaseClient
+            .from('users')
+            .update({
+                face_data: null,
+                setup_completed: false,
+                bipa_consent_timestamp: null,
+                pending_deletion_at: new Date().toISOString() // Tags it so the Boss sees it and the Cron Job sweeps it
+            })
+            .eq('email', currentStaff.email);
+
+        if (error) throw error;
+
+        // 2. Erase local storage and kill the session
+        sessionStorage.clear();
+        localStorage.clear();
+        await supabaseClient.auth.signOut();
+        window.location.replace('index.html');
+    } catch (err) {
+        console.error("Revocation Error:", err);
+        openInfoModal("System Error", "Failed to purge data. Please try again or contact support.");
+    }
+}
 // --- BIOMETRIC CREDENTIALS ENGINE ---
 async function generateBiometricSetupLink() {
     if (!currentViewedUser) return;
@@ -2222,50 +2259,62 @@ async function loadTeamDirectory() {
             
             let actionHtml = '';
 
+let cardBg = 'background-color: #ffffff; border-color: #eaeaea;';
+            let nameColor = 'color: #1a1a1a;';
+
             if (user.pending_deletion_at) {
-                const uniqueId = 'countdown-' + Math.random().toString(36).substr(2, 9);
-                actionHtml = `
-                    <div style="display: flex; align-items: center; gap: 8px;">
+                if (user.setup_completed === false) {
+                    // THE EMPLOYEE REVOKED CONSENT THEMSELVES
+                    cardBg = 'background-color: #f3f4f6; border-color: #d1d5db;';
+                    nameColor = 'color: #9ca3af; text-decoration: line-through;';
+                    actionHtml = `
                         <div style="text-align: right;">
-                            <span style="font-size: 9px; font-weight: bold; color: #ef4444; display: block; letter-spacing: 0.5px;">DELETING IN</span>
-                            <span id="${uniqueId}" style="font-size: 12px; font-family: monospace; font-weight: 600; color: #ef4444;">--:--:--</span>
+                            <span style="font-size: 10px; font-weight: 800; color: #6b7280; background: #e5e7eb; padding: 4px 8px; border-radius: 4px; letter-spacing: 0.5px;">CONSENT REVOKED & PURGED</span>
                         </div>
-                        <button class="google-btn" style="padding: 4px 8px; font-size: 10px; margin: 0; border: 1px solid #1a1a1a; color: #1a1a1a;" onclick="event.stopPropagation(); cancelEmployeeDeletion('${user.email}', '${safeName}')">Undo</button>
-                    </div>
-                `;
+                    `;
+                } else {
+                    // THE BOSS SCHEDULED THE DELETION
+                    cardBg = 'background-color: #fef2f2; border-color: #fca5a5;';
+                    nameColor = 'color: #ef4444;';
+                    const uniqueId = 'countdown-' + Math.random().toString(36).substr(2, 9);
+                    actionHtml = `
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <div style="text-align: right;">
+                                <span style="font-size: 9px; font-weight: bold; color: #ef4444; display: block; letter-spacing: 0.5px;">DELETING IN</span>
+                                <span id="${uniqueId}" style="font-size: 12px; font-family: monospace; font-weight: 600; color: #ef4444;">--:--:--</span>
+                            </div>
+                            <button class="google-btn" style="padding: 4px 8px; font-size: 10px; margin: 0; border: 1px solid #1a1a1a; color: #1a1a1a;" onclick="event.stopPropagation(); cancelEmployeeDeletion('${user.email}', '${safeName}')">Undo</button>
+                        </div>
+                    `;
 
-                // Set up the live 24-hour countdown
-                const delTime = new Date(user.pending_deletion_at).getTime();
-                const expiryTime = delTime + (24 * 60 * 60 * 1000);
+                    const delTime = new Date(user.pending_deletion_at).getTime();
+                    const expiryTime = delTime + (24 * 60 * 60 * 1000);
 
-                const interval = setInterval(() => {
-                    const now = new Date().getTime();
-                    const diff = expiryTime - now;
-                    const el = document.getElementById(uniqueId);
-                    
-                    if (!el) {
-                        clearInterval(interval);
-                        return;
-                    }
+                    const interval = setInterval(() => {
+                        const now = new Date().getTime();
+                        const diff = expiryTime - now;
+                        const el = document.getElementById(uniqueId);
+                        
+                        if (!el) {
+                            clearInterval(interval);
+                            return;
+                        }
 
-                    if (diff <= 0) {
-                        el.innerText = "00:00:00";
-                        clearInterval(interval);
-                    } else {
-                        const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                        const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-                        const s = Math.floor((diff % (1000 * 60)) / 1000);
-                        el.innerText = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-                    }
-                }, 1000);
-                window.directoryIntervals.push(interval);
+                        if (diff <= 0) {
+                            el.innerText = "00:00:00";
+                            clearInterval(interval);
+                        } else {
+                            const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                            const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                            const s = Math.floor((diff % (1000 * 60)) / 1000);
+                            el.innerText = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+                        }
+                    }, 1000);
+                    window.directoryIntervals.push(interval);
+                }
             } else {
                 actionHtml = `<button class="i-btn" style="color: #dc2626; border-color: #fca5a5; background: #fef2f2; width: 28px; height: 28px; flex-shrink: 0; margin-left: 10px;" onclick="event.stopPropagation(); initiateEmployeeDeletion('${user.email}', '${safeName}')">×</button>`;
             }
-            
-            // Turn the card red if they are scheduled for deletion
-            const cardBg = user.pending_deletion_at ? 'background-color: #fef2f2; border-color: #fca5a5;' : 'background-color: #ffffff; border-color: #eaeaea;';
-            const nameColor = user.pending_deletion_at ? 'color: #ef4444;' : 'color: #1a1a1a;';
 
             directoryList.insertAdjacentHTML('beforeend', `
                 <div class="directory-card clickable-card" style="display: flex; justify-content: space-between; align-items: center; width: 100%; box-sizing: border-box; cursor: pointer; ${cardBg}" onclick="window.location.href='record-individual.html?email=${encodeURIComponent(user.email)}'">
@@ -4678,6 +4727,7 @@ window.addEventListener('DOMContentLoaded', async () => {
             currentStaff = userProfile; // Securely load staff
         }
     }
+    await enforceSubscriptionGate();
     
     initializeSettingsCalendar();
     loadPendingInvites(); 
@@ -5799,4 +5849,152 @@ function createSyncMsgBubble(text, sender) {
     div.className = `sync-msg ${sender}`;
     div.innerText = text;
     return div;
+}
+// --- SUBSCRIPTION STATE MACHINE ---
+
+// Replace these placeholders with your actual Lemon Squeezy checkout links when ready
+const CHECKOUT_LINKS = {
+    'core': 'https://syndicacy.lemonsqueezy.com/checkout/buy/eccdc9a5-f01e-4281-8002-31a42e301983',
+    'squad': 'https://syndicacy.lemonsqueezy.com/checkout/buy/35954154-a31b-481b-918b-9079bb6aff8c',
+    'crew': 'https://syndicacy.lemonsqueezy.com/checkout/buy/30009eac-5cef-40f0-909e-cd07b3cbd96c',
+    'unit': 'https://syndicacy.lemonsqueezy.com/checkout/buy/ebe5f078-28d3-4f3d-8215-5cbc1bad542b',
+    'branch': 'https://syndicacy.lemonsqueezy.com/checkout/buy/8281916d-faf8-4630-9d39-6e6c32965619',
+    'department': 'https://syndicacy.lemonsqueezy.com/checkout/buy/b35ae3d1-f5bc-4ab4-b05e-40263d1ab0f6',
+    'division': 'https://syndicacy.lemonsqueezy.com/checkout/buy/091527a4-d597-4998-a246-17b159842cec',
+    'syndicate': 'https://syndicacy.lemonsqueezy.com/checkout/buy/f7c032f5-75e1-49b8-be5c-e085fa046183'
+};
+
+function routeToCheckout(tier) {
+    const leader = getLeader();
+    if (!leader) return;
+    const link = CHECKOUT_LINKS[tier];
+    
+    if (link) {
+        // Appends email for convenience, but crucially appends company_id as secure custom data
+        const checkoutUrl = `${link}?checkout[email]=${encodeURIComponent(leader.email)}&checkout[custom][company_id]=${encodeURIComponent(leader.company_id)}`;
+        window.location.href = checkoutUrl;
+    }
+}
+
+async function activateFreeTrial() {
+    await ensureSupabase();
+    const leader = getLeader();
+    if (!leader) return;
+
+    const btn = document.getElementById('start-trial-btn');
+    if(btn) { btn.innerText = "Activating..."; btn.disabled = true; }
+
+    const trialEnd = new Date();
+    trialEnd.setDate(trialEnd.getDate() + 30);
+
+    const { error } = await supabaseClient
+        .from('settings')
+        .update({ 
+            subscription_status: 'trialing',
+            trial_ends_at: trialEnd.toISOString()
+        })
+        .eq('company_id', leader.company_id);
+
+    if (error) {
+        openInfoModal("Error", "Failed to activate trial.");
+        if(btn) { btn.innerText = "Start 30-Day Free Trial"; btn.disabled = false; }
+    } else {
+        window.location.href = 'leader-dashboard.html';
+    }
+}
+
+async function enforceSubscriptionGate() {
+    await ensureSupabase();
+    const leader = getLeader();
+    if (!leader) return; // Only applies to logged-in bosses
+
+    const currentPage = window.location.pathname.split('/').pop() || 'index.html';
+    if (!currentPage.includes('leader')) return; // Ignore staff/public pages
+
+    const { data: settings } = await supabaseClient
+        .from('settings')
+        .select('subscription_status, subscription_tier, trial_ends_at')
+        .eq('company_id', leader.company_id)
+        .limit(1)
+        .maybeSingle();
+
+    const status = settings?.subscription_status || 'new';
+    
+    // Evaluate if trial has expired
+    let isExpired = status === 'expired';
+    if (status === 'trialing' && settings.trial_ends_at) {
+        if (new Date() > new Date(settings.trial_ends_at)) {
+            isExpired = true;
+            // Auto-update the DB to expired silently
+            supabaseClient.from('settings').update({ subscription_status: 'expired' }).eq('company_id', leader.company_id);
+        }
+    }
+
+    const isLocked = status === 'new' || isExpired;
+
+    if (isLocked) {
+        // If they are locked out and trying to view another page, force them to the Codes/Sub page
+        if (currentPage !== 'leader-today.html') {
+            window.location.replace('leader-today.html');
+            return;
+        }
+
+        // --- LOCKDOWN UI LOGIC (Only runs on leader-today.html) ---
+        
+        // 1. Hide the normal Codes features
+        const codesHeader = document.querySelector('.dash-header');
+        const pinCard = document.getElementById('pin-card-wrapper');
+        if (codesHeader) codesHeader.style.display = 'none';
+        if (pinCard) pinCard.style.display = 'none';
+
+        // 2. Hide the Bottom Navigation Bar (No escape)
+        const nav = document.querySelector('.bottom-nav');
+        if (nav) nav.style.display = 'none';
+        document.querySelector('.dashboard-content').style.paddingBottom = '20px'; // Fix padding
+
+        // 3. Display the Subscription Manager
+        const subCard = document.getElementById('subscription-manager-card');
+        if (subCard) subCard.style.display = 'block';
+
+        // 4. Configure New vs Expired states
+        if (status === 'new') {
+            document.getElementById('start-trial-btn').style.display = 'inline-block';
+            document.getElementById('sub-status-desc').innerText = "Start your free 30-day trial or select a tier to unlock all enterprise features for your crew.";
+        } else if (isExpired) {
+            document.getElementById('start-trial-btn').style.display = 'none';
+            document.getElementById('sub-status-title').innerText = "Subscription Expired";
+            document.getElementById('sub-status-title').style.color = "#ef4444";
+            document.getElementById('sub-status-desc').innerText = "Your trial or billing period has ended. Select a plan below to restore workspace access.";
+        }
+    } else {
+        // --- UNLOCKED UI LOGIC (Only runs on leader-today.html) ---
+        if (currentPage === 'leader-today.html') {
+            const subCard = document.getElementById('subscription-manager-card');
+            if (subCard) {
+                subCard.style.display = 'block';
+                document.getElementById('sub-status-title').innerText = "Workspace Active";
+                document.getElementById('sub-status-desc').style.display = 'none';
+                
+                const details = document.getElementById('active-sub-details');
+                details.style.display = 'block';
+                
+                document.getElementById('current-tier-name').innerText = (settings.subscription_tier || 'Trial').toUpperCase();
+
+                if (status === 'trialing' && settings.trial_ends_at) {
+                    const totalDays = 30;
+                    const daysLeft = Math.max(0, Math.ceil((new Date(settings.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24)));
+                    document.getElementById('trial-time-left').innerText = `${daysLeft} Days Left`;
+                    
+                    const progressPercent = Math.max(0, 100 - ((daysLeft / totalDays) * 100));
+                    const bar = document.getElementById('trial-progress-bar');
+                    setTimeout(() => { bar.style.width = `${progressPercent}%`; }, 100);
+                    if (daysLeft <= 3) bar.style.backgroundColor = '#ef4444'; // Turns red near end
+                } else {
+                    document.getElementById('trial-time-left').innerText = "Active Subscription";
+                    document.getElementById('trial-progress-bar').style.width = "100%";
+                    document.getElementById('trial-progress-bar').style.backgroundColor = "#4ade80";
+                }
+            }
+        }
+    }
 }
